@@ -1,0 +1,32 @@
+{
+  "extends": "@vue/tsconfig/tsconfig.dom.json",
+  "compilerOptions": {
+    "tsBuildInfoFile": "../node_modules/.tmp/tsconfig.app.tsbuildinfo",
+    "baseUrl": "..",
+    "types": ["vite/client"],
+    "paths": {
+      "@core/*": ["core/*"],
+      "@codebook/*": ["tools/codebook/src/*"],
+      "@file-traverse/*": ["tools/file-traverse/src/*"],
+      "@image-batch/*": ["tools/image-batch/src/*"],
+      "@media-batch/*": ["tools/media-batch/src/*"],
+      "@image-to-pdf/*": ["tools/image-to-pdf/src/*"]
+    },
+
+    /* Linting */
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "erasableSyntaxOnly": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedSideEffectImports": true
+  },
+  "include": [
+    "../core/**/*.ts",
+    "../core/**/*.tsx",
+    "../core/**/*.vue",
+    "../tools/**/*.ts",
+    "../tools/**/*.tsx",
+    "../tools/**/*.vue"
+  ]
+}

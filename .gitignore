@@ -1,0 +1,59 @@
+# =====================================
+# 仅保留核心代码（白名单模式）
+# =====================================
+
+# 1) 默认忽略仓库根目录下所有内容
+/*
+
+# 2) 仅放行核心代码与必要配置
+!.gitignore
+!index.html
+!package.json
+!package-lock.json
+!README.md
+
+!config/
+!config/**
+
+!core/
+!core/**
+
+!src-tauri/
+!src-tauri/**
+
+# 3) 在已放行目录中，继续忽略构建产物与本地文件
+node_modules/
+dist/
+build/
+.vite/
+*.tsbuildinfo
+
+src-tauri/target/
+
+.env
+.env.*
+!.env.example
+
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+*.log
+*.tmp
+.tmp/
+tmp/
+
+.claude/
+.claudecode
+.codexignore
+/core/assets
+
+# 4) Markdown 仅保留 README
+*.md
+!README.md
