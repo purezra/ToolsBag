@@ -1,17 +1,20 @@
 ﻿use crate::error::{AppError, AppResult};
 use crate::tools::{mediainfo, detect_media_type_from_path, MediaType};
+use crate::utils::emit_progress;
 use exif;
 use rayon::prelude::*;
 use serde::Serialize;
 use serde_json::Value;
 use std::{
-  collections::HashMap,
+  collections::{HashMap, HashSet},
   fs::File,
   io::BufReader,
   path::{Path, PathBuf},
   process::Command,
+  sync::atomic::{AtomicUsize, Ordering},
 };
 use tauri::{api::dialog::blocking::FileDialogBuilder, AppHandle, ClipboardManager};
+use uuid::Uuid;
 use walkdir::WalkDir;
 
 #[cfg(target_os = "windows")]
@@ -19,6 +22,9 @@ use std::os::windows::process::CommandExt;
 
 #[cfg(target_os = "windows")]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+const MAX_SCAN_FILES: usize = 50_000;
+const MAX_SCAN_DEPTH: usize = 32;
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -243,11 +249,11 @@ pub fn read_clipboard_paths(app: AppHandle) -> Result<Vec<String>, String> {
 }
 
 #[tauri::command]
-pub fn import_media(paths: Vec<String>, recursive: bool) -> Result<ImportResponse, String> {
-  import_media_inner(paths, recursive).map_err(|e| e.to_string())
+pub fn import_media(app: AppHandle, paths: Vec<String>, recursive: bool) -> Result<ImportResponse, String> {
+  import_media_inner(&app, paths, recursive).map_err(|e| e.to_string())
 }
 
-fn import_media_inner(paths: Vec<String>, recursive: bool) -> AppResult<ImportResponse> {
+fn import_media_inner(app: &AppHandle, paths: Vec<String>, recursive: bool) -> AppResult<ImportResponse> {
   if paths.is_empty() {
     return Ok(ImportResponse {
       items: vec![],
@@ -261,39 +267,54 @@ fn import_media_inner(paths: Vec<String>, recursive: bool) -> AppResult<ImportRe
   }
 
   let collected = collect_media_paths(&paths, recursive)?;
+  let id = Uuid::new_v4();
+  emit_progress(app, "media_import", 0, collected.len().max(1), "start", id);
+
   let format_counts = build_format_counts(&collected);
+  let progress = AtomicUsize::new(0);
 
   let items: Vec<MediaItem> = collected
     .par_iter()
     .enumerate()
-    .map(|(idx, path)| match build_media_item(idx as u64, path) {
-      Ok(item) => item,
-      Err(err) => MediaItem {
-        id: idx as u64,
-        name: path
-          .file_name()
-          .unwrap_or_default()
-          .to_string_lossy()
-          .to_string(),
-        path: path.to_string_lossy().to_string(),
-        size: 0,
-        media_type: detect_media_type_from_path(path)
-          .map(|t| t.as_str().to_string())
-          .unwrap_or_else(|| "unknown".into()),
-        duration_sec: None,
-        width: None,
-        height: None,
-        bitrate_mbps: None,
-        codec: None,
-        frame_rate: None,
-        device: None,
-        taken_at: None,
-        focal_length: None,
-        status: "error".into(),
-        reason: Some(err.to_string()),
-      },
+    .map(|(idx, path)| {
+      let item = match build_media_item(idx as u64, path) {
+        Ok(item) => item,
+        Err(err) => MediaItem {
+          id: idx as u64,
+          name: path
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string(),
+          path: path.to_string_lossy().to_string(),
+          size: 0,
+          media_type: detect_media_type_from_path(path)
+            .map(|t| t.as_str().to_string())
+            .unwrap_or_else(|| "unknown".into()),
+          duration_sec: None,
+          width: None,
+          height: None,
+          bitrate_mbps: None,
+          codec: None,
+          frame_rate: None,
+          device: None,
+          taken_at: None,
+          focal_length: None,
+          status: "error".into(),
+          reason: Some(err.to_string()),
+        },
+      };
+
+      let done = progress.fetch_add(1, Ordering::Relaxed) + 1;
+      if done == collected.len() || done % 20 == 0 {
+        emit_progress(app, "media_import", done, collected.len().max(1), "processing", id);
+      }
+
+      item
     })
     .collect();
+
+  emit_progress(app, "media_import", collected.len(), collected.len().max(1), "done", id);
 
   let success = items.iter().filter(|item| item.status == "success").count();
   let failed = items.len().saturating_sub(success);
@@ -311,6 +332,21 @@ fn import_media_inner(paths: Vec<String>, recursive: bool) -> AppResult<ImportRe
 
 fn collect_media_paths(input: &[String], recursive: bool) -> AppResult<Vec<PathBuf>> {
   let mut result = Vec::new();
+  let mut seen = HashSet::new();
+
+  let mut push_unique = |path: PathBuf| -> AppResult<()> {
+    if seen.insert(path.clone()) {
+      result.push(path);
+      if result.len() > MAX_SCAN_FILES {
+        return Err(AppError::InvalidArgument(format!(
+          "扫描文件数超过上限（{}），请缩小范围后重试",
+          MAX_SCAN_FILES
+        )));
+      }
+    }
+    Ok(())
+  };
+
   for path_str in input {
     let p = PathBuf::from(path_str);
     if !p.exists() {
@@ -318,24 +354,26 @@ fn collect_media_paths(input: &[String], recursive: bool) -> AppResult<Vec<PathB
     }
     if p.is_file() {
       if detect_media_type_from_path(&p).is_some() {
-        result.push(p);
+        push_unique(p)?;
       }
     } else if p.is_dir() {
       if recursive {
         for entry in WalkDir::new(&p)
+          .max_depth(MAX_SCAN_DEPTH + 1)
+          .follow_links(false)
           .into_iter()
           .filter_map(|e| e.ok())
           .filter(|e| e.file_type().is_file())
         {
           if detect_media_type_from_path(entry.path()).is_some() {
-            result.push(entry.path().to_path_buf());
+            push_unique(entry.path().to_path_buf())?;
           }
         }
       } else if let Ok(read_dir) = std::fs::read_dir(&p) {
         for entry in read_dir.flatten() {
           let path = entry.path();
           if path.is_file() && detect_media_type_from_path(&path).is_some() {
-            result.push(path);
+            push_unique(path)?;
           }
         }
       }
