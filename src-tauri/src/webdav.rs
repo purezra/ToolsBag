@@ -9,7 +9,6 @@ use chrono::Utc;
 use parking_lot::RwLock;
 use reqwest::blocking::Client;
 use reqwest::StatusCode;
-use serde::{Deserialize, Serialize};
 use std::{
   collections::HashMap,
   fs,

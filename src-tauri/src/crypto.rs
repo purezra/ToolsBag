@@ -58,11 +58,13 @@ pub fn random_iv() -> [u8; 12] {
 }
 
 /// 生成随机盐 (16 字节)
+#[allow(dead_code)]
 pub fn random_salt() -> [u8; 16] {
     random_bytes()
 }
 
 /// 生成随机密钥 (32 字节)
+#[allow(dead_code)]
 pub fn random_key() -> [u8; 32] {
     random_bytes()
 }
@@ -215,6 +217,7 @@ pub fn decrypt_from_sync(master_key: &[u8], context: &str, encrypted: &[u8]) -> 
 // ==================== 默认 KDF 参数 ====================
 
 /// 创建默认的 KDF 参数
+#[allow(dead_code)]
 pub fn default_kdf_params() -> KdfParams {
     KdfParams {
         algorithm: "argon2id".into(),

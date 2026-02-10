@@ -96,6 +96,7 @@ pub enum AppError {
 
 /// Tauri 命令返回的序列化错误
 #[derive(Debug, Serialize)]
+#[allow(dead_code)]
 pub struct CommandError {
     pub code: String,
     pub message: String,
@@ -149,6 +150,7 @@ impl From<AppError> for String {
 pub type AppResult<T> = Result<T, AppError>;
 
 /// 从字符串错误转换的辅助 trait
+#[allow(dead_code)]
 pub trait IntoAppError<T> {
     fn map_app_err(self, f: impl FnOnce(String) -> AppError) -> AppResult<T>;
 }
