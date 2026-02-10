@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, onMounted, type Component } from 'vue'
+import { computed, ref, onMounted, onUnmounted, type Component } from 'vue'
 import { Grid, FolderChecked, Setting, DataAnalysis, Moon, Sunny, Brush, InfoFilled, Key, FullScreen, ScaleToOriginal, Document } from '@element-plus/icons-vue'
 import { marked } from 'marked'
 
@@ -132,6 +132,11 @@ onMounted(() => {
   clickEffectEnabled.value = clickEffect.enabled.value
   clickEffectType.value = clickEffect.effectType.value
   clickEffectDuration.value = clickEffect.duration.value
+  window.addEventListener('mousemove', handleGlobalMouseMove)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('mousemove', handleGlobalMouseMove)
 })
 
 const localizedTools = computed(() =>
@@ -156,6 +161,31 @@ const toolComponentMap: Record<string, Component> = {
 }
 
 const navExpanded = ref(false)
+const navPinnedByHover = ref(false)
+const NAV_OPEN_THRESHOLD = 56
+const NAV_CLOSE_THRESHOLD = 340
+
+const handleGlobalMouseMove = (event: MouseEvent) => {
+  if (navPinnedByHover.value) return
+  const x = event.clientX
+  if (x <= NAV_OPEN_THRESHOLD) {
+    navExpanded.value = true
+  } else if (x >= NAV_CLOSE_THRESHOLD) {
+    navExpanded.value = false
+  }
+}
+
+const handleNavEnter = () => {
+  navPinnedByHover.value = true
+  navExpanded.value = true
+}
+
+const handleNavLeave = (event: MouseEvent) => {
+  navPinnedByHover.value = false
+  if (event.clientX >= NAV_CLOSE_THRESHOLD) {
+    navExpanded.value = false
+  }
+}
 
 // About dialog
 const aboutOpen = ref(false)
@@ -199,8 +229,8 @@ const renderedAbout = computed(() => marked(aboutContent.value) as string)
         width="260px"
         class="nav-panel"
         :class="{ 'is-open': navExpanded }"
-        @mouseenter="navExpanded = true"
-        @mouseleave="navExpanded = false"
+        @mouseenter="handleNavEnter"
+        @mouseleave="handleNavLeave"
       >
         <div class="brand">
           <div class="brand-mark">TB</div>
@@ -414,6 +444,157 @@ const renderedAbout = computed(() => marked(aboutContent.value) as string)
 </template>
 
 <style scoped>
+.app-shell {
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.app-frame {
+  width: 100%;
+  height: 100%;
+}
+
+.nav-hit {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 56px;
+  z-index: 40;
+}
+
+.nav-panel {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 260px !important;
+  transform: translateX(-228px);
+  transition: transform 220ms ease, opacity 220ms ease, box-shadow 220ms ease;
+  z-index: 41;
+  display: flex;
+  flex-direction: column;
+  padding: 16px 12px;
+  box-sizing: border-box;
+}
+
+.nav-panel.is-open {
+  transform: translateX(0);
+}
+
+.main-wrap {
+  margin-left: 32px;
+  width: calc(100% - 32px);
+  height: 100%;
+  transition: margin-left 220ms ease, width 220ms ease;
+}
+
+.nav-panel.is-open + .main-wrap {
+  margin-left: 260px;
+  width: calc(100% - 260px);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 6px 12px;
+}
+
+.brand-mark {
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  font-weight: 800;
+  color: #fff;
+}
+
+.brand-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.brand-sub {
+  margin: 2px 0 0;
+  font-size: 12px;
+}
+
+.tool-menu {
+  flex: 1;
+  overflow: auto;
+  border-right: 0;
+  padding: 8px;
+  border-radius: 12px;
+}
+
+.tool-menu :deep(.el-menu-item) {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 10px;
+}
+
+.menu-icon {
+  margin-right: 2px;
+}
+
+.nav-footer {
+  margin-top: 12px;
+  padding: 10px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.meta p {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.meta span {
+  font-size: 12px;
+  opacity: 0.8;
+}
+
+.topbar {
+  height: 76px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 18px;
+}
+
+.topbar-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.pill {
+  height: 26px;
+  line-height: 26px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.hint {
+  font-size: 13px;
+}
+
+.main-panel {
+  height: calc(100% - 76px);
+  padding: 14px;
+  overflow: auto;
+}
+
 .setting-group {
   display: flex;
   flex-direction: column;
