@@ -34,7 +34,7 @@ fn extract_embedded_dll() -> Option<std::path::PathBuf> {
   let temp_dir = std::env::temp_dir();
   let dll_path = temp_dir.join("toolsbag_mediainfo.dll");
   
-  // 如果已存在且大小匹配，直接使用
+  // 如果已存在且大小匹配，直接使用（避免每次启动做8MB全量比较）
   if dll_path.exists() {
     if let Ok(meta) = std::fs::metadata(&dll_path) {
       if meta.len() == MEDIAINFO_DLL_BYTES.len() as u64 {
@@ -560,5 +560,281 @@ pub fn get_image_meta(path: &Path) -> Option<ImageMeta> {
     width,
     height,
     format,
+  })
+}
+
+// ==================== 视频信息展览 - 详细元数据解析 ====================
+
+use crate::models::{
+  DetailedAudioStream, DetailedTextStream, DetailedVideoMeta, DetailedVideoStream,
+  GeneralInfo,
+};
+
+/// 临时存储解析中的流数据
+struct ParsedStream {
+  section: String,        // "General", "Video", "Audio", "Text"
+  fields: Vec<(String, String)>,
+}
+
+/// 解析 MediaInfo_Inform 的完整文本输出，返回所有流
+fn parse_mediainfo_text(text: &str) -> Vec<ParsedStream> {
+  let mut streams: Vec<ParsedStream> = Vec::new();
+  let mut current_section = String::new();
+  let mut current_fields: Vec<(String, String)> = Vec::new();
+
+  for line in text.lines() {
+    let trimmed = line.trim();
+    if trimmed.is_empty() {
+      continue;
+    }
+
+    // 检测是否是新的段落标题（没有冒号的行，且是已知的段落名）
+    if !trimmed.contains(':') {
+      let section_name = trimmed;
+      if matches!(
+        section_name,
+        "General" | "Video" | "Audio" | "Text" | "Other" | "Menu" | "Image"
+      ) {
+        // 保存前一个流
+        if !current_section.is_empty() {
+          streams.push(ParsedStream {
+            section: current_section.clone(),
+            fields: current_fields.clone(),
+          });
+        }
+        current_section = section_name.to_string();
+        current_fields.clear();
+        continue;
+      }
+    }
+
+    // 解析键值对
+    if let Some(colon_pos) = trimmed.find(':') {
+      let key = trimmed[..colon_pos].trim().to_string();
+      let value = trimmed[colon_pos + 1..].trim().to_string();
+      if !key.is_empty() {
+        current_fields.push((key, value));
+      }
+    }
+  }
+
+  // 保存最后一个流
+  if !current_section.is_empty() {
+    streams.push(ParsedStream {
+      section: current_section,
+      fields: current_fields,
+    });
+  }
+
+  streams
+}
+
+/// 从流字段中查找指定 key 的值
+fn find_field(fields: &[(String, String)], key: &str) -> String {
+  fields
+    .iter()
+    .find(|(k, _)| k == key)
+    .map(|(_, v)| v.clone())
+    .unwrap_or_default()
+}
+
+/// 从 General 段解析基础信息
+fn parse_general_info(streams: &[ParsedStream]) -> GeneralInfo {
+  let general = streams.iter().find(|s| s.section == "General");
+  let fields = general.map(|s| s.fields.as_slice()).unwrap_or(&[]);
+
+  let file_size_str = find_field(fields, "File size");
+  let file_size = parse_file_size(&file_size_str);
+  let duration_str = find_field(fields, "Duration");
+  let duration_ms = parse_duration_to_ms(&duration_str);
+
+  // Format 可能在多个位置
+  let format = find_field(fields, "Format");
+  let format_long = if find_field(fields, "Format/Info").is_empty() {
+    find_field(fields, "Format profile")
+  } else {
+    find_field(fields, "Format/Info")
+  };
+
+  GeneralInfo {
+    format,
+    format_long,
+    file_size,
+    file_size_str,
+    duration: format_duration(duration_ms),
+    duration_ms,
+    overall_bit_rate: find_field(fields, "Overall bit rate"),
+    title: find_field(fields, "Title"),
+    encoded_date: find_field(fields, "Encoded date"),
+    writing_application: find_field(fields, "Writing application"),
+    codec_id: find_field(fields, "Codec ID"),
+    stream_count: find_field(fields, "StreamCount")
+      .parse()
+      .unwrap_or(0),
+    encoded_library: find_field(fields, "Encoded library"),
+  }
+}
+
+/// 解析文件大小字符串为字节数
+fn parse_file_size(s: &str) -> u64 {
+  let s_clean = s.replace(' ', "").replace(',', "");
+  let num_str: String = s_clean
+    .chars()
+    .take_while(|c| c.is_ascii_digit() || *c == '.')
+    .collect();
+  let num: f64 = num_str.parse().unwrap_or(0.0);
+  let s_lower = s.to_lowercase();
+  if s_lower.contains("gib") || s_lower.contains("gb") {
+    (num * 1_073_741_824.0) as u64
+  } else if s_lower.contains("mib") || s_lower.contains("mb") {
+    (num * 1_048_576.0) as u64
+  } else if s_lower.contains("kib") || s_lower.contains("kb") {
+    (num * 1024.0) as u64
+  } else {
+    num as u64
+  }
+}
+
+/// 从 Video 段解析详细视频流
+fn parse_detailed_video_streams(streams: &[ParsedStream]) -> Vec<DetailedVideoStream> {
+  streams
+    .iter()
+    .filter(|s| s.section == "Video")
+    .enumerate()
+    .map(|(idx, stream)| {
+      let f = &stream.fields;
+      let duration_str = find_field(f, "Duration");
+      let duration_ms = parse_duration_to_ms(&duration_str);
+      let frame_rate_raw = find_field(f, "Frame rate");
+      let frame_rate = if frame_rate_raw.is_empty() {
+        find_field(f, "Original frame rate")
+      } else {
+        frame_rate_raw
+      };
+
+      DetailedVideoStream {
+        index: idx as u32,
+        // 大众级
+        width: parse_number(&find_field(f, "Width")),
+        height: parse_number(&find_field(f, "Height")),
+        display_aspect_ratio: find_field(f, "Display aspect ratio"),
+        frame_rate: format_frame_rate(&frame_rate),
+        // 入门级
+        codec: find_field(f, "Format"),
+        bit_rate: find_field(f, "Bit rate"),
+        frame_rate_mode: {
+          let mode = find_field(f, "Frame rate mode");
+          if mode.contains("Variable") {
+            "VFR".to_string()
+          } else if mode.is_empty() {
+            String::new()
+          } else {
+            "CFR".to_string()
+          }
+        },
+        bit_depth: find_field(f, "Bit depth"),
+        hdr_format: find_field(f, "HDR format"),
+        scan_type: find_field(f, "Scan type"),
+        // 进阶级
+        format_profile: find_field(f, "Format profile"),
+        chroma_subsampling: find_field(f, "Chroma subsampling"),
+        color_space: find_field(f, "Color space"),
+        color_primaries: find_field(f, "Color primaries"),
+        transfer_characteristics: find_field(f, "Transfer characteristics"),
+        matrix_coefficients: find_field(f, "Matrix coefficients"),
+        stream_size: find_field(f, "Stream size"),
+        bits_per_pixel_frame: find_field(f, "Bits/(Pixel*Frame)"),
+        language: find_field(f, "Language"),
+        // 专业级
+        cabac: find_field(f, "Format settings, CABAC"),
+        format_settings_ref_frames: find_field(f, "Format settings, Reference frames"),
+        encoded_library: find_field(f, "Encoded library"),
+        encoded_library_settings: find_field(f, "Encoded library settings"),
+        codec_id: find_field(f, "Codec ID"),
+        duration: format_duration(duration_ms),
+        duration_ms,
+      }
+    })
+    .collect()
+}
+
+/// 从 Audio 段解析详细音频流
+fn parse_detailed_audio_streams(streams: &[ParsedStream]) -> Vec<DetailedAudioStream> {
+  streams
+    .iter()
+    .filter(|s| s.section == "Audio")
+    .enumerate()
+    .map(|(idx, stream)| {
+      let f = &stream.fields;
+      let duration_str = find_field(f, "Duration");
+      let duration_ms = parse_duration_to_ms(&duration_str);
+
+      DetailedAudioStream {
+        index: idx as u32,
+        // 大众级
+        channels: find_field(f, "Channel(s)"),
+        channel_layout: find_field(f, "Channel layout"),
+        sample_rate: find_field(f, "Sampling rate"),
+        // 入门级
+        codec: find_field(f, "Format"),
+        bit_rate: find_field(f, "Bit rate"),
+        bit_rate_mode: find_field(f, "Bit rate mode"),
+        is_default: find_field(f, "Default").eq_ignore_ascii_case("yes"),
+        // 进阶级
+        language: find_field(f, "Language"),
+        title: find_field(f, "Title"),
+        stream_size: find_field(f, "Stream size"),
+        format_profile: find_field(f, "Format profile"),
+        compression_mode: find_field(f, "Compression mode"),
+        duration: format_duration(duration_ms),
+        duration_ms,
+        codec_id: find_field(f, "Codec ID"),
+      }
+    })
+    .collect()
+}
+
+/// 从 Text 段解析详细字幕流
+fn parse_detailed_text_streams(streams: &[ParsedStream]) -> Vec<DetailedTextStream> {
+  streams
+    .iter()
+    .filter(|s| s.section == "Text")
+    .enumerate()
+    .map(|(idx, stream)| {
+      let f = &stream.fields;
+      DetailedTextStream {
+        index: idx as u32,
+        format: find_field(f, "Format"),
+        codec_id: find_field(f, "Codec ID"),
+        language: find_field(f, "Language"),
+        title: find_field(f, "Title"),
+        is_default: find_field(f, "Default").eq_ignore_ascii_case("yes"),
+      }
+    })
+    .collect()
+}
+
+/// 获取完整的视频详细元数据（用于视频信息展览）
+pub fn get_detailed_video_meta(path: &Path) -> Option<DetailedVideoMeta> {
+  let full_info = get_full_info(path)?;
+  if full_info.is_empty() {
+    return None;
+  }
+
+  let streams = parse_mediainfo_text(&full_info);
+  if streams.is_empty() {
+    return None;
+  }
+
+  let general = parse_general_info(&streams);
+  let video_streams = parse_detailed_video_streams(&streams);
+  let audio_streams = parse_detailed_audio_streams(&streams);
+  let text_streams = parse_detailed_text_streams(&streams);
+
+  Some(DetailedVideoMeta {
+    general,
+    video_streams,
+    audio_streams,
+    text_streams,
   })
 }

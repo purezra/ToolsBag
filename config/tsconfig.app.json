@@ -27,6 +27,8 @@
     "../core/**/*.vue",
     "../tools/**/*.ts",
     "../tools/**/*.tsx",
-    "../tools/**/*.vue"
+    "../tools/**/*.vue",
+    "./auto-imports.d.ts",
+    "./components.d.ts"
   ]
 }

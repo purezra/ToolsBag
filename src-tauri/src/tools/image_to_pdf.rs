@@ -13,6 +13,7 @@
 extern crate image as image_crate;
 
 use exif::{In, Reader as ExifReader, Tag};
+use tauri::Emitter;
 use image_crate::{ColorType, DynamicImage, GenericImage, GenericImageView, ImageBuffer, ImageDecoder, ImageFormat, ImageReader, RgbImage, RgbaImage};
 use image_crate::codecs::webp::WebPDecoder;
 use image_crate::imageops::FilterType;
@@ -458,7 +459,7 @@ fn apply_exif_orientation(img: DynamicImage, path: &Path) -> DynamicImage {
 
 fn jpeg_is_cmyk(path: &Path) -> bool {
     if let Ok(file) = std::fs::File::open(path) {
-        let mut decoder = RawJpegDecoder::new(file);
+        let mut decoder = RawJpegDecoder::new(BufReader::new(file));
         if decoder.read_info().is_ok() {
             return matches!(decoder.info().map(|i| i.pixel_format), Some(PixelFormat::CMYK32));
         }
@@ -844,11 +845,11 @@ pub fn calculate_preview_layout(
 pub async fn generate_pdf(
     images: Vec<ImageAnalysis>,
     config: PdfConfig,
-    window: tauri::Window,
+    window: tauri::WebviewWindow,
 ) -> Result<GenerationResult, String> {
     use std::time::Instant;
     let start = Instant::now();
-    
+
     let total = images.len();
     let original_total_size: u64 = images.iter()
         .filter_map(|img| std::fs::metadata(&img.path).ok())
@@ -857,7 +858,7 @@ pub async fn generate_pdf(
 
     let validated_margin = validate_margin(config.margin, config.page_size)?;
     let config = PdfConfig { margin: validated_margin, ..config };
-    
+
     // 第一阶段：并行处理图片（解码 -> resize -> 编码为JPEG/PNG）
     let _ = window.emit("pdf_progress", GenerationProgress {
         current: 0,
@@ -884,12 +885,13 @@ pub async fn generate_pdf(
     let mut pending: BTreeMap<usize, (String, Vec<PreparedPage>)> = BTreeMap::new();
     let mut next_index = 0usize;
 
+    // 边接收边按序写入PDF，避免同时持有所有页面数据
     for received in rx {
         let (idx, path, pages) = received?;
         pending.insert(idx, (path, pages));
 
-        while let Some((path, prepared_pages)) = pending.remove(&next_index) {
-            for prepared in prepared_pages {
+        while let Some((_, prepared_pages)) = pending.remove(&next_index) {
+            for prepared in &prepared_pages {
                 if doc.is_none() {
                     let (d, page, layer) = PdfDocument::new(
                         "Image to PDF",
@@ -897,7 +899,7 @@ pub async fn generate_pdf(
                         Mm(prepared.page_height as f32),
                         "Layer 1",
                     );
-                    embed_encoded_image_to_page(&d, page, layer, &prepared)?;
+                    embed_encoded_image_to_page(&d, page, layer, prepared)?;
                     doc = Some(d);
                 } else if let Some(ref d) = doc {
                     let (page, layer) = d.add_page(
@@ -905,17 +907,18 @@ pub async fn generate_pdf(
                         Mm(prepared.page_height as f32),
                         "Layer 1",
                     );
-                    embed_encoded_image_to_page(d, page, layer, &prepared)?;
+                    embed_encoded_image_to_page(d, page, layer, prepared)?;
                 }
 
                 page_counter += 1;
                 let _ = window.emit("pdf_progress", GenerationProgress {
                     current: page_counter,
                     total,
-                    current_file: path.clone(),
+                    current_file: String::new(),
                     phase: "写入页面".to_string(),
                 });
             }
+            // prepared_pages 在此 drop，释放已写入页面的内存
             next_index += 1;
         }
     }

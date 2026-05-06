@@ -1,34 +1,34 @@
-# ToolsBag
+# ToolsBag v0.2.0
 
-[中文](#中文) | [English](#english) | [日本語](#日本語)
+精致的桌面工具盒，基于 Tauri 2 + Vue 3 构建。
 
 ---
 
-## 中文
+## 功能
 
-精致的桌面工具盒，基于 Tauri + Vue 3 构建。
+| 工具 | 说明 |
+|------|------|
+| **媒体批处理** | 批量导入视频/图片/音频，通过 MediaInfo / ffprobe / exiftool 提取元数据，支持视频详情展示与 EXIF 分析 |
+| **PDF合成（原样）** | 无损合成图片为 PDF，保留原始 JPEG 字节，支持 CMYK 转换与 EXIF 方向校正 |
+| **文件遍历提取** | 多线程高速文件复制，按格式过滤与分类，支持媒体预览 |
+| **码本** | Argon2id + AES-256-GCM 加密的密码保险箱，支持 WebDAV 多设备同步、VaultX V2 导入导出、设备管理与回收站 |
+| **图片合成PDF** | 高确定性图片合并 PDF，支持 A4/A3/B5/iPad Pro 等页面尺寸、边距控制、JPEG 质量调节 |
 
-### 功能
+## 技术栈
 
-- **媒体批处理** - 批量提取视频/图片信息，重命名与可视化分析
-- **PDF合成（原样）** - 无损合成图片为PDF，支持批量处理
-- **文件遍历提取** - 高速复制、按格式分类与过滤
-- **码本** - 密码生成器与账号资产管理，安全存储
-- **图片合成PDF** - 高确定性图片合并PDF，支持边距、多尺寸、预览
+- **前端**：Vue 3 + TypeScript + Element Plus + ECharts
+- **后端**：Rust + Tauri 2
+- **构建**：Vite 7
+- **加密**：Argon2id / AES-256-GCM / HMAC-SHA256 / Ed25519
+- **并行处理**：Rayon
 
-### 技术栈
-
-- 前端：Vue 3 + TypeScript + Element Plus + ECharts
-- 后端：Rust + Tauri
-- 构建：Vite
-
-### 开发
+## 开发
 
 ```bash
 # 安装依赖
 npm install
 
-# 启动开发服务器
+# 启动前端开发服务器
 npm run dev
 
 # 启动桌面应用（开发模式）
@@ -38,104 +38,37 @@ npm run tauri:dev
 npm run tauri:build
 ```
 
-### 环境要求
+## 环境要求
 
 - Node.js 18+
-- Rust 1.60+
-- Tauri CLI
+- Rust 1.75+
+- Tauri CLI 2.x
 
-### 许可证
+## 项目结构
 
-MIT
-
----
-
-## English
-
-A refined desktop toolbox built with Tauri + Vue 3.
-
-### Features
-
-- **Media Batch Processing** - Batch extract video/image info, rename and visualize analysis
-- **PDF Merge (Lossless)** - Lossless image-to-PDF conversion with batch support
-- **File Traverse** - High-speed copy, filter and organize by format
-- **Codebook** - Password generator and account asset manager with secure storage
-- **Image to PDF** - Deterministic image-to-PDF with margins, multi-size support and preview
-
-### Tech Stack
-
-- Frontend: Vue 3 + TypeScript + Element Plus + ECharts
-- Backend: Rust + Tauri
-- Build: Vite
-
-### Development
-
-```bash
-# Install dependencies
-npm install
-
-# Start dev server
-npm run dev
-
-# Launch desktop app (dev mode)
-npm run tauri:dev
-
-# Build for production
-npm run tauri:build
+```
+toolsbag1/
+├── core/               # Vue 公共层（App、hooks、API、组件）
+├── tools/              # 各工具前端模块
+│   ├── media-batch/    # 媒体批处理
+│   ├── image-batch/    # PDF 合成（原样）
+│   ├── image-to-pdf/   # 图片合成 PDF
+│   ├── file-traverse/  # 文件遍历提取
+│   └── codebook/       # 码本
+├── config/             # Vite + TypeScript 配置
+├── public/             # 静态资源
+├── src-tauri/          # Rust 后端
+│   ├── src/
+│   │   ├── cmd/        # Tauri 命令层
+│   │   ├── models/     # 数据结构
+│   │   ├── tools/      # 核心工具逻辑
+│   │   ├── codebook.rs # 加密保险箱引擎
+│   │   ├── webdav.rs   # WebDAV 同步
+│   │   └── crypto.rs   # 统一加密层
+│   └── tauri.conf.json
+└── index.html
 ```
 
-### Requirements
-
-- Node.js 18+
-- Rust 1.60+
-- Tauri CLI
-
-### License
-
-MIT
-
----
-
-## 日本語
-
-Tauri + Vue 3 で構築された洗練されたデスクトップツールボックス。
-
-### 機能
-
-- **メディア一括処理** - 動画/画像情報の一括抽出、リネームと可視化分析
-- **PDF合成（無損失）** - 画像を無損失でPDFに変換、バッチ処理対応
-- **ファイル走査** - 高速コピー、フォーマット別フィルタリングと整理
-- **コードブック** - パスワード生成とアカウント資産管理、安全な保存
-- **画像からPDF** - 余白、複数サイズ、プレビュー対応の高精度PDF変換
-
-### 技術スタック
-
-- フロントエンド：Vue 3 + TypeScript + Element Plus + ECharts
-- バックエンド：Rust + Tauri
-- ビルド：Vite
-
-### 開発
-
-```bash
-# 依存関係をインストール
-npm install
-
-# 開発サーバーを起動
-npm run dev
-
-# デスクトップアプリを起動（開発モード）
-npm run tauri:dev
-
-# 本番用にビルド
-npm run tauri:build
-```
-
-### 必要環境
-
-- Node.js 18+
-- Rust 1.60+
-- Tauri CLI
-
-### ライセンス
+## 许可证
 
 MIT

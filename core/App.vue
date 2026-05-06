@@ -1,16 +1,18 @@
 <script setup lang="ts">
-import { computed, ref, onMounted, onUnmounted, type Component } from 'vue'
+import { computed, ref, onMounted, onUnmounted, defineAsyncComponent, type Component } from 'vue'
 import { Grid, FolderChecked, Setting, DataAnalysis, Moon, Sunny, Brush, InfoFilled, Key, FullScreen, ScaleToOriginal, Document } from '@element-plus/icons-vue'
 import { marked } from 'marked'
+import DOMPurify from 'dompurify'
 
-import MediaBatchTool from '@media-batch/index.vue'
-import ImageBatchTool from '@image-batch/index.vue'
-import FileTraverseTool from '@file-traverse/index.vue'
-import CodebookTool from '@codebook/index.vue'
-import ImageToPdfTool from '@image-to-pdf/index.vue'
 import { provideSettings } from './hooks/useSettings'
 import { getClickEffectInstance, type ClickEffectType } from './hooks/useClickEffect'
 import ErrorBoundary from './components/ErrorBoundary.vue'
+
+const MediaBatchTool = defineAsyncComponent(() => import('@media-batch/index.vue'))
+const ImageBatchTool = defineAsyncComponent(() => import('@image-batch/index.vue'))
+const FileTraverseTool = defineAsyncComponent(() => import('@file-traverse/index.vue'))
+const CodebookTool = defineAsyncComponent(() => import('@codebook/index.vue'))
+const ImageToPdfTool = defineAsyncComponent(() => import('@image-to-pdf/index.vue'))
 
 type Tool = {
   key: string
@@ -218,7 +220,7 @@ const handleAboutOpen = () => {
   loadAboutContent()
 }
 
-const renderedAbout = computed(() => marked(aboutContent.value) as string)
+const renderedAbout = computed(() => DOMPurify.sanitize(marked(aboutContent.value) as string))
 </script>
 
 <template>
@@ -290,11 +292,24 @@ const renderedAbout = computed(() => marked(aboutContent.value) as string)
               :key-name="activeToolKey"
               class="tool-component"
             >
-              <component
-                :is="toolComponentMap[activeToolKey]"
-                :key="activeToolKey"
-                class="tool-component"
-              />
+              <Transition name="tool-fade" mode="out-in">
+                <Suspense>
+                  <template #default>
+                    <KeepAlive>
+                      <component
+                        :is="toolComponentMap[activeToolKey]"
+                        :key="activeToolKey"
+                        class="tool-component"
+                      />
+                    </KeepAlive>
+                  </template>
+                  <template #fallback>
+                    <div class="tool-skeleton">
+                      <el-skeleton :rows="6" animated />
+                    </div>
+                  </template>
+                </Suspense>
+              </Transition>
             </ErrorBoundary>
             <section v-else class="placeholder-card">
               <el-empty :description="t('该工具正在路上，敬请期待')" />
@@ -681,13 +696,28 @@ const renderedAbout = computed(() => marked(aboutContent.value) as string)
   border-radius: 10px;
   cursor: pointer;
   color: #fff;
-  transition: all 0.2s;
+  transition: background 0.2s, transform 0.2s;
   box-shadow: 0 4px 12px rgba(64, 158, 255, 0.4);
   z-index: 10000;
 }
 .about-fullscreen-btn:hover {
   background: rgba(64, 158, 255, 1);
   transform: scale(1.1);
+}
+.tool-fade-enter-active,
+.tool-fade-leave-active {
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+.tool-fade-enter-from {
+  opacity: 0;
+  transform: translateY(8px);
+}
+.tool-fade-leave-to {
+  opacity: 0;
+  transform: translateY(-8px);
+}
+.tool-skeleton {
+  padding: 24px;
 }
 </style>
 

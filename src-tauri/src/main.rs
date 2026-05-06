@@ -62,15 +62,17 @@ fn open_parent_dir(path: String) -> Result<(), String> {
   }
   #[cfg(target_os = "linux")]
   {
-    use std::process::Stdio;
-    if let Some(dir) = pb.parent() {
-      Command::new("xdg-open")
-        .arg(dir)
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .map_err(|e| e.to_string())?;
-      return Ok(());
+    if pb.exists() {
+      use std::process::Stdio;
+      if let Some(dir) = pb.parent() {
+        Command::new("xdg-open")
+          .arg(dir)
+          .stdout(Stdio::null())
+          .stderr(Stdio::null())
+          .spawn()
+          .map_err(|e| e.to_string())?;
+        return Ok(());
+      }
     }
   }
   Err("无法打开目录".into())
@@ -101,6 +103,10 @@ fn read_tool3_note() -> Result<String, String> {
 
 fn main() {
   tauri::Builder::default()
+    .plugin(tauri_plugin_dialog::init())
+    .plugin(tauri_plugin_fs::init())
+    .plugin(tauri_plugin_clipboard_manager::init())
+    .plugin(tauri_plugin_shell::init())
     .invoke_handler(tauri::generate_handler![
       media_batch::import_media,
       media_batch::select_media_paths,
@@ -108,6 +114,7 @@ fn main() {
       media_batch::get_mediainfo_status,
       media_batch::check_ffprobe_status,
       media_batch::check_exiftool_status,
+      media_batch::import_detailed_video_info,
       open_parent_dir,
       read_tool3_note,
       cmd::analyze_folder,

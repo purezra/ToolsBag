@@ -43,14 +43,22 @@ pub fn repair(app: AppHandle, req: RepairRequest) -> Result<RepairResult, String
       path.to_string_lossy().as_ref(),
       id,
     );
-    let out_path = output_dir.join(
-      path
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("file")
-        .to_string()
-        + ".jpg",
-    );
+    let stem = path
+      .file_stem()
+      .and_then(|s| s.to_str())
+      .unwrap_or("file")
+      .to_string();
+    let ext = path
+      .extension()
+      .and_then(|e| e.to_str())
+      .unwrap_or("jpg")
+      .to_lowercase();
+    let mut out_path = output_dir.join(format!("{}.{}", stem, ext));
+    let mut counter = 1u32;
+    while out_path.exists() {
+      out_path = output_dir.join(format!("{}_{}.{}", stem, counter, ext));
+      counter += 1;
+    }
 
     let (problem, _reasons) = inspect_image(path);
     if !problem && req.only_problem {

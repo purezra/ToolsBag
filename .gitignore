@@ -18,6 +18,12 @@
 !core/
 !core/**
 
+!tools/
+!tools/**
+
+!public/
+!public/**
+
 !src-tauri/
 !src-tauri/**
 
@@ -29,6 +35,7 @@ build/
 *.tsbuildinfo
 
 src-tauri/target/
+src-tauri/gen/
 
 .env
 .env.*

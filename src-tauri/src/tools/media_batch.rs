@@ -1,4 +1,5 @@
 ﻿use crate::error::{AppError, AppResult};
+use crate::models::{VideoInfoItem, VideoInfoImportResponse};
 use crate::tools::{mediainfo, detect_media_type_from_path, MediaType};
 use crate::utils::emit_progress;
 use exif;
@@ -13,7 +14,9 @@ use std::{
   process::Command,
   sync::atomic::{AtomicUsize, Ordering},
 };
-use tauri::{api::dialog::blocking::FileDialogBuilder, AppHandle, ClipboardManager};
+use tauri::AppHandle;
+use tauri_plugin_clipboard_manager::ClipboardExt;
+use tauri_plugin_dialog::DialogExt;
 use uuid::Uuid;
 use walkdir::WalkDir;
 
@@ -214,24 +217,27 @@ fn get_command_path(cmd_name: &str) -> Option<String> {
 }
 
 #[tauri::command]
-pub async fn select_media_paths(kind: String) -> Result<Vec<String>, String> {
+pub fn select_media_paths(app: AppHandle, kind: String) -> Result<Vec<String>, String> {
   let picked = match kind.as_str() {
-    "folder" => FileDialogBuilder::new().pick_folders(),
-    _ => FileDialogBuilder::new().pick_files(),
+    "folder" => app.dialog().file().blocking_pick_folders(),
+    _ => app.dialog().file().blocking_pick_files(),
   };
   let list = picked
     .unwrap_or_default()
     .into_iter()
-    .map(|p| p.to_string_lossy().to_string())
+    .map(|p| match p {
+      tauri_plugin_dialog::FilePath::Path(pb) => pb.to_string_lossy().to_string(),
+      tauri_plugin_dialog::FilePath::Url(url) => url.to_string(),
+    })
     .collect();
   Ok(list)
 }
 
 #[tauri::command]
 pub fn read_clipboard_paths(app: AppHandle) -> Result<Vec<String>, String> {
-  let mgr = app.clipboard_manager();
+  let mgr = app.clipboard();
   match mgr.read_text() {
-    Ok(Some(text)) => {
+    Ok(text) => {
       let paths: Vec<String> = text
         .lines()
         .map(|s| s.trim().to_string())
@@ -243,7 +249,6 @@ pub fn read_clipboard_paths(app: AppHandle) -> Result<Vec<String>, String> {
         Ok(paths)
       }
     }
-    Ok(None) => Err("剪贴板为空".to_string()),
     Err(e) => Err(format!("读取剪贴板失败: {}", e)),
   }
 }
@@ -624,6 +629,8 @@ fn probe_image(path: &Path) -> (Option<u32>, Option<u32>, Option<String>, Option
         let taken_at = first.get("DateTimeOriginal").and_then(|v| v.as_str()).map(|s| s.to_string());
         let focal = first.get("FocalLength").and_then(|v| v.as_str()).map(|s| s.to_string());
         return (width, height, device, taken_at, focal, None);
+      } else {
+        return probe_image_fallback(path);
       }
     }
     Ok(output) => {
@@ -633,11 +640,14 @@ fn probe_image(path: &Path) -> (Option<u32>, Option<u32>, Option<String>, Option
     }
     Err(e) => {
       let (w, h, device, taken_at, focal, inner_err) = probe_image_fallback(path);
-      return (w, h, device, taken_at, focal, inner_err.or(Some(format!("exiftool 不可用: {}", e))));
+      let reason = if inner_err.is_some() {
+        inner_err
+      } else {
+        Some(format!("exiftool 不可用: {}", e))
+      };
+      return (w, h, device, taken_at, focal, reason);
     }
   }
-
-  probe_image_fallback(path)
 }
 
 fn probe_image_fallback(path: &Path) -> (Option<u32>, Option<u32>, Option<String>, Option<String>, Option<String>, Option<String>) {
@@ -676,4 +686,83 @@ fn read_exif(path: &Path) -> (Option<String>, Option<String>, Option<String>) {
     return (device, datetime, focal);
   }
   (None, None, None)
+}
+
+// ==================== 视频信息展览 - 导入命令 ====================
+
+#[tauri::command]
+pub fn import_detailed_video_info(app: AppHandle, paths: Vec<String>, recursive: bool) -> Result<VideoInfoImportResponse, String> {
+  import_detailed_video_info_inner(&app, paths, recursive).map_err(|e| e.to_string())
+}
+
+fn import_detailed_video_info_inner(app: &AppHandle, paths: Vec<String>, recursive: bool) -> AppResult<VideoInfoImportResponse> {
+  if paths.is_empty() {
+    return Ok(VideoInfoImportResponse {
+      items: vec![],
+      total: 0,
+      success: 0,
+      failed: 0,
+    });
+  }
+
+  // 只收集视频文件
+  let collected = collect_media_paths(&paths, recursive)?;
+  let video_paths: Vec<PathBuf> = collected
+    .into_iter()
+    .filter(|p| detect_media_type_from_path(p) == Some(MediaType::Video))
+    .collect();
+
+  let total = video_paths.len();
+  let id = Uuid::new_v4();
+  emit_progress(app, "video_info_import", 0, total.max(1), "start", id);
+
+  let progress = AtomicUsize::new(0);
+
+  let items: Vec<VideoInfoItem> = video_paths
+    .par_iter()
+    .enumerate()
+    .map(|(idx, path)| {
+      let name = path
+        .file_name()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|| "unknown".into());
+      let md = std::fs::metadata(path).ok();
+      let size = md.map(|m| m.len()).unwrap_or(0);
+
+      let detail = mediainfo::get_detailed_video_meta(path);
+
+      let item = VideoInfoItem {
+        id: idx as u64,
+        name,
+        path: path.to_string_lossy().to_string(),
+        size,
+        status: if detail.is_some() { "success" } else { "error" }.to_string(),
+        reason: if detail.is_none() {
+          Some("无法解析视频元数据".to_string())
+        } else {
+          None
+        },
+        detail,
+      };
+
+      let done = progress.fetch_add(1, Ordering::Relaxed) + 1;
+      if done == total || done % 10 == 0 {
+        emit_progress(app, "video_info_import", done, total.max(1), "processing", id);
+      }
+
+      item
+    })
+    .collect();
+
+  emit_progress(app, "video_info_import", total, total.max(1), "done", id);
+
+  let success = items.iter().filter(|i| i.status == "success").count();
+  let failed = items.len().saturating_sub(success);
+
+  Ok(VideoInfoImportResponse {
+    items,
+    total,
+    success,
+    failed,
+  })
 }

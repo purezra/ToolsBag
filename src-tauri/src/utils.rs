@@ -1,6 +1,6 @@
 use chrono::Local;
 use std::{fs, path::PathBuf};
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter};
 use uuid::Uuid;
 
 pub fn ensure_dir(path: &PathBuf) -> std::io::Result<()> {
@@ -16,7 +16,7 @@ pub fn timestamped_log(dir: &PathBuf, prefix: &str) -> PathBuf {
 }
 
 pub fn emit_progress(app: &AppHandle, stage: &str, current: usize, total: usize, message: &str, id: Uuid) {
-  let _ = app.emit_all(
+  let _ = app.emit(
     "progress-update",
     serde_json::json!({
       "id": id,

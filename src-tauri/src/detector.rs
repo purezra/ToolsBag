@@ -19,22 +19,16 @@ static SUPPORTED: Lazy<Vec<&'static str>> = Lazy::new(|| vec![
 
 pub fn analyze(app: AppHandle, req: AnalyzeRequest) -> Result<AnalyzeResult, String> {
   let id = Uuid::new_v4();
+  let mut walker = WalkDir::new(&req.input_dir).follow_links(false);
+  if !req.recursive {
+    walker = walker.max_depth(1);
+  }
   let mut files: Vec<PathBuf> = Vec::new();
-  for entry in WalkDir::new(&req.input_dir)
-    .follow_links(false)
-    .into_iter()
-    .filter_map(|e| e.ok())
-    .filter(|e| e.file_type().is_file())
-  {
+  for entry in walker.into_iter().filter_map(|e| e.ok()).filter(|e| e.file_type().is_file()) {
     let p = entry.path().to_path_buf();
     if let Some(ext) = p.extension().and_then(|e| e.to_str()).map(|s| s.to_lowercase()) {
       if SUPPORTED.contains(&ext.as_str()) {
         files.push(p);
-      }
-    }
-    if !req.recursive {
-      if entry.depth() > 0 {
-        break;
       }
     }
   }

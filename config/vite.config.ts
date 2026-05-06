@@ -1,6 +1,9 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import path from 'path'
+import AutoImport from 'unplugin-auto-import/vite'
+import Components from 'unplugin-vue-components/vite'
+import { ElementPlusResolver } from 'unplugin-vue-components/resolvers'
 
 export default defineConfig({
   root: path.resolve(__dirname, '../'),
@@ -17,8 +20,25 @@ export default defineConfig({
   build: {
     outDir: path.resolve(__dirname, '../build'),
     rollupOptions: {
-      input: path.resolve(__dirname, '../index.html')
-    }
+      input: path.resolve(__dirname, '../index.html'),
+      output: {
+        manualChunks: {
+          'vue-vendor': ['vue', 'element-plus'],
+          'echarts-vendor': ['echarts']
+        }
+      }
+    },
+    chunkSizeWarningLimit: 1000
   },
-  plugins: [vue()]
+  plugins: [
+    vue(),
+    AutoImport({
+      resolvers: [ElementPlusResolver()],
+      dts: path.resolve(__dirname, 'auto-imports.d.ts')
+    }),
+    Components({
+      resolvers: [ElementPlusResolver()],
+      dts: path.resolve(__dirname, 'components.d.ts')
+    })
+  ]
 })

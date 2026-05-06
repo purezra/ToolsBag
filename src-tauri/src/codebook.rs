@@ -13,7 +13,7 @@ use crate::models::{
 use crate::utils::ensure_dir;
 use crate::webdav;
 use chrono::Utc;
-use ed25519_dalek::Keypair;
+use ed25519_dalek::SigningKey;
 use hmac::{digest::KeyInit, Hmac, Mac};
 use rand::rngs::OsRng as RandOsRng;
 use serde::{Deserialize, Serialize};
@@ -25,7 +25,7 @@ use std::{
   path::{Path, PathBuf},
   sync::Mutex,
 };
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 use uuid::Uuid;
 use zeroize::Zeroize;
 
@@ -99,10 +99,9 @@ fn now_iso() -> String {
 }
 
 fn vault_root(app: &AppHandle) -> PathBuf {
-  let resolver = app.path_resolver();
-  resolver
+  app.path()
     .app_local_data_dir()
-    .unwrap_or_else(|| resolver.app_data_dir().unwrap_or_else(|| PathBuf::from("vault")))
+    .unwrap_or_else(|_| PathBuf::from("vault"))
     .join("vault")
 }
 
@@ -170,9 +169,8 @@ fn set_state(master_key: [u8; 32], device_key: [u8; 32], meta: &MetaFile) {
 }
 
 fn update_state_version(version: u64) {
-  if let Ok(mut guard) = STATE.lock() {
-    guard.global_version = version;
-  }
+  let mut guard = STATE.lock().expect("state poisoned");
+  guard.global_version = version;
 }
 
 fn clear_state() {
@@ -315,7 +313,7 @@ pub fn initialize_vault(app: AppHandle, password: String, device_name: Option<St
   // generate device key + identity
   let mut dk = [0u8; 32];
   RandOsRng.fill_bytes(&mut dk);
-  let keypair = Keypair::generate(&mut RandOsRng);
+  let signing_key = SigningKey::generate(&mut RandOsRng);
   let device_id = Uuid::new_v4().to_string();
   let device_name = device_name.unwrap_or_else(|| "PC".into());
 
@@ -330,7 +328,7 @@ pub fn initialize_vault(app: AppHandle, password: String, device_name: Option<St
     device: DeviceMeta {
       id: device_id.clone(),
       name: device_name.clone(),
-      public_key: encode_b64(&keypair.public.to_bytes()),
+      public_key: encode_b64(&signing_key.verifying_key().to_bytes()),
       wrapped_device_key: wrapped,
     },
   };
@@ -340,11 +338,11 @@ pub fn initialize_vault(app: AppHandle, password: String, device_name: Option<St
     devices: vec![DeviceRecord {
       id: device_id.clone(),
       name: device_name.clone(),
-      public_key: encode_b64(&keypair.public.to_bytes()),
+      public_key: encode_b64(&signing_key.verifying_key().to_bytes()),
       added_at: now_iso(),
       revoked_at: None,
       revoked: false,
-      private_key: Some(encode_b64(&keypair.secret.to_bytes())),
+      private_key: Some(encode_b64(&signing_key.to_bytes())),
     }],
   };
 
@@ -460,7 +458,7 @@ pub fn list_entries(app: AppHandle) -> Result<VaultEntries, String> {
   })
 }
 
-fn write_entry(root: &Path, dk: &[u8], account: &SecureAccount) -> Result<(), String> {
+fn write_entry_internal(root: &Path, dk: &[u8], account: &SecureAccount) -> Result<(), String> {
   let payload = serde_json::to_vec(account).map_err(|e| e.to_string())?;
   let blob = encrypt_with_device(dk, &derive_entry_context(&account.id), &payload)?;
   let path = entries_dir(root).join(format!("{}.json.enc", account.id));
@@ -468,6 +466,24 @@ fn write_entry(root: &Path, dk: &[u8], account: &SecureAccount) -> Result<(), St
   if account.deleted {
     let recycle_path = recycle_dir(root).join(format!("{}.json.enc", account.id));
     write_encrypted_blob(&recycle_path, &blob)?;
+  }
+  Ok(())
+}
+
+fn save_entry_batch(root: &Path, dk: &[u8], account: &SecureAccount, index: &mut IndexFile) -> Result<(), String> {
+  let mut account = account.clone();
+  account = normalize_account(account);
+  write_entry_internal(root, dk, &account)?;
+  update_index_with_entry(index, &account);
+  if !account.account_identity.is_empty()
+    && !index.config.user_identities.contains(&account.account_identity)
+  {
+    index.config.user_identities.push(account.account_identity.clone());
+  }
+  for tag in account.tags.iter() {
+    if !index.config.service_tags.contains(tag) {
+      index.config.service_tags.push(tag.clone());
+    }
   }
   Ok(())
 }
@@ -502,7 +518,7 @@ fn sanitize_tags(tags: &[String]) -> Vec<String> {
       if v.is_empty() {
         None
       } else {
-        let lower = v.to_string();
+        let lower = v.to_lowercase();
         if uniq.contains(&lower) {
           None
         } else {
@@ -545,7 +561,7 @@ pub fn save_entry(app: AppHandle, mut account: SecureAccount) -> Result<SecureAc
     }
   }
 
-  write_entry(&root, &dk, &account)?;
+  write_entry_internal(&root, &dk, &account)?;
   update_index_with_entry(&mut index, &account);
 
   bump_version(&mut meta);
@@ -554,7 +570,7 @@ pub fn save_entry(app: AppHandle, mut account: SecureAccount) -> Result<SecureAc
   persist_guard(&root, meta.global_version);
   update_state_version(meta.global_version);
 
-  app.emit_all("codebook-sync", SYNC_HINT).ok();
+  app.emit("codebook-sync", SYNC_HINT).ok();
   Ok(account)
 }
 
@@ -576,7 +592,7 @@ pub fn delete_entry(app: AppHandle, id: String) -> Result<VaultEntries, String> 
         .map_err(|e| e.to_string())?;
     acc.deleted = true;
     acc.updated_at = entry_idx.updated_at.clone();
-    write_entry(&root, &dk, &acc)?;
+    write_entry_internal(&root, &dk, &acc)?;
   }
 
   bump_version(&mut meta);
@@ -584,7 +600,7 @@ pub fn delete_entry(app: AppHandle, id: String) -> Result<VaultEntries, String> 
   persist_meta(&root, &meta)?;
   persist_guard(&root, meta.global_version);
   update_state_version(meta.global_version);
-  app.emit_all("codebook-sync", SYNC_HINT).ok();
+  app.emit("codebook-sync", SYNC_HINT).ok();
   list_entries(app)
 }
 
@@ -606,7 +622,7 @@ pub fn restore_entry(app: AppHandle, id: String) -> Result<VaultEntries, String>
         .map_err(|e| e.to_string())?;
     acc.deleted = false;
     acc.updated_at = entry_idx.updated_at.clone();
-    write_entry(&root, &dk, &acc)?;
+    write_entry_internal(&root, &dk, &acc)?;
   }
 
   bump_version(&mut meta);
@@ -614,7 +630,7 @@ pub fn restore_entry(app: AppHandle, id: String) -> Result<VaultEntries, String>
   persist_meta(&root, &meta)?;
   persist_guard(&root, meta.global_version);
   update_state_version(meta.global_version);
-  app.emit_all("codebook-sync", SYNC_HINT).ok();
+  app.emit("codebook-sync", SYNC_HINT).ok();
   list_entries(app)
 }
 
@@ -689,7 +705,7 @@ pub fn revoke_device(app: AppHandle, target_id: String) -> Result<DevicesPayload
   if !is_current {
     update_state_version(meta.global_version);
   }
-  app.emit_all("codebook-sync", SYNC_HINT).ok();
+  app.emit("codebook-sync", SYNC_HINT).ok();
   Ok(devices_to_payload(&devices))
 }
 
@@ -803,7 +819,7 @@ pub fn export_vaultx(app: AppHandle, req: VaultxExportRequest) -> Result<VaultxE
     schema: "vaultx.meta.v2".to_string(),
     device_id: device_id.clone(),
     device_name: meta.device.name.clone(),
-    platform: "windows".to_string(),
+    platform: std::env::consts::OS.to_string(),
     vault_version: meta.global_version,
     last_sync_at: now_ts,
     attach_hash: attach_hash.clone(),
@@ -940,9 +956,10 @@ pub fn import_vaultx(app: AppHandle, req: VaultxImportRequest) -> Result<VaultEn
     HashMap::new()
   };
 
-  // 5. 转换为本地格式并保存
+  // 5. 转换为本地格式并批量保存
+  let mut meta = load_meta(&root)?;
+  let mut index = load_index(&root, &dk)?;
   for v2_entry in v2_dat.entries {
-    // 重建图片数据
     let mut images = Vec::new();
     for attach_id in &v2_entry.attachments {
       if let Some(attach) = attachments.get(attach_id) {
@@ -971,18 +988,26 @@ pub fn import_vaultx(app: AppHandle, req: VaultxImportRequest) -> Result<VaultEn
       updated_at,
       deleted: v2_entry.deleted,
     };
-    let _ = save_entry(app.clone(), account)?;
+    save_entry_batch(&root, &dk, &account, &mut index)?;
   }
 
-  // 6. 保存配置
-  let config = CodebookConfig {
-    user_identities: Vec::new(),
-    identity_presets: v2_dat.identity_presets,
-    service_tags: v2_dat.service_tags,
-  };
-  let _ = save_config(app.clone(), config)?;
+  // 6. 保存配置（合并）
+  let mut config = index.config.clone();
+  config.identity_presets = v2_dat.identity_presets;
+  for tag in v2_dat.service_tags {
+    if !config.service_tags.contains(&tag) {
+      config.service_tags.push(tag);
+    }
+  }
+  index.config = config;
 
-  app.emit_all("codebook-sync", SYNC_HINT).ok();
+  bump_version(&mut meta);
+  persist_index(&root, &dk, &index)?;
+  persist_meta(&root, &meta)?;
+  persist_guard(&root, meta.global_version);
+  update_state_version(meta.global_version);
+
+  app.emit("codebook-sync", SYNC_HINT).ok();
   webdav::record_audit_log(
     &app,
     &device_id,

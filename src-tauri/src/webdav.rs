@@ -17,7 +17,7 @@ use std::{
   thread,
   time::Duration,
 };
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 
 const WEBDAV_VAULT_PATH: &str = "/webdav/vault";
 const MANIFEST_PATH: &str = "/webdav/vault/entries/manifest.json";
@@ -70,7 +70,7 @@ fn assert_vault_path(path: &str) -> Result<(), String> {
       return Ok(());
     }
   }
-  Err("VaultXSafetyFirewall: æ­¢æ­¢è®¿é—®éžæŽˆæƒç›®å½•".into())
+  Err("VaultXSafetyFirewall: 访问非授权目录".into())
 }
 
 
@@ -209,17 +209,16 @@ fn validate_remote_structure(client: &WebdavClient) -> Result<(), String> {
   ];
   for path in required {
     if !client.exists(&path) {
-      return Err(format!("WebDAVStructureValidator: ç¼ºå°‘å¿…è¦ç›®å½• {path}"));
+      return Err(format!("WebDAVStructureValidator: 缺少必要目录 {path}"));
     }
   }
   Ok(())
 }
 
 fn changelog_path(app: &AppHandle) -> PathBuf {
-  let resolver = app.path_resolver();
-  resolver
+  app.path()
     .app_local_data_dir()
-    .unwrap_or_else(|| resolver.app_data_dir().unwrap_or_else(|| PathBuf::from(".")))
+    .unwrap_or_else(|_| PathBuf::from("."))
     .join("sync_changelog.json")
 }
 
@@ -257,10 +256,9 @@ pub fn record_audit_log(app: &AppHandle, device_id: &str, action: &str, entry_id
 }
 
 fn webdav_config_path(app: &AppHandle) -> PathBuf {
-  let resolver = app.path_resolver();
-  resolver
+  app.path()
     .app_local_data_dir()
-    .unwrap_or_else(|| resolver.app_data_dir().unwrap_or_else(|| PathBuf::from(".")))
+    .unwrap_or_else(|_| PathBuf::from("."))
     .join("webdav_config.json")
 }
 
@@ -569,7 +567,7 @@ pub fn resolve_conflict(local: &OnlineEntry, remote: &OnlineEntry) -> (OnlineEnt
 pub fn sync_now(app: &AppHandle) -> Result<SyncResult, String> {
   let (config, _mk, device_id, _) = require_sync_state()?;
   if !config.enabled {
-    return Err("WebDAV æœªå¯ç”¨".into());
+    return Err("WebDAV 未启用".into());
   }
   let client = WebdavClient::new(&config)?;
   client.ensure_vault_dirs()?;
@@ -707,7 +705,7 @@ pub fn sync_now(app: &AppHandle) -> Result<SyncResult, String> {
 }
 
 pub fn pull_changes(app: &AppHandle) -> Result<Vec<SyncConflict>, String> {
-  let (config, _mk, _device_id, _) = require_sync_state()?;
+  let (config, _mk, device_id, _) = require_sync_state()?;
   let client = WebdavClient::new(&config)?;
   validate_remote_structure(&client)?;
   let remote_meta = match fetch_online_meta(app)? {
@@ -719,15 +717,57 @@ pub fn pull_changes(app: &AppHandle) -> Result<Vec<SyncConflict>, String> {
     state.last_sync_version
   };
   if remote_meta.vault_version < local_version {
-    return Err("WebDAVRollbackGuard: è¿œç«¯ç‰ˆæœ¬å°äºŽæœ¬åœ°æœ€è¿‘ç‰ˆæœ¬ï¼Œæ£€æµ‹åˆ°å›žæ»šæ“ä½œ".into());
+    return Err("WebDAVRollbackGuard: 远端版本小于本地最近版本，检测到回滚操作".into());
   }
   if remote_meta.vault_version <= local_version {
     return Ok(Vec::new());
   }
-  let conflicts = Vec::new();
+
+  let remote_manifest = fetch_manifest(app)?;
+  let local_entries = codebook::list_entries(app.clone())?;
+  let local_all: Vec<_> = local_entries.active.iter().chain(local_entries.deleted.iter()).collect();
+  let local_map: std::collections::HashMap<String, &SecureAccount> = local_all
+    .iter()
+    .map(|e| (e.id.clone(), *e))
+    .collect();
+
+  let mut conflicts: Vec<SyncConflict> = Vec::new();
+  let mut pulled = 0;
+
+  for remote_entry_meta in remote_manifest.iter() {
+    let remote_entry = match fetch_entry(app, &remote_entry_meta.entry_id)? {
+      Some(e) => e,
+      None => continue,
+    };
+    if let Some(local_acc) = local_map.get(&remote_entry_meta.entry_id) {
+      let local_ts = parse_ts_iso(&local_acc.updated_at);
+      if remote_entry_meta.updated_at > local_ts {
+        let account = online_entry_to_account(&remote_entry);
+        let _ = codebook::save_entry(app.clone(), account)?;
+        pulled += 1;
+      } else if remote_entry_meta.updated_at < local_ts {
+        conflicts.push(SyncConflict {
+          entry_id: remote_entry_meta.entry_id.clone(),
+          entry_title: local_acc.name.clone(),
+          local_updated_at: local_ts,
+          remote_updated_at: remote_entry_meta.updated_at,
+          local_updated_by: device_id.clone(),
+          remote_updated_by: remote_entry_meta.last_updated_by.clone(),
+        });
+      }
+    } else {
+      let account = online_entry_to_account(&remote_entry);
+      let _ = codebook::save_entry(app.clone(), account)?;
+      pulled += 1;
+    }
+  }
+
   {
     let mut state = SYNC_STATE.write();
     state.last_sync_version = remote_meta.vault_version;
+  }
+  if pulled > 0 {
+    let _ = app.emit("sync-updated", "");
   }
   Ok(conflicts)
 }
@@ -787,9 +827,9 @@ pub fn start_polling(app: AppHandle) {
       thread::sleep(Duration::from_secs(POLL_INTERVAL_SECS));
       if let Ok(conflicts) = pull_changes(&app) {
         if !conflicts.is_empty() {
-          let _ = app.emit_all("sync-conflicts", &conflicts);
+          let _ = app.emit("sync-conflicts", &conflicts);
         }
-        let _ = app.emit_all("sync-updated", "");
+        let _ = app.emit("sync-updated", "");
       }
     }
     let mut state = SYNC_STATE.write();

@@ -18,12 +18,12 @@ use walkdir::WalkDir;
 use zip::write::FileOptions;
 use zip::ZipWriter;
 pub fn list_images(input_dir: PathBuf, recursive: bool) -> Result<Vec<FileEntry>, String> {
+  let mut walker = WalkDir::new(&input_dir).follow_links(false);
+  if !recursive {
+    walker = walker.max_depth(1);
+  }
   let mut files = Vec::new();
-  for entry in WalkDir::new(&input_dir)
-    .follow_links(false)
-    .into_iter()
-    .filter_map(|e| e.ok())
-  {
+  for entry in walker.into_iter().filter_map(|e| e.ok()) {
     if entry.file_type().is_file() {
       let path = entry.path().to_path_buf();
       if let Some(ext) = path.extension().and_then(|e| e.to_str()).map(|s| s.to_lowercase()) {
@@ -37,9 +37,6 @@ pub fn list_images(input_dir: PathBuf, recursive: bool) -> Result<Vec<FileEntry>
           });
         }
       }
-    }
-    if !recursive && entry.depth() > 0 {
-      continue;
     }
   }
   Ok(files)
@@ -278,6 +275,22 @@ fn prepare_pages(
 
   if is_jpeg && !jpeg_rgb && jpeg_is_cmyk(path) {
     let rgb_data = convert_cmyk_to_rgb(path)?;
+    let (w, h) = image_dimensions(path).map_err(|e| ImageIssue {
+      path: path.to_path_buf(),
+      reasons: vec![e.to_string()],
+    })?;
+    let mut rotated_90_or_270 = false;
+    if let Ok(file) = std::fs::File::open(path) {
+      let mut reader = std::io::BufReader::new(file);
+      if let Ok(exif) = exif::Reader::new().read_from_container(&mut reader) {
+        if let Some(orientation) = exif.get_field(exif::Tag::Orientation, exif::In::PRIMARY).and_then(|f| f.value.get_uint(0)) {
+          rotated_90_or_270 = matches!(orientation, 5 | 6 | 7 | 8);
+          if orientation != 1 {
+            note_warning(warnings, path, &format!("应用 EXIF 旋转: {} (CMYK)", orientation));
+          }
+        }
+      }
+    }
     return Ok(vec![PageBuf {
       w,
       h,
@@ -286,7 +299,7 @@ fn prepare_pages(
       color_space: "DeviceRGB",
       bits: 8,
       smask: None,
-      rotated_90_or_270: false,
+      rotated_90_or_270,
     }]);
   }
 

@@ -97,7 +97,6 @@ pub enum AppError {
 /// Tauri 命令返回的序列化错误
 #[allow(dead_code)]
 #[derive(Debug, Serialize)]
-#[allow(dead_code)]
 pub struct CommandError {
     pub code: String,
     pub message: String,
