@@ -1,5 +1,5 @@
 //! 统一错误处理模块
-//! 
+//!
 //! 提供全局错误类型，替代分散的 `.map_err(|e| e.to_string())` 调用
 
 use serde::Serialize;

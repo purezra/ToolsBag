@@ -33,17 +33,19 @@ const tickerText = computed(() => {
       <el-segmented
         v-model="viewMode"
         :options="[
-          { label: t('批处理模式'), value: 'batch' },
-          { label: t('视频信息展览'), value: 'exhibition' },
+          { label: t('媒体整理'), value: 'batch' },
+          { label: t('视频体检'), value: 'exhibition' },
         ]"
         size="default"
       />
     </div>
 
-    <!-- 视频信息展览模式 -->
-    <VideoInfoView v-if="viewMode === 'exhibition'" />
+    <!-- 视频体检模式（KeepAlive 保留状态） -->
+    <KeepAlive>
+      <VideoInfoView v-if="viewMode === 'exhibition'" />
+    </KeepAlive>
 
-    <!-- 批处理模式 -->
+    <!-- 媒体整理模式 -->
     <template v-if="viewMode === 'batch'">
     <MediaTopBar
       :importing="batch.importing"
@@ -149,6 +151,9 @@ const tickerText = computed(() => {
             :leading-zeros="batch.leadingZeros"
             :visible-video-columns="batch.visibleVideoColumns"
             :visible-image-columns="batch.visibleImageColumns"
+            :show-preview="batch.showPreview"
+            :rename-safety-summary="batch.renameSafetySummary"
+            :can-undo-rename="batch.canUndoRename"
             @update:durationFormat="(val) => (batch.durationFormat = val)"
             @update:customText="(val) => (batch.customText = val)"
             @update:separator="(val) => (batch.separator = val)"
@@ -157,6 +162,8 @@ const tickerText = computed(() => {
             @moveField="batch.moveField"
             @previewRename="batch.previewRename"
             @applyRename="batch.applyRename"
+            @undoRename="batch.undoLastRename"
+            @applyPreset="batch.applyOrganizePreset"
             @toggleRenameFields="batch.toggleRenameFields"
           />
         </el-card>

@@ -11,13 +11,7 @@
     "dialog:allow-ask",
     "dialog:allow-confirm",
     "dialog:allow-message",
-    "fs:default",
-    "fs:read-all",
-    "fs:write-all",
-    "fs:scope",
     "clipboard-manager:allow-read-text",
-    "clipboard-manager:allow-write-text",
-    "shell:default",
-    "shell:allow-open"
+    "clipboard-manager:allow-write-text"
   ]
 }

@@ -2,7 +2,7 @@
 import type { ConvertReq, ConvertResp, EpubConvertReq, EpubConvertResp } from '../types/image'
 
 export const listImages = (inputDir: string, recursive = true) => {
-  return invoke<{ name: string; path: string; format: string; size: number }[]>('list_images_tool3', {
+  return invoke<{ name: string; path: string; format: string; size: number }[]>('list_images', {
     inputDir,
     recursive
   })

@@ -185,6 +185,7 @@
 
 <script setup lang="ts">
 import { ref, computed, nextTick, onMounted, onBeforeUnmount } from 'vue'
+import { ElMessage } from 'element-plus'
 import { open, save } from '@tauri-apps/plugin-dialog'
 import { listen } from '@tauri-apps/api/event'
 import {
@@ -288,7 +289,7 @@ async function analyzeFolder() {
     
     await updatePreview()
   } catch (e: any) {
-    alert('分析失败: ' + e)
+    ElMessage.error('分析失败: ' + e)
     analysis.value = null
   } finally {
     loading.value = false

@@ -1,8 +1,7 @@
 import { ref, computed } from 'vue'
-import { readDir } from '@tauri-apps/plugin-fs'
 import { ElMessage } from 'element-plus'
 import type { TraverseResp, PreviewStats, MediaFileInfo, MediaPreviewFile } from '../types/file'
-import { previewMedia } from '../api/file-traverse'
+import { previewDirectoryFiles, previewMedia } from '../api/file-traverse'
 
 export interface FormatInfo {
   ext: string
@@ -162,12 +161,7 @@ export function useTraverse() {
         buildMediaPreviewCategoriesFromBackend(result.videos, result.audios, result.images)
       } else {
         // 普通模式：只扫描文件列表
-        const files = await flattenEntries(inputDir.value)
-        previewStats.value = {
-          files,
-          totalCount: files.length,
-          totalSize: files.reduce((sum, f) => sum + f.size, 0)
-        }
+        previewStats.value = await previewDirectoryFiles(inputDir.value)
         selectAllCategories()
       }
     } catch (e) {
@@ -248,26 +242,6 @@ export function useTraverse() {
       .sort((a, b) => b[1] - a[1])
       .map(([ext, count]) => `.${ext}(${count})`)
       .join(' ')
-  }
-
-  // 扁平化目录条目，提取所有文件
-  async function flattenEntries(dirPath: string): Promise<{ name: string; path: string; size: number }[]> {
-    const files: { name: string; path: string; size: number }[] = []
-
-    async function processDir(dir: string) {
-      const entries = await readDir(dir)
-      for (const entry of entries) {
-        const fullPath = `${dir}/${entry.name}`
-        if (entry.isDirectory) {
-          await processDir(fullPath)
-        } else if (entry.isFile) {
-          files.push({ name: entry.name, path: fullPath, size: 0 })
-        }
-      }
-    }
-
-    await processDir(dirPath)
-    return files
   }
 
   const selectAllCategories = () => {

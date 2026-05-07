@@ -46,6 +46,14 @@ export type RenameField = {
   enabled: boolean
 }
 
+export type RenameSafetySummary = {
+  total: number
+  readyCount: number
+  unchangedCount: number
+  illegalNameCount: number
+  duplicateTargetCount: number
+}
+
 export type ImportStats = {
   total: number
   success: number
@@ -70,7 +78,7 @@ export type ExternalToolStatus = {
   path?: string
 }
 
-// ==================== 视频信息展览 - 详细元数据类型 ====================
+// ==================== 视频体检 - 详细元数据类型 ====================
 
 export type DisplayLevel = 'public' | 'beginner' | 'advanced' | 'professional'
 

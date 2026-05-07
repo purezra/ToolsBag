@@ -190,6 +190,7 @@ export function useClickEffect() {
   let particles: Particle[] = []
   let animationId: number | null = null
   let isRunning = false
+  const pendingTimers = new Set<number>()
 
   const getBaseDecay = () => {
     return 0.015 * (100 / duration.value)
@@ -209,9 +210,11 @@ export function useClickEffect() {
       case 'ripple':
         particles.push(new RippleParticle(x, y, baseDecay))
         if (Math.random() > 0.5) {
-          setTimeout(() => {
-            if (enabled.value) particles.push(new RippleParticle(x, y, baseDecay))
+          const timerId = window.setTimeout(() => {
+            pendingTimers.delete(timerId)
+            if (enabled.value && isRunning) particles.push(new RippleParticle(x, y, baseDecay))
           }, 100)
+          pendingTimers.add(timerId)
         }
         break
       case 'halo':
@@ -283,6 +286,8 @@ export function useClickEffect() {
 
   const destroy = () => {
     isRunning = false
+    for (const id of pendingTimers) clearTimeout(id)
+    pendingTimers.clear()
     if (animationId) {
       cancelAnimationFrame(animationId)
       animationId = null

@@ -1,9 +1,12 @@
 //! 统一加密模块
-//! 
+//!
 //! 提供 AES-GCM 加密、HMAC 校验、密钥派生等功能
 //! 供 codebook 和 webdav 模块共用
 
-use aes_gcm::{aead::{Aead, KeyInit as AesKeyInit}, Aes256Gcm, Nonce};
+use aes_gcm::{
+    aead::{Aead, KeyInit as AesKeyInit},
+    Aes256Gcm, Nonce,
+};
 use argon2::{Algorithm, Argon2, Params, Version};
 use base64::{engine::general_purpose, Engine};
 use hkdf::Hkdf;
@@ -120,8 +123,8 @@ pub fn encrypt_with_key(
 ) -> AppResult<EncryptedBlob> {
     let iv = random_iv();
 
-    let cipher = Aes256Gcm::new_from_slice(symmetric)
-        .map_err(|e| AppError::Encryption(e.to_string()))?;
+    let cipher =
+        Aes256Gcm::new_from_slice(symmetric).map_err(|e| AppError::Encryption(e.to_string()))?;
     let ciphertext = cipher
         .encrypt(Nonce::from_slice(&iv), plaintext)
         .map_err(|e| AppError::Encryption(e.to_string()))?;
@@ -162,21 +165,29 @@ pub fn decrypt_with_key(
     mac.verify_slice(&hmac_bytes)
         .map_err(|_| AppError::HmacVerifyFailed)?;
 
-    let cipher = Aes256Gcm::new_from_slice(symmetric)
-        .map_err(|e| AppError::Decryption(e.to_string()))?;
+    let cipher =
+        Aes256Gcm::new_from_slice(symmetric).map_err(|e| AppError::Decryption(e.to_string()))?;
     cipher
         .decrypt(Nonce::from_slice(&iv), ciphertext.as_ref())
         .map_err(|e| AppError::Decryption(e.to_string()))
 }
 
 /// 使用设备密钥加密（自动派生文件密钥）
-pub fn encrypt_with_device(device_key: &[u8], context: &str, plaintext: &[u8]) -> AppResult<EncryptedBlob> {
+pub fn encrypt_with_device(
+    device_key: &[u8],
+    context: &str,
+    plaintext: &[u8],
+) -> AppResult<EncryptedBlob> {
     let (enc, mac) = derive_file_keys(device_key, context)?;
     encrypt_with_key(&enc, &mac, plaintext)
 }
 
 /// 使用设备密钥解密（自动派生文件密钥）
-pub fn decrypt_with_device(device_key: &[u8], context: &str, blob: &EncryptedBlob) -> AppResult<Vec<u8>> {
+pub fn decrypt_with_device(
+    device_key: &[u8],
+    context: &str,
+    blob: &EncryptedBlob,
+) -> AppResult<Vec<u8>> {
     let (enc, mac) = derive_file_keys(device_key, context)?;
     decrypt_with_key(&enc, &mac, blob)
 }
@@ -208,8 +219,8 @@ pub fn encrypt_for_sync(master_key: &[u8], context: &str, plaintext: &[u8]) -> A
 
 /// WebDAV 同步解密
 pub fn decrypt_from_sync(master_key: &[u8], context: &str, encrypted: &[u8]) -> AppResult<Vec<u8>> {
-    let blob: EncryptedBlob = serde_json::from_slice(encrypted)
-        .map_err(|e| AppError::Decryption(e.to_string()))?;
+    let blob: EncryptedBlob =
+        serde_json::from_slice(encrypted).map_err(|e| AppError::Decryption(e.to_string()))?;
     let (enc_key, mac_key) = derive_sync_keys(master_key, context)?;
     decrypt_with_key(&enc_key, &mac_key, &blob)
 }
@@ -225,5 +236,45 @@ pub fn default_kdf_params() -> KdfParams {
         mem_cost: 64 * 1024,
         time_cost: 3,
         parallelism: 2,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn encrypt_with_key_roundtrips_plaintext() {
+        let enc_key = random_key();
+        let mac_key = random_key();
+        let plaintext = b"toolsbag secret payload";
+
+        let blob = encrypt_with_key(&enc_key, &mac_key, plaintext).expect("encrypt");
+        let decrypted = decrypt_with_key(&enc_key, &mac_key, &blob).expect("decrypt");
+
+        assert_eq!(decrypted, plaintext);
+    }
+
+    #[test]
+    fn decrypt_rejects_tampered_ciphertext() {
+        let enc_key = random_key();
+        let mac_key = random_key();
+        let plaintext = b"do not accept modified data";
+        let mut blob = encrypt_with_key(&enc_key, &mac_key, plaintext).expect("encrypt");
+        blob.ciphertext.push('A');
+
+        assert!(decrypt_with_key(&enc_key, &mac_key, &blob).is_err());
+    }
+
+    #[test]
+    fn sync_encryption_is_bound_to_context() {
+        let master_key = random_key();
+        let plaintext = b"webdav config payload";
+        let encrypted = encrypt_for_sync(&master_key, "webdav-config", plaintext).expect("encrypt");
+
+        let decrypted =
+            decrypt_from_sync(&master_key, "webdav-config", &encrypted).expect("decrypt");
+        assert_eq!(decrypted, plaintext);
+        assert!(decrypt_from_sync(&master_key, "other-context", &encrypted).is_err());
     }
 }

@@ -1,5 +1,5 @@
 //! 图片合并PDF工具 - Rust后端核心模块
-//! 
+//!
 //! 功能：
 //! - 支持 JPG/JPEG、PNG、WebP 格式
 //! - 透明通道正确处理（flatten_to_white / preserve）
@@ -7,16 +7,18 @@
 //! - 页面方向：横版、竖版、自由
 //! - 边距系统
 //! - 预览与最终输出一致性
-//! 
+//!
 //! 重要：图像嵌入PDF时必须重新编码为JPEG/PNG压缩流，禁止原始RGBA位图
 
 extern crate image as image_crate;
 
 use exif::{In, Reader as ExifReader, Tag};
-use tauri::Emitter;
-use image_crate::{ColorType, DynamicImage, GenericImage, GenericImageView, ImageBuffer, ImageDecoder, ImageFormat, ImageReader, RgbImage, RgbaImage};
 use image_crate::codecs::webp::WebPDecoder;
 use image_crate::imageops::FilterType;
+use image_crate::{
+    ColorType, DynamicImage, GenericImage, GenericImageView, ImageBuffer, ImageDecoder,
+    ImageFormat, ImageReader, RgbImage, RgbaImage,
+};
 use jpeg_decoder::{Decoder as RawJpegDecoder, PixelFormat};
 use printpdf::*;
 use rayon::prelude::*;
@@ -25,9 +27,10 @@ use std::collections::BTreeMap;
 use std::fs::File;
 use std::io::{BufReader, BufWriter, Cursor};
 use std::path::{Path, PathBuf};
+use tauri::Emitter;
 use tiff::decoder::{Decoder as TiffDecoder, DecodingResult as TiffDecodingResult};
 
-const MM_TO_PT: f32 = 2.834_645_669;
+const MM_TO_PT: f32 = 2.834_645_7;
 
 /// 页面尺寸定义（单位：mm）
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
@@ -69,18 +72,13 @@ pub enum PageOrientation {
 }
 
 /// 透明通道处理模式
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Default)]
 pub enum TransparentMode {
     #[serde(rename = "flatten_to_white")]
-    FlattenToWhite,  // 预合成到白底（推荐，最兼容）
+    #[default]
+    FlattenToWhite, // 预合成到白底（推荐，最兼容）
     #[serde(rename = "preserve")]
-    Preserve,        // 保留透明通道（PNG）
-}
-
-impl Default for TransparentMode {
-    fn default() -> Self {
-        TransparentMode::FlattenToWhite
-    }
+    Preserve, // 保留透明通道（PNG）
 }
 
 /// 图片分析结果
@@ -139,15 +137,17 @@ pub struct PdfConfig {
     pub page_size: PageSize,
     pub orientation: PageOrientation,
     pub margin: f64,
-    pub compression: u8,          // 0-100, 100=不压缩
+    pub compression: u8, // 0-100, 100=不压缩
     pub output_path: String,
     #[serde(default)]
     pub transparent_mode: TransparentMode,
     #[serde(default = "default_jpeg_quality")]
-    pub jpeg_quality: u8,         // JPEG质量 1-100，默认90
+    pub jpeg_quality: u8, // JPEG质量 1-100，默认90
 }
 
-fn default_jpeg_quality() -> u8 { 90 }
+fn default_jpeg_quality() -> u8 {
+    90
+}
 
 /// 生成进度
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -207,7 +207,10 @@ fn validate_margin(margin: f64, page_size: PageSize) -> Result<f64, String> {
         return Err("边距不能为负".to_string());
     }
     if margin > max_margin {
-        return Err(format!("边距不能超过页面短边的40%（最大 {:.1} mm）", max_margin));
+        return Err(format!(
+            "边距不能超过页面短边的40%（最大 {:.1} mm）",
+            max_margin
+        ));
     }
     Ok(margin)
 }
@@ -256,19 +259,10 @@ fn calculate_page_layout(
     orientation: PageOrientation,
     margin: f64,
 ) -> LayoutResult {
-    let (page_width, page_height) = get_page_dimensions(
-        page_size,
-        orientation,
-        image.width,
-        image.height,
-    );
-    let image_layout = calculate_image_layout(
-        image.width,
-        image.height,
-        page_width,
-        page_height,
-        margin,
-    );
+    let (page_width, page_height) =
+        get_page_dimensions(page_size, orientation, image.width, image.height);
+    let image_layout =
+        calculate_image_layout(image.width, image.height, page_width, page_height, margin);
     LayoutResult {
         page_width,
         page_height,
@@ -292,12 +286,13 @@ fn detect_image_format(path: &Path) -> Option<String> {
 
 /// 检查DynamicImage是否有alpha通道
 fn has_alpha_channel(img: &DynamicImage) -> bool {
-    matches!(img, 
-        DynamicImage::ImageRgba8(_) |
-        DynamicImage::ImageRgba16(_) |
-        DynamicImage::ImageRgba32F(_) |
-        DynamicImage::ImageLumaA8(_) |
-        DynamicImage::ImageLumaA16(_)
+    matches!(
+        img,
+        DynamicImage::ImageRgba8(_)
+            | DynamicImage::ImageRgba16(_)
+            | DynamicImage::ImageRgba32F(_)
+            | DynamicImage::ImageLumaA8(_)
+            | DynamicImage::ImageLumaA16(_)
     )
 }
 
@@ -309,33 +304,35 @@ fn flatten_rgba_to_white(rgba: &RgbaImage) -> RgbImage {
 
     // 使用并行处理加速透明通道合成（利用多核CPU）
     use rayon::prelude::*;
-    rgb.par_chunks_mut(w as usize * 3).enumerate().for_each(|(y, chunk)| {
-        for x in 0..w as usize {
-            let pixel = rgba.get_pixel(x as u32, y as u32);
-            let [r, g, b, a] = pixel.0;
-            let alpha = a as f32 / 255.0;
-            let inv_alpha = 1.0 - alpha;
+    rgb.par_chunks_mut(w as usize * 3)
+        .enumerate()
+        .for_each(|(y, chunk)| {
+            for x in 0..w as usize {
+                let pixel = rgba.get_pixel(x as u32, y as u32);
+                let [r, g, b, a] = pixel.0;
+                let alpha = a as f32 / 255.0;
+                let inv_alpha = 1.0 - alpha;
 
-            let out_r = (r as f32 * alpha + 255.0 * inv_alpha) as u8;
-            let out_g = (g as f32 * alpha + 255.0 * inv_alpha) as u8;
-            let out_b = (b as f32 * alpha + 255.0 * inv_alpha) as u8;
+                let out_r = (r as f32 * alpha + 255.0 * inv_alpha) as u8;
+                let out_g = (g as f32 * alpha + 255.0 * inv_alpha) as u8;
+                let out_b = (b as f32 * alpha + 255.0 * inv_alpha) as u8;
 
-            let idx = x * 3;
-            chunk[idx] = out_r;
-            chunk[idx + 1] = out_g;
-            chunk[idx + 2] = out_b;
-        }
-    });
+                let idx = x * 3;
+                chunk[idx] = out_r;
+                chunk[idx + 1] = out_g;
+                chunk[idx + 2] = out_b;
+            }
+        });
 
     rgb
 }
 
 fn analyze_image(path: &Path) -> Result<ImageAnalysis, String> {
     let format = detect_image_format(path).ok_or("不支持的图片格式")?;
-    let (width, height) = image_crate::image_dimensions(path)
-        .map_err(|e| format!("无法读取图片尺寸: {}", e))?;
+    let (width, height) =
+        image_crate::image_dimensions(path).map_err(|e| format!("无法读取图片尺寸: {}", e))?;
     let has_alpha = matches!(format.as_str(), "png" | "webp" | "tiff");
-    
+
     Ok(ImageAnalysis {
         path: path.to_string_lossy().to_string(),
         width,
@@ -351,12 +348,15 @@ fn decode_image_fast(path: &Path, guessed_format: ImageFormat) -> Result<Dynamic
         // WebP 解码加速路径
         let file = File::open(path).map_err(|e| format!("无法打开 WebP: {}", e))?;
         let reader = BufReader::new(file);
-        let decoder = WebPDecoder::new(reader).map_err(|e| format!("WebP 解码器创建失败: {}", e))?;
+        let decoder =
+            WebPDecoder::new(reader).map_err(|e| format!("WebP 解码器创建失败: {}", e))?;
         let (w, h) = decoder.dimensions();
         let color = decoder.color_type();
         let total_bytes = decoder.total_bytes() as usize;
         let mut buf = vec![0u8; total_bytes];
-        decoder.read_image(&mut buf).map_err(|e| format!("WebP 解码失败: {}", e))?;
+        decoder
+            .read_image(&mut buf)
+            .map_err(|e| format!("WebP 解码失败: {}", e))?;
 
         return match color {
             ColorType::Rgb8 => ImageBuffer::from_raw(w, h, buf)
@@ -385,7 +385,10 @@ fn scan_folder(folder_path: &Path) -> Result<Vec<PathBuf>, String> {
         if path.is_file() {
             if let Some(ext) = path.extension() {
                 let ext = ext.to_str().unwrap_or("").to_lowercase();
-                if matches!(ext.as_str(), "jpg" | "jpeg" | "png" | "webp" | "tif" | "tiff") {
+                if matches!(
+                    ext.as_str(),
+                    "jpg" | "jpeg" | "png" | "webp" | "tif" | "tiff"
+                ) {
                     images.push(path);
                 }
             }
@@ -437,16 +440,22 @@ fn apply_exif_orientation(img: DynamicImage, path: &Path) -> DynamicImage {
     if let Ok(file) = std::fs::File::open(path) {
         let mut reader = BufReader::new(file);
         if let Ok(exif) = ExifReader::new().read_from_container(&mut reader) {
-            if let Some(orientation) = exif.get_field(Tag::Orientation, In::PRIMARY)
-                .and_then(|f| f.value.get_uint(0)) {
+            if let Some(orientation) = exif
+                .get_field(Tag::Orientation, In::PRIMARY)
+                .and_then(|f| f.value.get_uint(0))
+            {
                 let base = img.to_rgba8();
                 let rotated = match orientation {
                     2 => image_crate::imageops::flip_horizontal(&base),
                     3 => image_crate::imageops::rotate180(&base),
                     4 => image_crate::imageops::flip_vertical(&base),
-                    5 => image_crate::imageops::flip_horizontal(&image_crate::imageops::rotate90(&base)),
+                    5 => image_crate::imageops::flip_horizontal(&image_crate::imageops::rotate90(
+                        &base,
+                    )),
                     6 => image_crate::imageops::rotate90(&base),
-                    7 => image_crate::imageops::flip_horizontal(&image_crate::imageops::rotate270(&base)),
+                    7 => image_crate::imageops::flip_horizontal(&image_crate::imageops::rotate270(
+                        &base,
+                    )),
                     8 => image_crate::imageops::rotate270(&base),
                     _ => base,
                 };
@@ -461,7 +470,10 @@ fn jpeg_is_cmyk(path: &Path) -> bool {
     if let Ok(file) = std::fs::File::open(path) {
         let mut decoder = RawJpegDecoder::new(BufReader::new(file));
         if decoder.read_info().is_ok() {
-            return matches!(decoder.info().map(|i| i.pixel_format), Some(PixelFormat::CMYK32));
+            return matches!(
+                decoder.info().map(|i| i.pixel_format),
+                Some(PixelFormat::CMYK32)
+            );
         }
     }
     false
@@ -469,7 +481,9 @@ fn jpeg_is_cmyk(path: &Path) -> bool {
 
 fn convert_cmyk_to_rgb(path: &Path) -> Result<Vec<u8>, String> {
     let mut decoder = RawJpegDecoder::new(std::fs::File::open(path).map_err(|e| e.to_string())?);
-    let pixels = decoder.decode().map_err(|e| format!("CMYK 解码失败: {}", e))?;
+    let pixels = decoder
+        .decode()
+        .map_err(|e| format!("CMYK 解码失败: {}", e))?;
     let info = decoder.info().ok_or("无法获取 JPEG 信息")?;
     if !matches!(info.pixel_format, PixelFormat::CMYK32) {
         return Err("不是 CMYK JPEG".into());
@@ -488,22 +502,14 @@ fn convert_cmyk_to_rgb(path: &Path) -> Result<Vec<u8>, String> {
     Ok(rgb)
 }
 
-fn encode_rgb_to_processed(
-    rgb: &RgbImage,
-    quality: u8,
-) -> Result<ProcessedImage, String> {
+fn encode_rgb_to_processed(rgb: &RgbImage, quality: u8) -> Result<ProcessedImage, String> {
     let (w, h) = rgb.dimensions();
     let mut buffer = Cursor::new(Vec::new());
-    let mut encoder = image_crate::codecs::jpeg::JpegEncoder::new_with_quality(
-        &mut buffer,
-        quality,
-    );
-    encoder.encode(
-        rgb.as_raw(),
-        w,
-        h,
-        image_crate::ExtendedColorType::Rgb8,
-    ).map_err(|e| format!("JPEG编码失败: {}", e))?;
+    let mut encoder =
+        image_crate::codecs::jpeg::JpegEncoder::new_with_quality(&mut buffer, quality);
+    encoder
+        .encode(rgb.as_raw(), w, h, image_crate::ExtendedColorType::Rgb8)
+        .map_err(|e| format!("JPEG编码失败: {}", e))?;
 
     Ok(ProcessedImage {
         data: buffer.into_inner(),
@@ -527,13 +533,12 @@ fn convert_tiff_plane_u8(
             for v in data {
                 rgb.extend_from_slice(&[*v, *v, *v]);
             }
-            let img = image_crate::RgbImage::from_raw(w, h, rgb)
-                .ok_or("生成灰度 RGB 失败")?;
+            let img = image_crate::RgbImage::from_raw(w, h, rgb).ok_or("生成灰度 RGB 失败")?;
             Ok((img, None))
         }
         tiff::ColorType::RGB(8) => {
-            let img = image_crate::RgbImage::from_raw(w, h, data.to_vec())
-                .ok_or("生成 RGB 失败")?;
+            let img =
+                image_crate::RgbImage::from_raw(w, h, data.to_vec()).ok_or("生成 RGB 失败")?;
             Ok((img, None))
         }
         tiff::ColorType::RGBA(8) => {
@@ -543,8 +548,7 @@ fn convert_tiff_plane_u8(
                 rgb.extend_from_slice(&chunk[0..3]);
                 alpha.push(chunk[3]);
             }
-            let img = image_crate::RgbImage::from_raw(w, h, rgb)
-                .ok_or("生成 RGBA RGB 失败")?;
+            let img = image_crate::RgbImage::from_raw(w, h, rgb).ok_or("生成 RGBA RGB 失败")?;
             Ok((img, Some(alpha)))
         }
         _ => Err("不支持的 TIFF 颜色类型".into()),
@@ -646,10 +650,7 @@ struct PreparedPage {
 }
 
 /// 处理单张图像：解码 -> 可选resize -> 透明处理 -> 编码为JPEG/PNG
-fn process_image_for_pdf(
-    path: &Path,
-    config: &PdfConfig,
-) -> Result<Vec<PreparedPage>, String> {
+fn process_image_for_pdf(path: &Path, config: &PdfConfig) -> Result<Vec<PreparedPage>, String> {
     if is_heic(path) {
         return Err("HEIC/HEIF 格式暂不支持，请先转换为 JPEG/PNG/WebP".to_string());
     }
@@ -673,14 +674,18 @@ fn process_image_for_pdf(
     let (orig_w, orig_h) = img.dimensions();
     let megapixels = (orig_w as u64 * orig_h as u64) / 1_000_000;
     if megapixels > 100 {
-        eprintln!("警告: 图片 {} 超过100MP ({}MP)，建议降低压缩级别", path.display(), megapixels);
+        eprintln!(
+            "警告: 图片 {} 超过100MP ({}MP)，建议降低压缩级别",
+            path.display(),
+            megapixels
+        );
     }
 
     // JPEG CMYK 转 RGB（避免色偏）
     if matches!(guessed_format, ImageFormat::Jpeg) && jpeg_is_cmyk(path) {
         let rgb = convert_cmyk_to_rgb(path)?;
-        let rgb_img = image_crate::RgbImage::from_raw(orig_w, orig_h, rgb)
-            .ok_or("CMYK 转换失败")?;
+        let rgb_img =
+            image_crate::RgbImage::from_raw(orig_w, orig_h, rgb).ok_or("CMYK 转换失败")?;
         img = DynamicImage::ImageRgb8(rgb_img);
     }
 
@@ -703,12 +708,7 @@ fn process_image_for_pdf(
 
     let processed = encode_rgb_to_processed(&rgb, config.jpeg_quality)?;
 
-    let (page_width, page_height) = get_page_dimensions(
-        config.page_size,
-        config.orientation,
-        w,
-        h,
-    );
+    let (page_width, page_height) = get_page_dimensions(config.page_size, config.orientation, w, h);
     let layout = calculate_image_layout(
         w,
         h,
@@ -747,9 +747,8 @@ fn embed_encoded_image_to_page(
         smask: None,
     };
 
-    let pdf_image = Image::try_from(image_xobject)
-        .map_err(|e| format!("创建PDF图像对象失败: {:?}", e))?;
-    
+    let pdf_image = Image::from(image_xobject);
+
     // 计算变换（以 mm 为基准 -> pt；dpi 固定 72 确保比例准确）
     let transform = ImageTransform {
         translate_x: Some(Mm(prepared.layout.x as f32)),
@@ -761,7 +760,7 @@ fn embed_encoded_image_to_page(
     };
 
     pdf_image.add_to_layer(current_layer, transform);
-    
+
     Ok(())
 }
 
@@ -769,28 +768,26 @@ fn embed_encoded_image_to_page(
 
 #[tauri::command]
 pub async fn analyze_folder_for_pdf(folder_path: String) -> Result<FolderAnalysis, String> {
-    let path = PathBuf::from(&folder_path);
-    if !path.exists() || !path.is_dir() {
-        return Err("文件夹不存在".to_string());
-    }
-    
-    let image_paths = scan_folder(&path)?;
-    if image_paths.is_empty() {
-        return Err("文件夹中没有支持的图片文件".to_string());
-    }
-    
-    let results: Vec<Result<ImageAnalysis, String>> = image_paths
-        .par_iter()
-        .map(|p| analyze_image(p))
-        .collect();
-    
-    let mut images = Vec::new();
-    let mut portrait_count = 0;
-    let mut landscape_count = 0;
-    let mut total_size = 0u64;
-    
-    for result in results {
-        if let Ok(analysis) = result {
+    tokio::task::spawn_blocking(move || {
+        let path = PathBuf::from(&folder_path);
+        if !path.exists() || !path.is_dir() {
+            return Err("文件夹不存在".to_string());
+        }
+
+        let image_paths = scan_folder(&path)?;
+        if image_paths.is_empty() {
+            return Err("文件夹中没有支持的图片文件".to_string());
+        }
+
+        let results: Vec<Result<ImageAnalysis, String>> =
+            image_paths.par_iter().map(|p| analyze_image(p)).collect();
+
+        let mut images = Vec::new();
+        let mut portrait_count = 0;
+        let mut landscape_count = 0;
+        let mut total_size = 0u64;
+
+        for analysis in results.into_iter().flatten() {
             if analysis.is_portrait {
                 portrait_count += 1;
             } else {
@@ -801,23 +798,25 @@ pub async fn analyze_folder_for_pdf(folder_path: String) -> Result<FolderAnalysi
             }
             images.push(analysis);
         }
-    }
-    
-    let suggested_orientation = if portrait_count > landscape_count {
-        "portrait".to_string()
-    } else if landscape_count > portrait_count {
-        "landscape".to_string()
-    } else {
-        "auto".to_string()
-    };
-    
-    Ok(FolderAnalysis {
-        images,
-        portrait_count,
-        landscape_count,
-        suggested_orientation,
-        total_size,
+
+        let suggested_orientation = if portrait_count > landscape_count {
+            "portrait".to_string()
+        } else if landscape_count > portrait_count {
+            "landscape".to_string()
+        } else {
+            "auto".to_string()
+        };
+
+        Ok(FolderAnalysis {
+            images,
+            portrait_count,
+            landscape_count,
+            suggested_orientation,
+            total_size,
+        })
     })
+    .await
+    .map_err(|e| format!("task join error: {e}"))?
 }
 
 #[tauri::command]
@@ -832,7 +831,7 @@ pub fn calculate_preview_layout(
         .par_iter()
         .map(|img| calculate_page_layout(img, page_size, orientation, validated_margin))
         .collect();
-    
+
     Ok(PreviewData {
         pages,
         page_size,
@@ -851,34 +850,45 @@ pub async fn generate_pdf(
     let start = Instant::now();
 
     let total = images.len();
-    let original_total_size: u64 = images.iter()
+    let original_total_size: u64 = images
+        .iter()
         .filter_map(|img| std::fs::metadata(&img.path).ok())
         .map(|m| m.len())
         .sum();
 
     let validated_margin = validate_margin(config.margin, config.page_size)?;
-    let config = PdfConfig { margin: validated_margin, ..config };
+    let config = PdfConfig {
+        margin: validated_margin,
+        ..config
+    };
 
     // 第一阶段：并行处理图片（解码 -> resize -> 编码为JPEG/PNG）
-    let _ = window.emit("pdf_progress", GenerationProgress {
-        current: 0,
-        total,
-        current_file: String::new(),
-        phase: "处理图片".to_string(),
-    });
+    let _ = window.emit(
+        "pdf_progress",
+        GenerationProgress {
+            current: 0,
+            total,
+            current_file: String::new(),
+            phase: "处理图片".to_string(),
+        },
+    );
 
     let mut doc: Option<PdfDocumentReference> = None;
     let mut page_counter = 0usize;
-    let (tx, rx) = std::sync::mpsc::sync_channel::<Result<(usize, String, Vec<PreparedPage>), String>>(4);
+    let (tx, rx) =
+        std::sync::mpsc::sync_channel::<Result<(usize, String, Vec<PreparedPage>), String>>(4);
     let images_clone = images.clone();
     let config_clone = config.clone();
     let tx_clone = tx.clone();
     rayon::spawn(move || {
-        images_clone.par_iter().enumerate().for_each_with(tx_clone, |sender, (idx, img)| {
-            let res = process_image_for_pdf(Path::new(&img.path), &config_clone)
-                .map(|pages| (idx, img.path.clone(), pages));
-            let _ = sender.send(res);
-        });
+        images_clone
+            .par_iter()
+            .enumerate()
+            .for_each_with(tx_clone, |sender, (idx, img)| {
+                let res = process_image_for_pdf(Path::new(&img.path), &config_clone)
+                    .map(|pages| (idx, img.path.clone(), pages));
+                let _ = sender.send(res);
+            });
     });
     drop(tx);
 
@@ -911,12 +921,15 @@ pub async fn generate_pdf(
                 }
 
                 page_counter += 1;
-                let _ = window.emit("pdf_progress", GenerationProgress {
-                    current: page_counter,
-                    total,
-                    current_file: String::new(),
-                    phase: "写入页面".to_string(),
-                });
+                let _ = window.emit(
+                    "pdf_progress",
+                    GenerationProgress {
+                        current: page_counter,
+                        total,
+                        current_file: String::new(),
+                        phase: "写入页面".to_string(),
+                    },
+                );
             }
             // prepared_pages 在此 drop，释放已写入页面的内存
             next_index += 1;
@@ -924,27 +937,32 @@ pub async fn generate_pdf(
     }
 
     let doc = doc.ok_or_else(|| "没有有效的图片可以处理".to_string())?;
-    
+
     // 保存PDF
     let output_path = PathBuf::from(&config.output_path);
     if let Some(parent) = output_path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
-    
+
     let file = File::create(&output_path).map_err(|e| e.to_string())?;
     let mut writer = BufWriter::new(file);
-    doc.save(&mut writer).map_err(|e| format!("保存PDF失败: {}", e))?;
-    
-    let file_size = std::fs::metadata(&output_path).map(|m| m.len()).unwrap_or(0);
+    doc.save(&mut writer)
+        .map_err(|e| format!("保存PDF失败: {}", e))?;
+
+    let file_size = std::fs::metadata(&output_path)
+        .map(|m| m.len())
+        .unwrap_or(0);
     let elapsed = start.elapsed().as_millis() as u64;
-    
+
     // 验证输出大小
     if file_size > original_total_size * 5 {
-        eprintln!("警告: PDF体积({:.1}MB)远大于原始图片总大小({:.1}MB)", 
+        eprintln!(
+            "警告: PDF体积({:.1}MB)远大于原始图片总大小({:.1}MB)",
             file_size as f64 / 1024.0 / 1024.0,
-            original_total_size as f64 / 1024.0 / 1024.0);
+            original_total_size as f64 / 1024.0 / 1024.0
+        );
     }
-    
+
     Ok(GenerationResult {
         success: true,
         output_path: config.output_path,
@@ -957,22 +975,83 @@ pub async fn generate_pdf(
 }
 
 #[tauri::command]
-pub async fn get_image_thumbnail(
-    image_path: String,
-    max_size: u32,
-) -> Result<String, String> {
-    let path = Path::new(&image_path);
-    let img = image_crate::open(path).map_err(|e| e.to_string())?;
-    
-    let thumbnail = create_thumbnail(&img, max_size.max(256).min(1024));
-    
-    let mut buffer = Cursor::new(Vec::new());
-    thumbnail.write_to(&mut buffer, ImageFormat::Png).map_err(|e| e.to_string())?;
-    
-    let base64_data = base64::Engine::encode(
-        &base64::engine::general_purpose::STANDARD,
-        buffer.into_inner()
-    );
-    
-    Ok(format!("data:image/png;base64,{}", base64_data))
+pub async fn get_image_thumbnail(image_path: String, max_size: u32) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || {
+        let path = Path::new(&image_path);
+        let img = image_crate::open(path).map_err(|e| e.to_string())?;
+
+        let thumbnail = create_thumbnail(&img, max_size.clamp(256, 1024));
+
+        let mut buffer = Cursor::new(Vec::new());
+        thumbnail
+            .write_to(&mut buffer, ImageFormat::Png)
+            .map_err(|e| e.to_string())?;
+
+        let base64_data = base64::Engine::encode(
+            &base64::engine::general_purpose::STANDARD,
+            buffer.into_inner(),
+        );
+
+        Ok(format!("data:image/png;base64,{}", base64_data))
+    })
+    .await
+    .map_err(|e| format!("task join error: {e}"))?
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn assert_close(actual: f64, expected: f64) {
+        assert!(
+            (actual - expected).abs() < 0.001,
+            "expected {expected}, got {actual}"
+        );
+    }
+
+    fn sample_image(width: u32, height: u32) -> ImageAnalysis {
+        ImageAnalysis {
+            path: "sample.jpg".to_string(),
+            width,
+            height,
+            is_portrait: height > width,
+            format: "jpeg".to_string(),
+            has_alpha: false,
+        }
+    }
+
+    #[test]
+    fn validate_margin_rejects_negative_and_oversized_values() {
+        assert!(validate_margin(-1.0, PageSize::A4).is_err());
+        assert!(validate_margin(85.0, PageSize::A4).is_err());
+        assert_eq!(
+            validate_margin(20.0, PageSize::A4).expect("valid margin"),
+            20.0
+        );
+    }
+
+    #[test]
+    fn auto_orientation_tracks_image_shape() {
+        assert_eq!(
+            get_page_dimensions(PageSize::A4, PageOrientation::Auto, 400, 800),
+            (210.0, 297.0)
+        );
+        assert_eq!(
+            get_page_dimensions(PageSize::A4, PageOrientation::Auto, 800, 400),
+            (297.0, 210.0)
+        );
+    }
+
+    #[test]
+    fn layout_preserves_aspect_ratio_and_centers_image() {
+        let image = sample_image(400, 200);
+        let layout = calculate_page_layout(&image, PageSize::A4, PageOrientation::Landscape, 10.0);
+
+        assert_close(layout.page_width, 297.0);
+        assert_close(layout.page_height, 210.0);
+        assert_close(layout.image.scaled_width, 277.0);
+        assert_close(layout.image.scaled_height, 138.5);
+        assert_close(layout.image.x, 10.0);
+        assert_close(layout.image.y, 35.75);
+    }
 }

@@ -29,14 +29,14 @@ type Tool = {
 const tools: Tool[] = [
   {
     key: 'media-batch',
-    name: '媒体批处理',
-    desc: '批量提取视频/图片信息，重命名与可视化分析，一站式处理',
+    name: '媒体元数据中心',
+    desc: '提取视频/图片元数据，批量整理命名，并输出视频体检报告',
     tag: 'V2',
     tagType: 'primary',
     icon: Grid,
     iconImage: '/assets/tool1.webp',
     accent: 'linear-gradient(135deg, #48c6ef, #6f86d6)',
-    meta: '并行提取 · 重命名 · 数据分析'
+    meta: '元数据提取 · 视频体检 · 批量整理'
   },
   {
     key: 'image-pdf-lite',
@@ -78,7 +78,7 @@ const tools: Tool[] = [
     tag: 'Pro',
     tagType: 'primary',
     icon: Document,
-    iconImage: '/assets/tool5.png',
+    iconImage: '/assets/tool4.webp',
     accent: 'linear-gradient(135deg, #667eea, #764ba2)',
     meta: '比例适配 · 边距系统 · 预览一致'
   }

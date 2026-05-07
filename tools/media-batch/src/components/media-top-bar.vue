@@ -35,7 +35,7 @@ const isApple = computed(() => theme.value === 'apple')
       <div class="title">
         <p class="eyebrow" v-if="!isApple">{{ t('批量工具 · V2.0') }}</p>
         <h2>{{ t('视频 / 图片批处理') }}</h2>
-        <p class="sub">{{ t('批量提取视频/图片信息，重命名与可视化分析，一站式处理') }}</p>
+        <p class="sub">{{ t('提取视频/图片元数据，批量整理命名，并输出视频体检报告') }}</p>
       </div>
     </div>
     <div class="right" v-if="isApple">

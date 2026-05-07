@@ -1,19 +1,19 @@
 ﻿import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { writeText } from '@tauri-apps/plugin-clipboard-manager'
-import { exists, rename } from '@tauri-apps/plugin-fs'
 import { listen } from '@tauri-apps/api/event'
 import { importMedia, getMediaInfoStatus } from '../api/media-batch'
-import { openParentDir } from '@core/api/common'
+import { openParentDir, pathExists, renamePath } from '@core/api/common'
 import { formatBytes, formatDuration, type DurationFormat } from '@core/utils/format'
 import { useFileSelect } from '@core/hooks/useFileSelect'
 import { useSettings } from '@core/hooks/useSettings'
-import type { ImageRow, MediaKind, MediaInfoStatus, RenameField, VideoRow } from '../types/media'
+import type { ImageRow, MediaKind, MediaInfoStatus, RenameField, RenameSafetySummary, VideoRow } from '../types/media'
 
 const VIDEO_EXTS = ['mp4', 'mov', 'mkv', 'avi', 'm4v', 'wmv', 'flv', 'webm', 'ts', 'mts', 'm2ts']
 const IMAGE_EXTS = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'tiff', 'webp', 'heic', 'heif']
 
 type ImportKind = 'file' | 'folder' | 'clipboard'
+type OrganizePresetKey = 'short-video' | 'archive-video' | 'photo-exif'
 
 type LiveImportItem = {
   id: string
@@ -21,6 +21,26 @@ type LiveImportItem = {
   path: string
   source: ImportKind
   status: 'pending' | 'success' | 'failed'
+}
+
+type RenameRow = (VideoRow | ImageRow) & { previewName: string; order: number }
+
+type RenamePlanItem = {
+  row: RenameRow
+  sourcePath: string
+  sourceName: string
+  targetPath: string
+  targetName: string
+  unchanged: boolean
+  warnings: string[]
+}
+
+type UndoRenameItem = {
+  originalPath: string
+  originalName: string
+  currentPath: string
+  currentName: string
+  kind: MediaKind
 }
 
 // 配置常量
@@ -108,6 +128,7 @@ export const useMediaBatch = () => {
   const showPreview = ref(false)
   const liveImports = ref<LiveImportItem[]>([])
   const lastImportKind = ref<ImportKind>('file')
+  const lastRenameBatch = ref<UndoRenameItem[]>([])
   let unlistenProgress: (() => void) | null = null
   const videoSort = ref<{ prop: string | null; order: 'ascending' | 'descending' | null }>({ prop: null, order: null })
   const imageSort = ref<{ prop: string | null; order: 'ascending' | 'descending' | null }>({ prop: null, order: null })
@@ -245,6 +266,12 @@ export const useMediaBatch = () => {
       order: index + 1
     }))
   )
+
+  const activeRenameRows = computed<RenameRow[]>(() =>
+    fileTypeTab.value === 'video' ? tableVideos.value : tableImages.value
+  )
+
+  const canUndoRename = computed(() => lastRenameBatch.value.length > 0)
 
   const basicStats = computed(() => {
     const successVideos = videoRows.value.filter((item) => item.status === 'success')
@@ -457,6 +484,7 @@ export const useMediaBatch = () => {
   }
 
   const handleImport = async (kind: ImportKind) => {
+    if (importing.value) return
     // 先拿到路径，再开启 loading，避免选择/剪贴板为空导致一直转圈
     const picked = await pick(kind)
     const paths = (picked || []).filter((p: string) => !/[\*\?\[\]]/.test(p))
@@ -472,6 +500,7 @@ export const useMediaBatch = () => {
 
     setLiveImportSnapshot(paths, kind)
     importing.value = true
+    lastRenameBatch.value = []
     failedItems.value = []
     importSummary.value = ''
     const pending = buildPendingRows(paths, kind)
@@ -528,7 +557,7 @@ export const useMediaBatch = () => {
       ElMessage.error(error?.toString() || t('导入失败'))
     } finally {
       importing.value = false
-      liveImports.value = []
+      window.setTimeout(() => { liveImports.value = [] }, 1300)
     }
   }
 
@@ -557,6 +586,7 @@ export const useMediaBatch = () => {
     } else {
       imageRows.value = []
     }
+    lastRenameBatch.value = []
     ElMessage.success(t('列表已清空'))
   }
 
@@ -598,12 +628,133 @@ export const useMediaBatch = () => {
     return cleaned || 'unnamed'
   }
 
+  const splitPath = (path: string) => {
+    const idx = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'))
+    return {
+      dir: idx >= 0 ? path.slice(0, idx + 1) : '',
+      name: idx >= 0 ? path.slice(idx + 1) : path
+    }
+  }
+
+  const appendSuffix = (fileName: string, counter: number) => {
+    const dot = fileName.lastIndexOf('.')
+    const stem = dot > 0 ? fileName.slice(0, dot) : fileName
+    const ext = dot > 0 ? fileName.slice(dot) : ''
+    return `${stem}(${counter})${ext}`
+  }
+
+  const makeTargetKey = (path: string) => path.toLowerCase()
+
+  const renameSafetySummary = computed<RenameSafetySummary>(() => {
+    if (!showPreview.value) {
+      return { total: 0, readyCount: 0, unchangedCount: 0, illegalNameCount: 0, duplicateTargetCount: 0 }
+    }
+
+    const rows = activeRenameRows.value
+    const targetCounts = new Map<string, number>()
+    rows.forEach((row) => {
+      const { dir } = splitPath(row.path)
+      const safeName = sanitizeName(row.previewName)
+      const targetKey = makeTargetKey(`${dir}${safeName}`)
+      targetCounts.set(targetKey, (targetCounts.get(targetKey) || 0) + 1)
+    })
+
+    let unchangedCount = 0
+    let illegalNameCount = 0
+    let duplicateTargetCount = 0
+    rows.forEach((row) => {
+      const { dir } = splitPath(row.path)
+      const safeName = sanitizeName(row.previewName)
+      const targetPath = `${dir}${safeName}`
+      if (safeName !== row.previewName) illegalNameCount++
+      if (targetPath === row.path) unchangedCount++
+      if ((targetCounts.get(makeTargetKey(targetPath)) || 0) > 1) duplicateTargetCount++
+    })
+
+    return {
+      total: rows.length,
+      readyCount: Math.max(0, rows.length - unchangedCount),
+      unchangedCount,
+      illegalNameCount,
+      duplicateTargetCount
+    }
+  })
+
+  const buildRenamePlan = async (rows: RenameRow[], checkFileSystem: boolean): Promise<RenamePlanItem[]> => {
+    const plannedTargets = new Set<string>()
+    const baseTargetCounts = new Map<string, number>()
+    rows.forEach((row) => {
+      const { dir } = splitPath(row.path)
+      const safeName = sanitizeName(row.previewName)
+      const baseTarget = `${dir}${safeName}`
+      const key = makeTargetKey(baseTarget)
+      baseTargetCounts.set(key, (baseTargetCounts.get(key) || 0) + 1)
+    })
+
+    const plan: RenamePlanItem[] = []
+    for (const row of rows) {
+      const { dir, name: sourceName } = splitPath(row.path)
+      const safeName = sanitizeName(row.previewName)
+      const warnings: string[] = []
+      if (safeName !== row.previewName) {
+        warnings.push(t('文件名包含非法字符，已自动替换'))
+      }
+
+      const baseTargetPath = `${dir}${safeName}`
+      if ((baseTargetCounts.get(makeTargetKey(baseTargetPath)) || 0) > 1) {
+        warnings.push(t('同批目标名称重复，将自动追加序号'))
+      }
+
+      let targetName = safeName
+      let targetPath = baseTargetPath
+      let counter = 1
+      while (
+        targetPath !== row.path &&
+        (plannedTargets.has(makeTargetKey(targetPath)) || (checkFileSystem && await pathExists(targetPath)))
+      ) {
+        if (counter === 1) warnings.push(t('目标文件已存在，将自动追加序号'))
+        targetName = appendSuffix(safeName, counter)
+        targetPath = `${dir}${targetName}`
+        counter++
+        if (counter > 9999) {
+          targetName = appendSuffix(safeName, Date.now())
+          targetPath = `${dir}${targetName}`
+          break
+        }
+      }
+
+      plannedTargets.add(makeTargetKey(targetPath))
+      plan.push({
+        row,
+        sourcePath: row.path,
+        sourceName,
+        targetPath,
+        targetName,
+        unchanged: targetPath === row.path,
+        warnings
+      })
+    }
+    return plan
+  }
+
+  const updateRowAfterRename = (kind: MediaKind, oldPath: string, newPath: string, newName: string) => {
+    const target = kind === 'video' ? videoRows : imageRows
+    const idx = target.value.findIndex((row) => row.path === oldPath)
+    if (idx < 0) return
+    target.value[idx] = {
+      ...target.value[idx]!,
+      path: newPath,
+      name: newName
+    } as any
+  }
+
   const applyRename = async () => {
     if (!showPreview.value) {
       ElMessage.info(t('请先点击“预览重命名”'))
       return
     }
-    const list = fileTypeTab.value === 'video' ? tableVideos.value : tableImages.value
+    const kind = fileTypeTab.value
+    const list = activeRenameRows.value
     if (!list.length) {
       ElMessage.info(t('没有可重命名的文件'))
       return
@@ -611,42 +762,46 @@ export const useMediaBatch = () => {
 
     let success = 0
     const failed: { name: string; reason: string }[] = []
+    const plan = await buildRenamePlan(list, true)
+    const warnings = plan.flatMap((item) => item.warnings)
+
+    if (warnings.length) {
+      const confirmed = await ElMessageBox.confirm(
+        t('检测到 {count} 个命名风险，已生成自动避让方案。是否继续应用？', { count: warnings.length }),
+        t('重命名预检'),
+        {
+          confirmButtonText: t('继续应用'),
+          cancelButtonText: t('取消'),
+          type: 'warning'
+        }
+      ).catch(() => false)
+      if (!confirmed) return
+    }
 
     try {
-      for (const row of list) {
-        const basePath = row.path
-        const idx = Math.max(basePath.lastIndexOf('/'), basePath.lastIndexOf('\\'))
-        const dir = idx >= 0 ? basePath.slice(0, idx + 1) : ''
-        const safeName = sanitizeName(row.previewName)
-        let newPath = `${dir}${safeName}`
-        if (newPath === basePath) {
+      const undoItems: UndoRenameItem[] = []
+      for (const item of plan) {
+        if (item.unchanged) {
           success++
           continue
         }
 
-        // 若存在同名文件，追加序号避免失败
-        let counter = 1
-        while (await exists(newPath)) {
-          const dot = safeName.lastIndexOf('.')
-          const stem = dot > 0 ? safeName.slice(0, dot) : safeName
-          const ext = dot > 0 ? safeName.slice(dot) : ''
-          newPath = `${dir}${stem}(${counter})${ext}`
-          counter++
-          if (counter > 9999) {
-            newPath = `${dir}${stem}_${Date.now()}${ext}`
-            break
-          }
-        }
-
         try {
-          await rename(basePath, newPath)
-          row.path = newPath
-          row.name = newPath.split(/[\\/]/).pop() || safeName
+          await renamePath(item.sourcePath, item.targetPath)
+          updateRowAfterRename(kind, item.sourcePath, item.targetPath, item.targetName)
+          undoItems.push({
+            originalPath: item.sourcePath,
+            originalName: item.sourceName,
+            currentPath: item.targetPath,
+            currentName: item.targetName,
+            kind
+          })
           success++
         } catch (e: any) {
-          failed.push({ name: row.name, reason: e?.toString() || t('重命名失败') })
+          failed.push({ name: item.sourceName, reason: e?.toString() || t('重命名失败') })
         }
       }
+      lastRenameBatch.value = undoItems
 
       if (failed.length) {
         ElMessage.warning(
@@ -660,16 +815,58 @@ export const useMediaBatch = () => {
     }
   }
 
-  const toggleAllColumns = (kind: MediaKind) => {
-    if (kind === 'video') {
-      const allOn = Object.values(visibleVideoColumns).every(Boolean)
-      Object.keys(visibleVideoColumns).forEach((key) => {
-        ;(visibleVideoColumns as any)[key] = !allOn
-      })
+  const undoLastRename = async () => {
+    if (!lastRenameBatch.value.length) {
+      ElMessage.info(t('没有可撤销的重命名记录'))
+      return
+    }
+    const confirmed = await ElMessageBox.confirm(
+      t('将撤销上一次重命名，共 {count} 个文件。是否继续？', { count: lastRenameBatch.value.length }),
+      t('撤销重命名'),
+      {
+        confirmButtonText: t('撤销'),
+        cancelButtonText: t('取消'),
+        type: 'warning'
+      }
+    ).catch(() => false)
+    if (!confirmed) return
+
+    let success = 0
+    const failed: { name: string; reason: string }[] = []
+    for (const item of [...lastRenameBatch.value].reverse()) {
+      try {
+        if (!await pathExists(item.currentPath)) {
+          failed.push({ name: item.currentName, reason: t('当前文件不存在') })
+          continue
+        }
+        if (await pathExists(item.originalPath)) {
+          failed.push({ name: item.currentName, reason: t('原路径已有文件，已跳过') })
+          continue
+        }
+        await renamePath(item.currentPath, item.originalPath)
+        updateRowAfterRename(item.kind, item.currentPath, item.originalPath, item.originalName)
+        success++
+      } catch (e: any) {
+        failed.push({ name: item.currentName, reason: e?.toString() || t('撤销失败') })
+      }
+    }
+
+    if (failed.length) {
+      ElMessage.warning(t('撤销完成：成功 {success} 个，失败 {failed} 个', { success, failed: failed.length }))
     } else {
-      const allOn = Object.values(visibleImageColumns).every(Boolean)
-      Object.keys(visibleImageColumns).forEach((key) => {
-        ;(visibleImageColumns as any)[key] = !allOn
+      ElMessage.success(t('撤销完成：成功 {success} 个', { success }))
+    }
+    if (!failed.length) lastRenameBatch.value = []
+  }
+
+  const toggleAllColumns = (kind: MediaKind, field?: string, value?: boolean) => {
+    const cols = kind === 'video' ? visibleVideoColumns : visibleImageColumns
+    if (field && value !== undefined) {
+      ;(cols as any)[field] = value
+    } else {
+      const allOn = Object.values(cols).every(Boolean)
+      Object.keys(cols).forEach((key) => {
+        ;(cols as any)[key] = !allOn
       })
     }
   }
@@ -680,6 +877,63 @@ export const useMediaBatch = () => {
     list.forEach((field) => {
       field.enabled = !allOn
     })
+  }
+
+  const setRenameEnabled = (list: RenameField[], keys: string[]) => {
+    const enabled = new Set(keys)
+    list.forEach((field) => {
+      field.enabled = enabled.has(field.key)
+    })
+  }
+
+  const applyOrganizePreset = (preset: OrganizePresetKey) => {
+    if (preset === 'short-video') {
+      fileTypeTab.value = 'video'
+      customText.value = 'clip'
+      separator.value = '_'
+      leadingZeros.value = 3
+      durationFormat.value = 'clock'
+      setRenameEnabled(renameFieldsVideo, ['seq', 'custom', 'duration', 'resolution'])
+      Object.assign(visibleVideoColumns, {
+        duration: true,
+        resolution: true,
+        bitrate: true,
+        frameRate: true,
+        size: true,
+        preview: true
+      })
+    } else if (preset === 'archive-video') {
+      fileTypeTab.value = 'video'
+      customText.value = 'archive'
+      separator.value = '_'
+      leadingZeros.value = 4
+      durationFormat.value = 'hms'
+      setRenameEnabled(renameFieldsVideo, ['seq', 'custom', 'filename', 'duration', 'size'])
+      Object.assign(visibleVideoColumns, {
+        duration: true,
+        resolution: true,
+        bitrate: true,
+        frameRate: false,
+        size: true,
+        preview: true
+      })
+    } else {
+      fileTypeTab.value = 'image'
+      customText.value = 'photo'
+      separator.value = '_'
+      leadingZeros.value = 3
+      setRenameEnabled(renameFieldsImage, ['seq', 'custom', 'takenAt', 'device', 'resolution'])
+      Object.assign(visibleImageColumns, {
+        resolution: true,
+        device: true,
+        takenAt: true,
+        focalLength: true,
+        size: true,
+        preview: true
+      })
+    }
+    showPreview.value = true
+    ElMessage.success(t('已应用整理模板'))
   }
 
   watch(fileTypeTab, () => {
@@ -750,6 +1004,8 @@ export const useMediaBatch = () => {
     advancedStats,
     durationBuckets,
     showPreview,
+    renameSafetySummary,
+    canUndoRename,
     formatBytes,
     formatDuration,
     handleImport,
@@ -761,9 +1017,11 @@ export const useMediaBatch = () => {
     openFolder,
     previewRename,
     applyRename,
+    undoLastRename,
     handleTableSortChange,
     toggleAllColumns,
     toggleRenameFields,
+    applyOrganizePreset,
     failedItems,
     failedReasonStats,
     showFailedDialog,

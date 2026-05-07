@@ -7,6 +7,7 @@
 
 # 2) 仅放行核心代码与必要配置
 !.gitignore
+!.gitattributes
 !index.html
 !package.json
 !package-lock.json
@@ -36,6 +37,11 @@ build/
 
 src-tauri/target/
 src-tauri/gen/
+src-tauri/MediaInfo.dll
+src-tauri/bin/
+*.dll
+*.dylib
+*.so
 
 .env
 .env.*

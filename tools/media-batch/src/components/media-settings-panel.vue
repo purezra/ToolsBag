@@ -1,6 +1,6 @@
 ﻿<script setup lang="ts">
 import { onMounted, ref } from 'vue'
-import type { MediaKind, RenameField, ExternalToolStatus, MediaInfoStatus } from '@media-batch/types/media'
+import type { MediaKind, RenameField, ExternalToolStatus, MediaInfoStatus, RenameSafetySummary } from '@media-batch/types/media'
 import type { DurationFormat } from '@core/utils/format'
 import { useSettings } from '@core/hooks/useSettings'
 import { checkFfprobeStatus, checkExiftoolStatus } from '../api/media-batch'
@@ -18,6 +18,9 @@ const props = defineProps<{
   leadingZeros: number
   visibleVideoColumns: ColumnsState
   visibleImageColumns: ColumnsState
+  showPreview: boolean
+  renameSafetySummary: RenameSafetySummary
+  canUndoRename: boolean
 }>()
 
 const emit = defineEmits<{
@@ -25,10 +28,12 @@ const emit = defineEmits<{
   (e: 'update:customText', value: string): void
   (e: 'update:separator', value: string): void
   (e: 'update:leadingZeros', value: number): void
-  (e: 'toggleColumns', kind: MediaKind): void
+  (e: 'toggleColumns', kind: MediaKind, field?: string, value?: boolean): void
   (e: 'moveField', list: RenameField[], index: number, direction: 'up' | 'down'): void
   (e: 'previewRename'): void
   (e: 'applyRename'): void
+  (e: 'undoRename'): void
+  (e: 'applyPreset', preset: 'short-video' | 'archive-video' | 'photo-exif'): void
   (e: 'toggleRenameFields', kind: MediaKind): void
 }>()
 
@@ -100,6 +105,19 @@ onMounted(() => {
 
     <div class="panel-header">
       <div>
+        <h3>{{ t('整理模板') }}</h3>
+      </div>
+    </div>
+    <div class="preset-grid">
+      <el-button size="small" plain @click="emit('applyPreset', 'short-video')">{{ t('短视频素材') }}</el-button>
+      <el-button size="small" plain @click="emit('applyPreset', 'archive-video')">{{ t('归档命名') }}</el-button>
+      <el-button size="small" plain @click="emit('applyPreset', 'photo-exif')">{{ t('图片 EXIF 整理') }}</el-button>
+    </div>
+
+    <el-divider />
+
+    <div class="panel-header">
+      <div>
         <h3>{{ t('重命名配置') }}</h3>
       </div>
     </div>
@@ -124,12 +142,12 @@ onMounted(() => {
             <el-button size="small" type="primary" plain @click="emit('toggleColumns', 'video')">{{ t('全选/全关') }}</el-button>
           </div>
           <div class="checkbox-grid">
-            <el-checkbox v-model="props.visibleVideoColumns.duration">{{ t('时长') }}</el-checkbox>
-            <el-checkbox v-model="props.visibleVideoColumns.resolution">{{ t('分辨率') }}</el-checkbox>
-            <el-checkbox v-model="props.visibleVideoColumns.bitrate">{{ t('码率') }}</el-checkbox>
-            <el-checkbox v-model="props.visibleVideoColumns.frameRate">{{ t('帧率') }}</el-checkbox>
-            <el-checkbox v-model="props.visibleVideoColumns.size">{{ t('文件大小') }}</el-checkbox>
-            <el-checkbox v-model="props.visibleVideoColumns.preview">{{ t('预览名称') }}</el-checkbox>
+            <el-checkbox :model-value="props.visibleVideoColumns.duration" @update:model-value="(v: any) => emit('toggleColumns', 'video', 'duration', !!v)">{{ t('时长') }}</el-checkbox>
+            <el-checkbox :model-value="props.visibleVideoColumns.resolution" @update:model-value="(v: any) => emit('toggleColumns', 'video', 'resolution', !!v)">{{ t('分辨率') }}</el-checkbox>
+            <el-checkbox :model-value="props.visibleVideoColumns.bitrate" @update:model-value="(v: any) => emit('toggleColumns', 'video', 'bitrate', !!v)">{{ t('码率') }}</el-checkbox>
+            <el-checkbox :model-value="props.visibleVideoColumns.frameRate" @update:model-value="(v: any) => emit('toggleColumns', 'video', 'frameRate', !!v)">{{ t('帧率') }}</el-checkbox>
+            <el-checkbox :model-value="props.visibleVideoColumns.size" @update:model-value="(v: any) => emit('toggleColumns', 'video', 'size', !!v)">{{ t('文件大小') }}</el-checkbox>
+            <el-checkbox :model-value="props.visibleVideoColumns.preview" @update:model-value="(v: any) => emit('toggleColumns', 'video', 'preview', !!v)">{{ t('预览名称') }}</el-checkbox>
           </div>
         </div>
         <div class="form-item">
@@ -197,9 +215,23 @@ onMounted(() => {
 
     <div class="rename-section">
       <span class="rename-label">{{ t('重命名') }}</span>
+      <div v-if="props.showPreview" class="rename-safety-card">
+        <div class="safety-title">{{ t('重命名预检') }}</div>
+        <div class="safety-grid">
+          <span>{{ t('待处理') }}: {{ props.renameSafetySummary.readyCount }}/{{ props.renameSafetySummary.total }}</span>
+          <span>{{ t('不变') }}: {{ props.renameSafetySummary.unchangedCount }}</span>
+          <span :class="{ warn: props.renameSafetySummary.illegalNameCount > 0 }">
+            {{ t('非法字符') }}: {{ props.renameSafetySummary.illegalNameCount }}
+          </span>
+          <span :class="{ warn: props.renameSafetySummary.duplicateTargetCount > 0 }">
+            {{ t('目标重名') }}: {{ props.renameSafetySummary.duplicateTargetCount }}
+          </span>
+        </div>
+      </div>
       <div class="rename-buttons">
         <el-button round plain type="primary" class="large-btn" @click="emit('previewRename')">{{ t('预览') }}</el-button>
         <el-button round plain type="success" class="large-btn" @click="emit('applyRename')">{{ t('应用') }}</el-button>
+        <el-button round plain type="warning" class="large-btn" :disabled="!props.canUndoRename" @click="emit('undoRename')">{{ t('撤销') }}</el-button>
       </div>
     </div>
   </div>
@@ -255,6 +287,11 @@ onMounted(() => {
   flex-direction: column;
   gap: 10px;
 }
+.preset-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
 .form-item {
   display: flex;
   flex-direction: column;
@@ -305,6 +342,31 @@ onMounted(() => {
   justify-content: center;
   width: 100%;
   gap: 10px;
+}
+.rename-safety-card {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(64, 158, 255, 0.18);
+  background: #f5f9ff;
+}
+.safety-title {
+  margin-bottom: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #2f73ff;
+}
+.safety-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px 8px;
+  font-size: 12px;
+  color: #5f6678;
+}
+.safety-grid .warn {
+  color: #d9901d;
+  font-weight: 700;
 }
 .label-row {
   display: flex;
