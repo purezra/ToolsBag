@@ -292,61 +292,98 @@ const handleChangePassword = async () => {
 
     <template v-else>
       <div v-if="isLocked" class="lock-panel">
-        <el-card shadow="never" class="lock-card">
-          <div class="lock-header">
-            <div>
-              <p class="lock-title">{{ t('端到端加密保险库') }}</p>
-              <small class="lock-hint">{{ t('主密码仅用于派生主密钥，永不上传、永不落盘') }}</small>
+        <div class="lock-screen">
+          <!-- Lock icon with animation -->
+          <div class="lock-icon-wrap" :class="{ 'is-shaking': codebook.busy }">
+            <div class="lock-icon-circle">
+              <el-icon :size="48" class="lock-icon">
+                <Lock />
+              </el-icon>
             </div>
-            <el-tag type="warning" v-if="!codebook.status.initialized">{{ t('首次初始化') }}</el-tag>
-            <el-tag type="success" v-else>{{ t('待解锁') }}</el-tag>
+            <div class="lock-pulse" />
           </div>
 
-          <el-alert
-            type="info"
-            :closable="false"
-            show-icon
-            class="mb16"
-            :title="t('三层密钥：主密码 -> MK -> DK -> 每条独立 FK，所有数据文件均为.enc')"
-          />
+          <div class="lock-content">
+            <h2 class="lock-title">{{ t('端到端加密保险库') }}</h2>
+            <p class="lock-subtitle">{{ t('主密码仅用于派生主密钥，永不上传、永不落盘') }}</p>
 
-          <el-form label-position="top" class="lock-form">
-            <el-form-item :label="t('主密码')">
-              <el-input v-model="masterPassword" type="password" show-password autocomplete="off" />
-            </el-form-item>
+            <div class="lock-status">
+              <el-tag type="warning" effect="dark" v-if="!codebook.status.initialized">{{ t('首次初始化') }}</el-tag>
+              <el-tag type="success" effect="dark" v-else>{{ t('待解锁') }}</el-tag>
+            </div>
 
-            <template v-if="!codebook.status.initialized">
-              <el-form-item :label="t('确认主密码')">
-                <el-input v-model="confirmPassword" type="password" show-password autocomplete="off" />
-              </el-form-item>
-              <el-form-item :label="t('设备名称（可选）')">
-                <el-input v-model="deviceName" autocomplete="off" />
-              </el-form-item>
-              <el-button
-                type="primary"
-                :icon="KeyIcon"
-                :loading="codebook.busy"
-                @click="handleInitVault"
-              >
-                {{ t('初始化并解锁') }}
-              </el-button>
-            </template>
+            <el-form label-position="top" class="lock-form">
+              <div class="lock-input-group">
+                <el-form-item :label="t('主密码')" class="lock-form-item">
+                  <el-input
+                    v-model="masterPassword"
+                    type="password"
+                    show-password
+                    autocomplete="off"
+                    size="large"
+                    :placeholder="t('输入主密码')"
+                    @keyup.enter="codebook.status.initialized ? handleUnlock() : undefined"
+                  />
+                </el-form-item>
 
-            <template v-else>
-              <div class="lock-actions">
-                <el-button
-                  type="primary"
-                  :icon="Unlock"
-                  :loading="codebook.busy"
-                  @click="handleUnlock"
-                >
-                  {{ t('解锁') }}
-                </el-button>
-                <el-button :icon="RefreshRight" @click="codebook.bootstrap()">{{ t('重新检测') }}</el-button>
+                <template v-if="!codebook.status.initialized">
+                  <el-form-item :label="t('确认主密码')" class="lock-form-item">
+                    <el-input
+                      v-model="confirmPassword"
+                      type="password"
+                      show-password
+                      autocomplete="off"
+                      size="large"
+                      :placeholder="t('再次输入主密码')"
+                    />
+                  </el-form-item>
+                  <el-form-item :label="t('设备名称（可选）')" class="lock-form-item">
+                    <el-input v-model="deviceName" autocomplete="off" size="large" />
+                  </el-form-item>
+                </template>
               </div>
-            </template>
-          </el-form>
-        </el-card>
+
+              <div class="lock-actions">
+                <template v-if="!codebook.status.initialized">
+                  <el-button
+                    type="primary"
+                    size="large"
+                    :icon="KeyIcon"
+                    :loading="codebook.busy"
+                    class="lock-btn lock-btn--primary"
+                    @click="handleInitVault"
+                  >
+                    {{ t('初始化并解锁') }}
+                  </el-button>
+                </template>
+                <template v-else>
+                  <el-button
+                    type="primary"
+                    size="large"
+                    :icon="Unlock"
+                    :loading="codebook.busy"
+                    class="lock-btn lock-btn--primary"
+                    @click="handleUnlock"
+                  >
+                    {{ t('解锁') }}
+                  </el-button>
+                  <el-button
+                    size="large"
+                    :icon="RefreshRight"
+                    class="lock-btn"
+                    @click="codebook.bootstrap()"
+                  >
+                    {{ t('重新检测') }}
+                  </el-button>
+                </template>
+              </div>
+            </el-form>
+
+            <p class="lock-footer-hint">
+              {{ t('三层密钥：主密码 -> MK -> DK -> 每条独立 FK，所有数据文件均为.enc') }}
+            </p>
+          </div>
+        </div>
       </div>
 
       <div v-else class="tool-shell">
@@ -686,38 +723,165 @@ const handleChangePassword = async () => {
 .card-title {
   font-weight: 600;
 }
+/* Full-screen lock panel */
 .lock-panel {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 32px;
-  height: 100%;
+  background: var(--bg-page, #f5f6fa);
+  overflow: auto;
 }
-.lock-card {
-  width: 520px;
+
+[data-theme='dark'] .lock-panel {
+  background: radial-gradient(circle at 50% 30%, rgba(40, 50, 70, 0.95), rgba(15, 17, 23, 0.98));
 }
-.lock-header {
+
+.lock-screen {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: space-between;
-  margin-bottom: 12px;
+  width: 100%;
+  max-width: 440px;
+  padding: 40px 32px;
 }
+
+/* Lock icon */
+.lock-icon-wrap {
+  position: relative;
+  margin-bottom: 32px;
+}
+
+.lock-icon-circle {
+  width: 88px;
+  height: 88px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--accent-gradient);
+  color: var(--text-inverse, #fff);
+  box-shadow: 0 12px 40px rgba(79, 139, 255, 0.3);
+  position: relative;
+  z-index: 1;
+}
+
+.lock-icon {
+  animation: lock-bob 3s ease-in-out infinite;
+}
+
+@keyframes lock-bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+
+.lock-pulse {
+  position: absolute;
+  inset: -12px;
+  border-radius: 50%;
+  border: 2px solid var(--accent, #4f8bff);
+  opacity: 0;
+  animation: lock-pulse 3s ease-in-out infinite;
+}
+
+@keyframes lock-pulse {
+  0% { opacity: 0; transform: scale(0.8); }
+  50% { opacity: 0.3; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1.2); }
+}
+
+.lock-icon-wrap.is-shaking .lock-icon {
+  animation: lock-shake 0.4s ease-in-out;
+}
+
+@keyframes lock-shake {
+  0%, 100% { transform: translateX(0) rotate(0); }
+  20% { transform: translateX(-6px) rotate(-8deg); }
+  40% { transform: translateX(6px) rotate(8deg); }
+  60% { transform: translateX(-4px) rotate(-5deg); }
+  80% { transform: translateX(4px) rotate(5deg); }
+}
+
+/* Content */
+.lock-content {
+  width: 100%;
+  text-align: center;
+}
+
 .lock-title {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 700;
+  margin: 0 0 8px;
+  font-size: 24px;
+  font-weight: 800;
+  color: var(--text-primary);
+  letter-spacing: -0.5px;
 }
-.lock-hint {
-  color: var(--el-text-color-secondary);
+
+.lock-subtitle {
+  margin: 0 0 20px;
+  font-size: 14px;
+  color: var(--text-secondary);
 }
+
+.lock-status {
+  margin-bottom: 28px;
+}
+
+/* Form */
 .lock-form {
-  margin-top: 8px;
+  text-align: left;
 }
+
+.lock-input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 20px;
+}
+
+.lock-form-item {
+  margin-bottom: 0;
+}
+
+.lock-form-item :deep(.el-form-item__label) {
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+/* Actions */
 .lock-actions {
   display: flex;
-  gap: 10px;
-  align-items: center;
+  gap: 12px;
+  justify-content: center;
+  margin-bottom: 24px;
 }
+
+.lock-btn {
+  min-width: 140px;
+}
+
+.lock-btn--primary {
+  box-shadow: 0 8px 24px rgba(79, 139, 255, 0.3);
+}
+
+.lock-btn--primary:hover {
+  box-shadow: 0 12px 32px rgba(79, 139, 255, 0.4);
+  transform: translateY(-1px);
+}
+
+.lock-btn--primary:active {
+  transform: translateY(0);
+}
+
+/* Footer hint */
+.lock-footer-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.6;
+  max-width: 360px;
+  margin: 0 auto;
+}
+
 .mb16 {
   margin-bottom: 16px;
 }

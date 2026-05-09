@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, ref, onMounted, onUnmounted, defineAsyncComponent, type Component } from 'vue'
-import { Grid, FolderChecked, Setting, DataAnalysis, Moon, Sunny, Brush, InfoFilled, Key, FullScreen, ScaleToOriginal, Document } from '@element-plus/icons-vue'
+import { computed, ref, watch, onMounted, defineAsyncComponent, type Component } from 'vue'
+import { Grid, FolderChecked, Setting, DataAnalysis, Moon, Sunny, InfoFilled, Key, FullScreen, ScaleToOriginal, Document, Operation } from '@element-plus/icons-vue'
 import { marked } from 'marked'
 import DOMPurify from 'dompurify'
 
@@ -86,7 +86,7 @@ const tools: Tool[] = [
 
 const activeToolKey = ref<string>(tools[0]!.key)
 const { 
-  t, skin, appearance, setSkin, setAppearance, locale, setLocale,
+  t, appearance, setAppearance, locale, setLocale,
   fontFamily, setFontFamily, customFontName, loadCustomFont, clearCustomFont,
   showWatermark, setShowWatermark
 } = provideSettings()
@@ -134,11 +134,6 @@ onMounted(() => {
   clickEffectEnabled.value = clickEffect.enabled.value
   clickEffectType.value = clickEffect.effectType.value
   clickEffectDuration.value = clickEffect.duration.value
-  window.addEventListener('mousemove', handleGlobalMouseMove)
-})
-
-onUnmounted(() => {
-  window.removeEventListener('mousemove', handleGlobalMouseMove)
 })
 
 const localizedTools = computed(() =>
@@ -163,28 +158,36 @@ const toolComponentMap: Record<string, Component> = {
 }
 
 const navExpanded = ref(false)
-const navPinnedByHover = ref(false)
-const NAV_OPEN_THRESHOLD = 56
-const NAV_CLOSE_THRESHOLD = 340
+const navPinned = ref(false)
 
-const handleGlobalMouseMove = (event: MouseEvent) => {
-  if (navPinnedByHover.value) return
-  const x = event.clientX
-  if (x <= NAV_OPEN_THRESHOLD) {
+// Slide animation direction
+const previousToolIndex = ref(0)
+const slideDirection = ref<'slide-left' | 'slide-right'>('slide-left')
+
+const currentToolIndex = computed(() =>
+  tools.findIndex(t => t.key === activeToolKey.value)
+)
+
+// Watch for tool changes to determine slide direction
+watch(activeToolKey, (_newKey, _oldKey) => {
+  const newIndex = currentToolIndex.value
+  slideDirection.value = newIndex >= previousToolIndex.value ? 'slide-left' : 'slide-right'
+  previousToolIndex.value = newIndex
+})
+
+const toggleNav = () => {
+  navExpanded.value = !navExpanded.value
+}
+
+const togglePin = () => {
+  navPinned.value = !navPinned.value
+  if (navPinned.value) {
     navExpanded.value = true
-  } else if (x >= NAV_CLOSE_THRESHOLD) {
-    navExpanded.value = false
   }
 }
 
-const handleNavEnter = () => {
-  navPinnedByHover.value = true
-  navExpanded.value = true
-}
-
-const handleNavLeave = (event: MouseEvent) => {
-  navPinnedByHover.value = false
-  if (event.clientX >= NAV_CLOSE_THRESHOLD) {
+const handleNavMouseLeave = () => {
+  if (!navPinned.value) {
     navExpanded.value = false
   }
 }
@@ -226,13 +229,48 @@ const renderedAbout = computed(() => DOMPurify.sanitize(marked(aboutContent.valu
 <template>
   <div class="app-shell">
     <el-container class="app-frame">
-      <div class="nav-hit" @mouseenter="navExpanded = true"></div>
+      <!-- Icon rail (always visible) -->
+      <div class="nav-rail" @click="toggleNav">
+        <div class="rail-brand" :title="t('展开导航')">
+          <span class="rail-brand-text">TB</span>
+        </div>
+        <div class="rail-items">
+          <div
+            v-for="tool in localizedTools"
+            :key="tool.key"
+            class="rail-item"
+            :class="{ 'is-active': activeToolKey === tool.key }"
+            :title="tool.name"
+            @click.stop="activeToolKey = tool.key"
+          >
+            <el-icon :size="20"><component :is="tool.icon" /></el-icon>
+          </div>
+        </div>
+        <div class="rail-footer">
+          <div
+            class="rail-item"
+            :class="{ 'is-pinned': navPinned }"
+            :title="navPinned ? t('取消固定') : t('固定导航')"
+            @click.stop="togglePin"
+          >
+            <el-icon :size="18"><Operation /></el-icon>
+          </div>
+          <div
+            class="rail-item"
+            :title="t('偏好设置')"
+            @click.stop="settingsOpen = true"
+          >
+            <el-icon :size="18"><Setting /></el-icon>
+          </div>
+        </div>
+      </div>
+
+      <!-- Expanded panel (slides over) -->
       <el-aside
         width="260px"
         class="nav-panel"
         :class="{ 'is-open': navExpanded }"
-        @mouseenter="handleNavEnter"
-        @mouseleave="handleNavLeave"
+        @mouseleave="handleNavMouseLeave"
       >
         <div class="brand">
           <div class="brand-mark">TB</div>
@@ -262,20 +300,25 @@ const renderedAbout = computed(() => DOMPurify.sanitize(marked(aboutContent.valu
             <p>HarmonyOS Sans</p>
             <span>{{ t('轻盈而克制的触感') }}</span>
           </div>
-          <el-tooltip effect="dark" :content="t('偏好设置')">
-            <el-button circle type="primary" :icon="Setting" size="small" @click="settingsOpen = true" />
-          </el-tooltip>
         </div>
       </el-aside>
 
       <el-container class="main-wrap">
         <el-header class="topbar">
           <div class="topbar-left">
-            <div class="pill">{{ activeTool.tag }}</div>
-            <span class="hint">{{ activeTool.name }} · {{ activeTool.meta }}</span>
+            <div class="topbar-breadcrumb">
+              <span class="topbar-tool-name">{{ activeTool.name }}</span>
+              <span class="topbar-sep">/</span>
+              <span class="topbar-tool-meta">{{ activeTool.meta }}</span>
+            </div>
+            <el-tag size="small" round :type="activeTool.tagType" effect="plain" class="topbar-tag">{{ activeTool.tag }}</el-tag>
           </div>
           <div class="topbar-right">
-            <img :src="activeTool.iconImage" :alt="activeTool.name" class="tool-icon-img" />
+            <el-tooltip effect="dark" :content="activeTool.desc" placement="bottom">
+              <div class="topbar-icon-wrap">
+                <img :src="activeTool.iconImage" :alt="activeTool.name" class="topbar-icon-img" />
+              </div>
+            </el-tooltip>
           </div>
         </el-header>
 
@@ -292,7 +335,7 @@ const renderedAbout = computed(() => DOMPurify.sanitize(marked(aboutContent.valu
               :key-name="activeToolKey"
               class="tool-component"
             >
-              <Transition name="tool-fade" mode="out-in">
+              <Transition :name="slideDirection" mode="out-in">
                 <Suspense>
                   <template #default>
                     <KeepAlive>
@@ -321,38 +364,22 @@ const renderedAbout = computed(() => DOMPurify.sanitize(marked(aboutContent.valu
 
     <el-drawer v-model="settingsOpen" size="320px" :title="t('偏好设置')" direction="ltr">
       <div class="setting-group">
-        <p class="setting-label">{{ t('界面风格') }}</p>
-        <el-radio-group :model-value="skin" size="small" @change="(val: any) => setSkin(val)">
-          <el-radio-button label="modern">{{ t('现代风格') }}</el-radio-button>
-          <el-radio-button label="apple">
-            <el-icon><Brush /></el-icon>
-            {{ t('Apple store ui') }}
-          </el-radio-button>
-          <el-radio-button label="smartisan">
-            <el-icon><Brush /></el-icon>
-            {{ t('Smartisan 风格') }}
-          </el-radio-button>
-        </el-radio-group>
-      </div>
-
-      <div class="setting-group">
         <p class="setting-label">{{ t('明暗') }}</p>
-        <el-switch
+        <el-radio-group
           :model-value="appearance"
-          :active-value="'dark'"
-          :inactive-value="'light'"
-          inline-prompt
-          :active-icon="Moon"
-          :inactive-icon="Sunny"
-          :disabled="skin === 'smartisan' || skin === 'apple'"
+          size="small"
           @change="(val: any) => setAppearance(val)"
-        />
-        <small class="setting-hint" v-if="skin === 'smartisan'">
-          {{ t('Smartisan 风格默认使用木纹浅色方案') }}
-        </small>
-        <small class="setting-hint" v-else-if="skin === 'apple'">
-          {{ t('Apple store ui') }} {{ t('默认使用浅色方案') }}
-        </small>
+        >
+          <el-radio-button label="light">
+            <el-icon><Sunny /></el-icon>
+            {{ t('浅色模式') }}
+          </el-radio-button>
+          <el-radio-button label="dark">
+            <el-icon><Moon /></el-icon>
+            {{ t('深色模式') }}
+          </el-radio-button>
+          <el-radio-button label="system">{{ t('跟随系统') }}</el-radio-button>
+        </el-radio-group>
       </div>
 
       <div class="setting-group">
@@ -470,23 +497,111 @@ const renderedAbout = computed(() => DOMPurify.sanitize(marked(aboutContent.valu
   height: 100%;
 }
 
-.nav-hit {
+/* Nav rail - fixed icon bar */
+.nav-rail {
   position: fixed;
   top: 0;
   left: 0;
   bottom: 0;
   width: 56px;
-  z-index: 40;
+  z-index: 42;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 12px 0;
+  gap: 8px;
+  background: var(--bg-primary);
+  border-right: 1px solid var(--border-secondary);
 }
 
+.rail-brand {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-md);
+  display: grid;
+  place-items: center;
+  background: var(--accent-gradient);
+  color: var(--text-inverse);
+  font-weight: 800;
+  font-size: 14px;
+  cursor: pointer;
+  transition: transform var(--duration-fast) var(--ease-out),
+              box-shadow var(--duration-fast) var(--ease-out);
+  flex-shrink: 0;
+}
+
+.rail-brand:hover {
+  transform: scale(1.05);
+  box-shadow: var(--shadow-sm);
+}
+
+.rail-brand-text {
+  user-select: none;
+}
+
+.rail-items {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 4px 0;
+}
+
+.rail-items::-webkit-scrollbar {
+  width: 0;
+}
+
+.rail-item {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-sm);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  color: var(--text-muted);
+  transition: all var(--duration-fast) var(--ease-out);
+  flex-shrink: 0;
+}
+
+.rail-item:hover {
+  background: var(--accent-light);
+  color: var(--accent);
+}
+
+.rail-item.is-active {
+  background: var(--accent-light);
+  color: var(--accent);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.rail-item.is-pinned {
+  background: var(--accent);
+  color: var(--text-inverse);
+}
+
+.rail-footer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-secondary);
+}
+
+/* Nav panel - slides over rail */
 .nav-panel {
   position: fixed;
   top: 0;
-  left: 0;
+  left: 56px;
   bottom: 0;
   width: 260px !important;
-  transform: translateX(-228px);
-  transition: transform 220ms ease, opacity 220ms ease, box-shadow 220ms ease;
+  transform: translateX(-260px);
+  transition: transform var(--duration-normal) var(--ease-out),
+              box-shadow var(--duration-normal) var(--ease-out);
   z-index: 41;
   display: flex;
   flex-direction: column;
@@ -496,18 +611,20 @@ const renderedAbout = computed(() => DOMPurify.sanitize(marked(aboutContent.valu
 
 .nav-panel.is-open {
   transform: translateX(0);
-}
-
-.main-wrap {
-  margin-left: 32px;
-  width: calc(100% - 32px);
-  height: 100%;
-  transition: margin-left 220ms ease, width 220ms ease;
+  box-shadow: var(--shadow-lg);
 }
 
 .nav-panel.is-open + .main-wrap {
-  margin-left: 260px;
-  width: calc(100% - 260px);
+  margin-left: 316px;
+  width: calc(100% - 316px);
+}
+
+.main-wrap {
+  margin-left: 56px;
+  width: calc(100% - 56px);
+  height: 100%;
+  transition: margin-left var(--duration-normal) var(--ease-out),
+              width var(--duration-normal) var(--ease-out);
 }
 
 .brand {
@@ -578,34 +695,81 @@ const renderedAbout = computed(() => DOMPurify.sanitize(marked(aboutContent.valu
 }
 
 .topbar {
-  height: 76px;
+  height: 52px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 18px;
+  padding: 0 20px;
+  border-bottom: 1px solid var(--border-secondary);
+  background: var(--bg-secondary);
 }
 
 .topbar-left {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
+  min-width: 0;
 }
 
-.pill {
-  height: 26px;
-  line-height: 26px;
-  padding: 0 10px;
-  border-radius: 999px;
-  font-size: 12px;
+.topbar-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.topbar-tool-name {
+  font-size: 15px;
   font-weight: 700;
+  color: var(--text-primary);
+  white-space: nowrap;
 }
 
-.hint {
+.topbar-sep {
+  font-size: 14px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.topbar-tool-meta {
   font-size: 13px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.topbar-tag {
+  flex-shrink: 0;
+}
+
+.topbar-right {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.topbar-icon-wrap {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  cursor: pointer;
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+
+.topbar-icon-wrap:hover {
+  transform: scale(1.1);
+}
+
+.topbar-icon-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
 
 .main-panel {
-  height: calc(100% - 76px);
+  height: calc(100% - 52px);
   padding: 14px;
   overflow: auto;
 }
@@ -704,20 +868,85 @@ const renderedAbout = computed(() => DOMPurify.sanitize(marked(aboutContent.valu
   background: rgba(64, 158, 255, 1);
   transform: scale(1.1);
 }
-.tool-fade-enter-active,
-.tool-fade-leave-active {
-  transition: opacity 0.2s ease, transform 0.2s ease;
+/* Slide left (next tool) */
+.slide-left-enter-active,
+.slide-left-leave-active {
+  transition: opacity 0.25s var(--ease-out), transform 0.25s var(--ease-out);
 }
-.tool-fade-enter-from {
+.slide-left-enter-from {
   opacity: 0;
-  transform: translateY(8px);
+  transform: translateX(30px);
 }
-.tool-fade-leave-to {
+.slide-left-leave-to {
   opacity: 0;
-  transform: translateY(-8px);
+  transform: translateX(-30px);
+}
+
+/* Slide right (previous tool) */
+.slide-right-enter-active,
+.slide-right-leave-active {
+  transition: opacity 0.25s var(--ease-out), transform 0.25s var(--ease-out);
+}
+.slide-right-enter-from {
+  opacity: 0;
+  transform: translateX(-30px);
+}
+.slide-right-leave-to {
+  opacity: 0;
+  transform: translateX(30px);
 }
 .tool-skeleton {
   padding: 24px;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .nav-rail {
+    width: 48px;
+  }
+
+  .rail-item {
+    width: 36px;
+    height: 36px;
+  }
+
+  .rail-brand {
+    width: 36px;
+    height: 36px;
+    font-size: 12px;
+  }
+
+  .nav-panel {
+    left: 48px;
+    width: 240px !important;
+  }
+
+  .main-wrap {
+    margin-left: 48px;
+    width: calc(100% - 48px);
+  }
+
+  .topbar {
+    height: 48px;
+    padding: 0 12px;
+  }
+
+  .topbar-tool-meta {
+    display: none;
+  }
+
+  .topbar-sep {
+    display: none;
+  }
+
+  .main-panel {
+    height: calc(100% - 48px);
+    padding: 8px;
+  }
+
+  .topbar-breadcrumb {
+    gap: 6px;
+  }
 }
 </style>
 

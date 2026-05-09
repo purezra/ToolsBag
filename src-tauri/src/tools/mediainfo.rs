@@ -21,14 +21,39 @@ type MediaInfoOption =
 
 static MEDIAINFO_LIB: OnceCell<Option<Library>> = OnceCell::new();
 static MEDIAINFO_PATH: OnceCell<Mutex<Option<String>>> = OnceCell::new();
+static RESOURCE_DIR: OnceCell<PathBuf> = OnceCell::new();
+
+/// 设置 Tauri 资源目录，供 MediaInfo DLL 查找使用
+pub fn set_resource_dir(path: PathBuf) {
+    RESOURCE_DIR.set(path).ok();
+}
 
 /// 获取 MediaInfo.dll 的加载路径
 pub fn get_mediainfo_path() -> Option<String> {
     MEDIAINFO_PATH.get()?.lock().ok()?.clone()
 }
 
+/// 内嵌的 MediaInfo.dll（编译时嵌入二进制文件）
+const EMBEDDED_MEDIAINFO_DLL: &[u8] = include_bytes!("../../MediaInfo.dll");
+
 fn mediainfo_library_candidates() -> Vec<PathBuf> {
     let mut candidates = Vec::new();
+
+    // 从内嵌资源释放到临时目录
+    let temp_dll = std::env::temp_dir().join("toolsbag_mediainfo.dll");
+    if !temp_dll.exists() {
+        if std::fs::write(&temp_dll, EMBEDDED_MEDIAINFO_DLL).is_ok() {
+            candidates.push(temp_dll.clone());
+        }
+    } else {
+        candidates.push(temp_dll.clone());
+    }
+
+    // Tauri 资源目录（打包时 bundle.resources 的目标位置）
+    if let Some(res_dir) = RESOURCE_DIR.get() {
+        candidates.push(res_dir.join("MediaInfo.dll"));
+    }
+
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
             candidates.push(dir.join("MediaInfo.dll"));
@@ -932,6 +957,13 @@ pub fn get_detailed_video_meta(path: &Path) -> Option<DetailedVideoMeta> {
         audio_streams,
         text_streams,
     })
+}
+
+/// 获取视频的 MediaInfo XML 原始输出
+pub fn get_video_xml(path: &Path) -> Option<String> {
+    let mi = MediaInfoHandle::open(path)?;
+    let xml = mi.get_xml();
+    if xml.is_empty() { None } else { Some(xml) }
 }
 
 /// 从 MediaInfo XML 输出中解析 Text 流

@@ -18,6 +18,7 @@ pub mod mediainfo {
     pub fn init_mediainfo() -> bool {
         false
     }
+    pub fn set_resource_dir(_path: std::path::PathBuf) {}
     pub fn get_full_info(_path: &Path) -> Option<String> {
         None
     }
@@ -34,6 +35,9 @@ pub mod mediainfo {
         None
     }
     pub fn get_detailed_video_meta(_path: &Path) -> Option<DetailedVideoMeta> {
+        None
+    }
+    pub fn get_video_xml(_path: &Path) -> Option<String> {
         None
     }
 }

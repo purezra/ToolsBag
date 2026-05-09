@@ -1,7 +1,7 @@
 ﻿<script setup lang="ts">
-import { computed, reactive, ref } from 'vue'
+import { computed, reactive, ref, defineAsyncComponent } from 'vue'
 import { CircleCheckFilled, WarningFilled } from '@element-plus/icons-vue'
-import MediaStatsPanel from './components/media-stats-panel.vue'
+const MediaStatsPanel = defineAsyncComponent(() => import('./components/media-stats-panel.vue'))
 import MediaTablePanel from './components/media-table-panel.vue'
 import MediaTopBar from './components/media-top-bar.vue'
 import MediaSettingsPanel from './components/media-settings-panel.vue'

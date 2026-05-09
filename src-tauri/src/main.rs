@@ -16,6 +16,8 @@ mod webdav;
 use crate::tools::image_to_pdf;
 use crate::tools::media_batch;
 use std::{path::PathBuf, process::Command};
+use tauri::Manager;
+use tauri_plugin_sql::{Migration, MigrationKind};
 
 // Windows 下用于隐藏子进程窗口
 #[cfg(target_os = "windows")]
@@ -102,9 +104,51 @@ fn read_tool3_note() -> Result<String, String> {
 }
 
 fn main() {
+    let video_db_migrations = vec![
+        Migration {
+            version: 1,
+            description: "create_video_records_table",
+            sql: r#"
+                CREATE TABLE IF NOT EXISTS video_records (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    path TEXT NOT NULL UNIQUE,
+                    size INTEGER NOT NULL,
+                    status TEXT,
+                    reason TEXT,
+                    format TEXT,
+                    duration_ms INTEGER,
+                    overall_bit_rate TEXT,
+                    width INTEGER,
+                    height INTEGER,
+                    codec TEXT,
+                    frame_rate TEXT,
+                    raw_xml TEXT,
+                    detail_json TEXT,
+                    scanned_at TEXT DEFAULT (datetime('now'))
+                );
+                CREATE INDEX IF NOT EXISTS idx_vr_format ON video_records(format);
+                CREATE INDEX IF NOT EXISTS idx_vr_status ON video_records(status);
+                CREATE INDEX IF NOT EXISTS idx_vr_scanned ON video_records(scanned_at);
+            "#,
+            kind: MigrationKind::Up,
+        },
+    ];
+
     tauri::Builder::default()
+        .setup(|app| {
+            if let Ok(res_dir) = app.path().resource_dir() {
+                tools::mediainfo::set_resource_dir(res_dir);
+            }
+            Ok(())
+        })
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(
+            tauri_plugin_sql::Builder::default()
+                .add_migrations("sqlite:video_records.db", video_db_migrations)
+                .build(),
+        )
         .invoke_handler(tauri::generate_handler![
             media_batch::import_media,
             media_batch::select_media_paths,
@@ -113,6 +157,7 @@ fn main() {
             media_batch::check_ffprobe_status,
             media_batch::check_exiftool_status,
             media_batch::import_detailed_video_info,
+            media_batch::get_video_raw_xml,
             open_parent_dir,
             read_tool3_note,
             cmd::analyze_folder,

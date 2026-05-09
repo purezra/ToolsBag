@@ -879,3 +879,17 @@ fn import_detailed_video_info_inner(
         failed,
     })
 }
+
+/// 获取视频文件的 MediaInfo XML 原始输出
+#[tauri::command]
+pub async fn get_video_raw_xml(path: String) -> Result<Option<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let p = std::path::Path::new(&path);
+        if !p.exists() {
+            return Err("文件不存在".to_string());
+        }
+        Ok(mediainfo::get_video_xml(p))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}

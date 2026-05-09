@@ -20,3 +20,7 @@ export const checkExiftoolStatus = () => {
 export const importDetailedVideoInfo = (paths: string[], recursive: boolean) => {
   return invoke<VideoInfoImportResponse>('import_detailed_video_info', { paths, recursive })
 }
+
+export const getVideoRawXml = (path: string) => {
+  return invoke<string | null>('get_video_raw_xml', { path })
+}

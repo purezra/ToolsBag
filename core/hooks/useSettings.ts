@@ -1,8 +1,8 @@
 import { computed, inject, provide, ref, watch } from 'vue'
 
-export type ThemeMode = 'light' | 'dark' | 'smartisan' | 'apple'
-export type ThemeSkin = 'modern' | 'smartisan' | 'apple'
-export type Appearance = 'light' | 'dark'
+export type ThemeMode = 'light' | 'dark'
+export type ThemeSkin = 'modern'
+export type Appearance = 'light' | 'dark' | 'system'
 export type Locale = 'zh' | 'en'
 export type FontFamily = 'harmonyos' | 'custom'
 
@@ -335,6 +335,7 @@ const enMessages = Object.fromEntries<string>([
   ['Archive', 'Archive'],
   ['Code', 'Code'],
   ['Other', 'Other'],
+  ['跟随系统', 'Follow System'],
   ['鼠标点击动画', 'Click Animation'],
   ['粒子爆炸', 'Particle Explosion'],
   ['水波纹', 'Ripple'],
@@ -343,7 +344,9 @@ const enMessages = Object.fromEntries<string>([
   ['快', 'Fast'],
   ['中', 'Medium'],
   ['慢', 'Slow'],
-  ['工具水印', 'Tool Watermark']
+  ['工具水印', 'Tool Watermark'],
+  ['加载更多', 'Load more'],
+  ['已加载全部', 'All loaded']
 ])
 
 const messages: Record<Locale, Record<string, string>> = {
@@ -354,10 +357,23 @@ const messages: Record<Locale, Record<string, string>> = {
 export const provideSettings = () => {
   const appearance = ref<Appearance>('light')
   const skin = ref<ThemeSkin>('modern')
-  const theme = computed<ThemeMode>(() => {
-    if (skin.value === 'smartisan') return 'smartisan'
-    if (skin.value === 'apple') return 'apple'
+
+  // System dark mode detection
+  const systemPrefersDark = ref(window.matchMedia('(prefers-color-scheme: dark)').matches)
+  const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)')
+  mediaQuery.addEventListener('change', (e) => {
+    systemPrefersDark.value = e.matches
+  })
+
+  const resolvedAppearance = computed<'light' | 'dark'>(() => {
+    if (appearance.value === 'system') {
+      return systemPrefersDark.value ? 'dark' : 'light'
+    }
     return appearance.value
+  })
+
+  const theme = computed<ThemeMode>(() => {
+    return resolvedAppearance.value
   })
   const locale = ref<Locale>('zh')
 
@@ -368,13 +384,7 @@ export const provideSettings = () => {
   }
 
   const setTheme = (val: ThemeMode) => {
-    // Backward compatibility: direct theme setting still works
-    if (val === 'smartisan' || val === 'apple') {
-      skin.value = val
-    } else {
-      skin.value = 'modern'
-      appearance.value = val
-    }
+    appearance.value = val
   }
 
   const setSkin = (val: ThemeSkin) => {

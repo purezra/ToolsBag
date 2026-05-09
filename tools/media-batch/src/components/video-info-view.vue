@@ -1,18 +1,59 @@
 <script setup lang="ts">
-import { computed, onUnmounted, reactive, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref, shallowRef } from 'vue'
 import { ElMessage } from 'element-plus'
-import { FolderAdd, Upload, Grid, List, Filter, Download } from '@element-plus/icons-vue'
+import { FolderAdd, Upload, Grid, List, Filter, Download, Coin } from '@element-plus/icons-vue'
 import { save } from '@tauri-apps/plugin-dialog'
 import { useFileSelect } from '@core/hooks/useFileSelect'
 import { useSettings } from '@core/hooks/useSettings'
 import { formatBytes } from '@core/utils/format'
 import { writeBinaryExportFile, writeTextExportFile } from '@core/api/common'
-import { importDetailedVideoInfo } from '../api/media-batch'
+import { importDetailedVideoInfo, getVideoRawXml } from '../api/media-batch'
+import { saveVideoRecords, loadVideoRecords, deleteVideoRecords, getRecordCount, rowToVideoInfoItem, type VideoRecordRow } from '../api/video-db'
 import VideoInfoDetailCard from './video-info-detail-card.vue'
 import type { DisplayLevel, VideoInfoImportResponse, VideoInfoItem } from '../types/media'
 
 type ExportFormat = 'xlsx' | 'csv' | 'markdown' | 'html' | 'json'
 type HealthSeverity = 'danger' | 'warning' | 'info'
+
+// MediaInfo 语言名称 -> 中文映射
+const langMap: Record<string, string> = {
+  'chinese': '中文',
+  'chinese (simplified)': '简体中文',
+  'chinese (traditional)': '繁体中文',
+  'english': '英文',
+  'japanese': '日语',
+  'korean': '韩语',
+  'french': '法语',
+  'german': '德语',
+  'spanish': '西班牙语',
+  'russian': '俄语',
+  'arabic': '阿拉伯语',
+  'portuguese': '葡萄牙语',
+  'italian': '意大利语',
+  'thai': '泰语',
+  'vietnamese': '越南语',
+  'indonesian': '印尼语',
+  'malay': '马来语',
+  'hindi': '印地语',
+  'dutch': '荷兰语',
+  'polish': '波兰语',
+  'turkish': '土耳其语',
+  'swedish': '瑞典语',
+  'norwegian': '挪威语',
+  'danish': '丹麦语',
+  'finnish': '芬兰语',
+  'greek': '希腊语',
+  'hebrew': '希伯来语',
+  'czech': '捷克语',
+  'romanian': '罗马尼亚语',
+  'hungarian': '匈牙利语',
+  'ukrainian': '乌克兰语',
+}
+
+const translateLang = (lang: string): string => {
+  if (!lang) return lang
+  return langMap[lang.toLowerCase()] || lang
+}
 type HealthIssue = {
   severity: HealthSeverity
   label: string
@@ -26,9 +67,113 @@ const videoInfoCache = new Map<string, VideoInfoImportResponse>()
 const level = ref<DisplayLevel>('beginner')
 const recursive = ref(false)
 const importing = ref(false)
-const items = ref<VideoInfoItem[]>([])
+const items = shallowRef<VideoInfoItem[]>([])
 const expandedIds = ref<Set<number>>(new Set())
 const importSummary = ref('')
+
+// 数据库相关状态
+const saving = ref(false)
+const saveProgress = reactive({ total: 0, saved: 0, phase: 'xml' as 'xml' | 'db' | 'done' })
+const historyVisible = ref(false)
+const historyRecords = shallowRef<VideoRecordRow[]>([])
+const historyLoading = ref(false)
+const historySelection = ref<string[]>([])
+const historyCount = ref(0)
+const historyPageSize = 50
+const historyHasMore = ref(true)
+
+// 历史记录列选择
+type HistoryColDef = { key: string; label: string; width?: number; group: 'basic' | 'video' | 'audio' | 'extra' }
+const HISTORY_ALL_COLUMNS: HistoryColDef[] = [
+  { key: 'name', label: '文件名', width: 200, group: 'basic' },
+  { key: 'format', label: '格式', width: 80, group: 'basic' },
+  { key: 'resolution', label: '分辨率', width: 120, group: 'basic' },
+  { key: 'codec', label: '编码', width: 100, group: 'basic' },
+  { key: 'frame_rate', label: '帧率', width: 80, group: 'basic' },
+  { key: 'duration', label: '时长', width: 90, group: 'basic' },
+  { key: 'overall_bit_rate', label: '码率', width: 120, group: 'basic' },
+  { key: 'size', label: '文件大小', width: 100, group: 'basic' },
+  { key: 'scanned_at', label: '入库时间', width: 160, group: 'basic' },
+  { key: 'bit_depth', label: '位深', width: 80, group: 'video' },
+  { key: 'hdr_format', label: 'HDR', width: 150, group: 'video' },
+  { key: 'scan_type', label: '扫描方式', width: 90, group: 'video' },
+  { key: 'color_space', label: '色彩空间', width: 90, group: 'video' },
+  { key: 'color_primaries', label: '色域', width: 100, group: 'video' },
+  { key: 'transfer_characteristics', label: '传输特性', width: 110, group: 'video' },
+  { key: 'chroma_subsampling', label: '色度采样', width: 90, group: 'video' },
+  { key: 'format_profile', label: '编码Profile', width: 120, group: 'video' },
+  { key: 'video_bit_rate', label: '视频码率', width: 110, group: 'video' },
+  { key: 'video_stream_size', label: '视频流大小', width: 110, group: 'video' },
+  { key: 'video_language', label: '视频语言', width: 100, group: 'video' },
+  { key: 'channels', label: '声道', width: 100, group: 'audio' },
+  { key: 'channel_layout', label: '声道布局', width: 120, group: 'audio' },
+  { key: 'audio_codec', label: '音频编码', width: 110, group: 'audio' },
+  { key: 'audio_bit_rate', label: '音频码率', width: 110, group: 'audio' },
+  { key: 'sample_rate', label: '采样率', width: 90, group: 'audio' },
+  { key: 'audio_language', label: '音频语言', width: 100, group: 'audio' },
+  { key: 'audio_stream_size', label: '音频流大小', width: 110, group: 'audio' },
+  { key: 'text_count', label: '字幕数', width: 80, group: 'extra' },
+  { key: 'text_languages', label: '字幕语言', width: 150, group: 'extra' },
+  { key: 'writing_application', label: '封装工具', width: 150, group: 'extra' },
+  { key: 'encoded_library', label: '编码库', width: 150, group: 'extra' },
+  { key: 'path', label: '文件路径', width: 300, group: 'extra' },
+]
+const HISTORY_DEFAULT_KEYS = ['name', 'format', 'resolution', 'codec', 'duration', 'overall_bit_rate', 'scanned_at', 'size']
+const historyColKeys = ref<string[]>([...HISTORY_DEFAULT_KEYS])
+const historyColPopoverVisible = ref(false)
+
+const GROUP_LABELS: Record<string, string> = { basic: '基本信息', video: '视频流', audio: '音频流', extra: '其他' }
+const historyGroupedCols = computed(() => {
+  const groups: Record<string, HistoryColDef[]> = { basic: [], video: [], audio: [], extra: [] }
+  HISTORY_ALL_COLUMNS.forEach(c => { const g = groups[c.group]; if (g) g.push(c) })
+  return groups
+})
+
+// 从 detail_json 提取额外字段（带 WeakMap 缓存避免重复 parse）
+const detailCache = new WeakMap<VideoRecordRow, any>()
+function getExtraField(row: VideoRecordRow, key: string): string {
+  if (!row.detail_json) return '-'
+  try {
+    let d = detailCache.get(row)
+    if (d === undefined) {
+      d = JSON.parse(row.detail_json)
+      detailCache.set(row, d)
+    }
+    const g = d.general ?? {}
+    const v = d.videoStreams?.[0] ?? {}
+    const a = d.audioStreams?.[0] ?? {}
+    const texts: any[] = d.textStreams ?? []
+    switch (key) {
+      case 'bit_depth': return v.bitDepth ?? '-'
+      case 'hdr_format': return v.hdrFormat ?? '-'
+      case 'scan_type': return v.scanType ?? '-'
+      case 'color_space': return v.colorSpace ?? '-'
+      case 'color_primaries': return v.colorPrimaries ?? '-'
+      case 'transfer_characteristics': return v.transferCharacteristics ?? '-'
+      case 'chroma_subsampling': return v.chromaSubsampling ?? '-'
+      case 'format_profile': return v.formatProfile ?? '-'
+      case 'video_bit_rate': return v.bitRate ?? '-'
+      case 'video_stream_size': return v.streamSize ?? '-'
+      case 'video_language': return v.language ?? '-'
+      case 'channels': return a.channels ?? '-'
+      case 'channel_layout': return a.channelLayout ?? '-'
+      case 'audio_codec': return a.codec ?? '-'
+      case 'audio_bit_rate': return a.bitRate ?? '-'
+      case 'sample_rate': return a.sampleRate ?? '-'
+      case 'audio_language': return a.language ?? '-'
+      case 'audio_stream_size': return a.streamSize ?? '-'
+      case 'text_count': return texts.length ? String(texts.length) : '-'
+      case 'text_languages': {
+        const langs = [...new Set(texts.map((t: any) => t.language).filter(Boolean))]
+        return langs.length ? langs.join(', ') : '-'
+      }
+      case 'writing_application': return g.writingApplication ?? '-'
+      case 'encoded_library': return v.encodedLibrary || g.encodedLibrary || '-'
+      case 'path': return row.path ?? '-'
+      default: return '-'
+    }
+  } catch { return '-' }
+}
 const searchQuery = ref('')
 const viewMode = ref<'card' | 'table'>('table')
 
@@ -43,22 +188,31 @@ const columnFilters = ref<Map<string, Set<string>>>(new Map())
 const filterPopoverCol = ref<string | null>(null)
 const filterSearch = ref('')
 
-// 获取某列所有唯一值（基于当前 flatTableData）
-const getColumnUniqueValues = (prop: string): string[] => {
+// 预计算所有列的唯一值（单次遍历，数据变化时才重算）
+const allColumnUniqueValues = computed(() => {
   const rows = flatTableData.value
-  const vals = new Set<string>()
+  const map = new Map<string, Set<string>>()
   for (const row of rows) {
-    const v = String((row as any)[prop] ?? '')
-    if (v && v !== '-' && v !== '0') vals.add(v)
+    for (const col of ALL_COLUMNS) {
+      const v = String((row as any)[col.prop] ?? '')
+      if (v && v !== '-' && v !== '0') {
+        if (!map.has(col.prop)) map.set(col.prop, new Set())
+        map.get(col.prop)!.add(v)
+      }
+    }
   }
-  return [...vals].sort()
-}
+  const result = new Map<string, string[]>()
+  for (const [key, set] of map) {
+    result.set(key, [...set].sort())
+  }
+  return result
+})
 
 // 当前列筛选弹窗中的值列表（带搜索过滤）
 const filterValueList = computed(() => {
   const col = filterPopoverCol.value
   if (!col) return []
-  const all = getColumnUniqueValues(col)
+  const all = allColumnUniqueValues.value.get(col) ?? []
   const q = filterSearch.value.toLowerCase().trim()
   if (!q) return all
   return all.filter(v => v.toLowerCase().includes(q))
@@ -176,11 +330,15 @@ const buildAudioSummary = (item: VideoInfoItem): string => {
   return [codec, ch, sr].filter(Boolean).join(' ')
 }
 
-// 字幕摘要（入门级）
+// 字幕摘要（入门级）：优先显示语言，无语言时显示格式
 const buildTextSummary = (item: VideoInfoItem): string => {
   const streams = item.detail?.textStreams
   if (!streams || streams.length === 0) return '-'
-  return streams.map(s => s.format || '?').join(' / ')
+  return streams.map(s => {
+    if (s.language) return translateLang(s.language)
+    if (s.title) return s.title
+    return s.format || '?'
+  }).join(' / ')
 }
 
 // 音轨详情（专业级）：编码 + 声道 + 采样率 + 码率 + 语言
@@ -192,7 +350,7 @@ const buildAudioDetail = (item: VideoInfoItem): string => {
     const ch = parseChannels(s.channels)
     const sr = parseSampleRate(s.sampleRate)
     const br = parseBitRate(s.bitRate)
-    const lang = s.language ? `[${s.language}]` : ''
+    const lang = s.language ? `[${translateLang(s.language)}]` : ''
     return `#${i + 1} ${[codec, ch, sr, br, lang].filter(Boolean).join(' ')}`
   }).join('  ')
 }
@@ -203,7 +361,7 @@ const buildTextDetail = (item: VideoInfoItem): string => {
   if (!streams || streams.length === 0) return '-'
   return streams.map((s, i) => {
     const fmt = s.format || '?'
-    const lang = s.language ? `[${s.language}]` : ''
+    const lang = s.language ? `[${translateLang(s.language)}]` : ''
     return `#${i + 1} ${fmt} ${lang}`.trim()
   }).join('  ')
 }
@@ -435,11 +593,14 @@ const sortRows = (rows: ReturnType<typeof extractRow>[]) => {
   })
 }
 
-// 无归类时的平铺数据（应用列筛选）
-const flatTableData = computed(() => {
+// 预过滤数据（搜索 + 排序，不含列筛选）—— columnAnalysis 依赖此层，避免列筛选触发重算
+const preFilterTableData = computed(() => {
   const rows = filteredItems.value.map(extractRow)
-  return sortRows(applyColumnFilters(rows))
+  return sortRows(rows)
 })
+
+// 最终平铺数据（应用列筛选）
+const flatTableData = computed(() => applyColumnFilters(preFilterTableData.value))
 
 // 归类后的分组数据
 interface TableGroup {
@@ -450,7 +611,7 @@ interface TableGroup {
 
 const groupedTableData = computed<TableGroup[]>(() => {
   if (groupBy.value === 'none') return []
-  const allRows = applyColumnFilters(filteredItems.value.map(extractRow))
+  const allRows = applyColumnFilters(preFilterTableData.value)
   const map = new Map<string, ReturnType<typeof extractRow>[]>()
 
   for (const row of allRows) {
@@ -541,9 +702,9 @@ const ALL_COLUMNS: ColumnDef[] = [
   { prop: 'textDetail', label: '字幕详情', width: 160, minLevel: 'professional', align: 'center', slot: 'textDetail' },
 ]
 
-// 数据列分析：检测全空列和全同列
+// 数据列分析：检测全空列和全同列（依赖 preFilterTableData，不因列筛选变化而重算）
 const columnAnalysis = computed(() => {
-  const rows = flatTableData.value
+  const rows = preFilterTableData.value
   if (rows.length === 0) return { empty: new Set<string>(), same: new Set<string>(), sameValues: new Map<string, string>() }
 
   const empty = new Set<string>()
@@ -741,6 +902,124 @@ const handleClear = () => {
   importSummary.value = ''
   searchQuery.value = ''
 }
+
+// ==================== 数据库入库 ====================
+const formatDuration = (ms: number): string => {
+  const totalSecs = Math.floor(ms / 1000)
+  const h = Math.floor(totalSecs / 3600)
+  const m = Math.floor((totalSecs % 3600) / 60)
+  const s = totalSecs % 60
+  return h > 0
+    ? `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+    : `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+}
+
+const refreshHistoryCount = async () => {
+  try {
+    historyCount.value = await getRecordCount()
+  } catch { historyCount.value = 0 }
+}
+
+const handleSaveToDb = async () => {
+  if (!items.value.length) return
+  saving.value = true
+  saveProgress.total = items.value.length
+  saveProgress.saved = 0
+  saveProgress.phase = 'xml'
+
+  try {
+    const xmlMap = new Map<string, string>()
+    const successItems = items.value.filter(i => i.status === 'success')
+
+    // 并发获取 XML（限制 4 路并发）
+    const CONCURRENCY = 4
+    let completed = 0
+    const fetchXml = async (item: VideoInfoItem) => {
+      try {
+        const xml = await getVideoRawXml(item.path)
+        if (xml) xmlMap.set(item.path, xml)
+      } catch { /* 跳过 */ }
+      completed++
+      saveProgress.saved = completed
+    }
+    const queue = [...successItems]
+    const workers = Array.from({ length: Math.min(CONCURRENCY, queue.length) }, async () => {
+      while (queue.length) {
+        const item = queue.shift()!
+        await fetchXml(item)
+      }
+    })
+    await Promise.allSettled(workers)
+
+    saveProgress.phase = 'db'
+    const count = await saveVideoRecords(items.value, xmlMap)
+
+    saveProgress.phase = 'done'
+    ElMessage.success(`${t('已保存')} ${count} ${t('条记录到数据库')}`)
+    await refreshHistoryCount()
+  } catch (e: any) {
+    ElMessage.error(`${t('入库失败')}：${e?.message || e}`)
+  } finally {
+    saving.value = false
+  }
+}
+
+const openHistory = async () => {
+  historyVisible.value = true
+  historyLoading.value = true
+  historyHasMore.value = true
+  try {
+    historyRecords.value = await loadVideoRecords(historyPageSize, 0)
+    historyHasMore.value = historyRecords.value.length >= historyPageSize
+  } catch (e: any) {
+    ElMessage.error(`${t('加载历史记录失败')}：${e?.message || e}`)
+  } finally {
+    historyLoading.value = false
+  }
+}
+
+const loadMoreHistory = async () => {
+  if (historyLoading.value || !historyHasMore.value) return
+  historyLoading.value = true
+  try {
+    const more = await loadVideoRecords(historyPageSize, historyRecords.value.length)
+    historyRecords.value = [...historyRecords.value, ...more]
+    historyHasMore.value = more.length >= historyPageSize
+  } catch (e: any) {
+    ElMessage.error(`${t('加载历史记录失败')}：${e?.message || e}`)
+  } finally {
+    historyLoading.value = false
+  }
+}
+
+const loadHistoryToView = () => {
+  const rows = historySelection.value.length
+    ? historyRecords.value.filter(r => historySelection.value.includes(r.id))
+    : historyRecords.value
+
+  items.value = rows.map(rowToVideoInfoItem)
+  importSummary.value = `${t('从历史记录加载')} ${items.value.length} ${t('条')}`
+  expandedIds.value.clear()
+  historyVisible.value = false
+  ElMessage.success(`${t('已加载')} ${items.value.length} ${t('条历史记录')}`)
+}
+
+const deleteSelectedHistory = async () => {
+  if (!historySelection.value.length) return
+  try {
+    await deleteVideoRecords(historySelection.value)
+    historyRecords.value = historyRecords.value.filter(r => !historySelection.value.includes(r.id))
+    historySelection.value = []
+    await refreshHistoryCount()
+    ElMessage.success(t('删除成功'))
+  } catch (e: any) {
+    ElMessage.error(`${t('删除失败')}：${e?.message || e}`)
+  }
+}
+
+onMounted(() => {
+  refreshHistoryCount()
+})
 
 // ==================== 导出功能 ====================
 const csvEscape = (v: string | number) => {
@@ -954,6 +1233,12 @@ const exportData = async (format: ExportFormat) => {
           <span class="switch-label">{{ t('递归遍历') }}</span>
           <el-switch v-model="recursive" size="small" />
         </label>
+        <el-button v-if="items.length" type="success" :icon="Coin" round :loading="saving" @click="handleSaveToDb">
+          {{ t('入库') }}
+        </el-button>
+        <el-badge :value="historyCount" :hidden="!historyCount" :max="999">
+          <el-button round @click="openHistory">{{ t('历史记录') }}</el-button>
+        </el-badge>
       </div>
     </div>
 
@@ -1299,12 +1584,160 @@ const exportData = async (format: ExportFormat) => {
       </div>
     </div>
 
+    <!-- 入库进度 -->
+    <div v-if="saving" class="progress-bar">
+      <el-progress
+        :percentage="Math.round((saveProgress.saved / saveProgress.total) * 100)"
+        :indeterminate="saveProgress.phase === 'db'"
+        :stroke-width="4"
+      />
+      <span class="summary-text">
+        {{ saveProgress.phase === 'xml' ? t('正在获取 MediaInfo XML...') : saveProgress.phase === 'db' ? t('正在写入数据库...') : t('完成') }}
+        ({{ saveProgress.saved }}/{{ saveProgress.total }})
+      </span>
+    </div>
+
     <!-- 空状态 -->
     <div v-if="!items.length && !importing" class="empty-state">
       <div class="empty-icon">🎬</div>
       <p class="empty-title">{{ t('导入视频文件以查看详细信息') }}</p>
       <p class="empty-desc">{{ t('支持文件夹导入或粘贴路径，可选择是否递归遍历子目录') }}</p>
     </div>
+
+    <!-- 历史记录对话框 -->
+    <el-dialog v-model="historyVisible" :title="t('历史记录')" width="90%" top="5vh" append-to-body>
+      <div style="margin-bottom: 10px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+        <el-popover v-model:visible="historyColPopoverVisible" placement="bottom-start" :width="480" trigger="click">
+          <template #reference>
+            <el-button size="small" text type="primary">{{ t('选择列') }} ({{ historyColKeys.length }}/{{ HISTORY_ALL_COLUMNS.length }})</el-button>
+          </template>
+          <div style="max-height: 50vh; overflow-y: auto;">
+            <div v-for="(cols, group) in historyGroupedCols" :key="group" style="margin-bottom: 8px;">
+              <div style="font-size: 12px; font-weight: 600; color: #606266; margin-bottom: 4px;">{{ GROUP_LABELS[group] }}</div>
+              <el-checkbox-group v-model="historyColKeys" size="small">
+                <el-checkbox v-for="col in cols" :key="col.key" :value="col.key" style="margin-right: 12px; margin-bottom: 2px;">
+                  {{ col.label }}
+                </el-checkbox>
+              </el-checkbox-group>
+            </div>
+          </div>
+          <div style="margin-top: 8px; display: flex; gap: 8px;">
+            <el-button size="small" text type="primary" @click="historyColKeys = HISTORY_ALL_COLUMNS.map(c => c.key)">全选</el-button>
+            <el-button size="small" text @click="historyColKeys = [...HISTORY_DEFAULT_KEYS]">恢复默认</el-button>
+          </div>
+        </el-popover>
+        <span style="font-size: 12px; color: #909399;">{{ historyRecords.length }} / {{ historyCount }} {{ t('条记录') }}</span>
+      </div>
+      <el-table
+        :data="historyRecords"
+        size="small"
+        border
+        v-loading="historyLoading"
+        @selection-change="(rows: VideoRecordRow[]) => historySelection = rows.map(r => r.id)"
+        max-height="60vh"
+      >
+        <el-table-column type="selection" width="40" fixed />
+        <el-table-column v-if="historyColKeys.includes('name')" prop="name" :label="t('文件名')" min-width="200" show-overflow-tooltip fixed />
+        <el-table-column v-if="historyColKeys.includes('format')" prop="format" :label="t('格式')" width="80" align="center" />
+        <el-table-column v-if="historyColKeys.includes('resolution')" :label="t('分辨率')" width="120" align="center">
+          <template #default="{ row }">{{ row.width && row.height ? `${row.width}×${row.height}` : '-' }}</template>
+        </el-table-column>
+        <el-table-column v-if="historyColKeys.includes('codec')" prop="codec" :label="t('编码')" width="100" align="center" />
+        <el-table-column v-if="historyColKeys.includes('frame_rate')" prop="frame_rate" :label="t('帧率')" width="80" align="center" />
+        <el-table-column v-if="historyColKeys.includes('duration')" :label="t('时长')" width="90" align="center">
+          <template #default="{ row }">{{ row.duration_ms ? formatDuration(row.duration_ms) : '-' }}</template>
+        </el-table-column>
+        <el-table-column v-if="historyColKeys.includes('overall_bit_rate')" prop="overall_bit_rate" :label="t('码率')" width="120" align="center" />
+        <el-table-column v-if="historyColKeys.includes('size')" :label="t('文件大小')" width="100" align="center">
+          <template #default="{ row }">{{ formatBytes(row.size) }}</template>
+        </el-table-column>
+        <el-table-column v-if="historyColKeys.includes('scanned_at')" prop="scanned_at" :label="t('入库时间')" width="160" align="center" />
+        <el-table-column v-if="historyColKeys.includes('bit_depth')" label="位深" width="80" align="center">
+          <template #default="{ row }">{{ getExtraField(row, 'bit_depth') }}</template>
+        </el-table-column>
+        <el-table-column v-if="historyColKeys.includes('hdr_format')" label="HDR" min-width="150" show-overflow-tooltip>
+          <template #default="{ row }">{{ getExtraField(row, 'hdr_format') }}</template>
+        </el-table-column>
+        <el-table-column v-if="historyColKeys.includes('scan_type')" label="扫描方式" width="90" align="center">
+          <template #default="{ row }">{{ getExtraField(row, 'scan_type') }}</template>
+        </el-table-column>
+        <el-table-column v-if="historyColKeys.includes('color_space')" label="色彩空间" width="90" align="center">
+          <template #default="{ row }">{{ getExtraField(row, 'color_space') }}</template>
+        </el-table-column>
+        <el-table-column v-if="historyColKeys.includes('color_primaries')" label="色域" width="100" align="center">
+          <template #default="{ row }">{{ getExtraField(row, 'color_primaries') }}</template>
+        </el-table-column>
+        <el-table-column v-if="historyColKeys.includes('transfer_characteristics')" label="传输特性" width="110" align="center">
+          <template #default="{ row }">{{ getExtraField(row, 'transfer_characteristics') }}</template>
+        </el-table-column>
+        <el-table-column v-if="historyColKeys.includes('chroma_subsampling')" label="色度采样" width="90" align="center">
+          <template #default="{ row }">{{ getExtraField(row, 'chroma_subsampling') }}</template>
+        </el-table-column>
+        <el-table-column v-if="historyColKeys.includes('format_profile')" label="编码Profile" min-width="120" show-overflow-tooltip>
+          <template #default="{ row }">{{ getExtraField(row, 'format_profile') }}</template>
+        </el-table-column>
+        <el-table-column v-if="historyColKeys.includes('video_bit_rate')" label="视频码率" width="110" align="center">
+          <template #default="{ row }">{{ getExtraField(row, 'video_bit_rate') }}</template>
+        </el-table-column>
+        <el-table-column v-if="historyColKeys.includes('video_stream_size')" label="视频流大小" width="110" align="center">
+          <template #default="{ row }">{{ getExtraField(row, 'video_stream_size') }}</template>
+        </el-table-column>
+        <el-table-column v-if="historyColKeys.includes('video_language')" label="视频语言" width="100" align="center">
+          <template #default="{ row }">{{ getExtraField(row, 'video_language') }}</template>
+        </el-table-column>
+        <el-table-column v-if="historyColKeys.includes('channels')" label="声道" width="100" align="center">
+          <template #default="{ row }">{{ getExtraField(row, 'channels') }}</template>
+        </el-table-column>
+        <el-table-column v-if="historyColKeys.includes('channel_layout')" label="声道布局" width="120" align="center">
+          <template #default="{ row }">{{ getExtraField(row, 'channel_layout') }}</template>
+        </el-table-column>
+        <el-table-column v-if="historyColKeys.includes('audio_codec')" label="音频编码" width="110" align="center">
+          <template #default="{ row }">{{ getExtraField(row, 'audio_codec') }}</template>
+        </el-table-column>
+        <el-table-column v-if="historyColKeys.includes('audio_bit_rate')" label="音频码率" width="110" align="center">
+          <template #default="{ row }">{{ getExtraField(row, 'audio_bit_rate') }}</template>
+        </el-table-column>
+        <el-table-column v-if="historyColKeys.includes('sample_rate')" label="采样率" width="90" align="center">
+          <template #default="{ row }">{{ getExtraField(row, 'sample_rate') }}</template>
+        </el-table-column>
+        <el-table-column v-if="historyColKeys.includes('audio_language')" label="音频语言" width="100" align="center">
+          <template #default="{ row }">{{ getExtraField(row, 'audio_language') }}</template>
+        </el-table-column>
+        <el-table-column v-if="historyColKeys.includes('audio_stream_size')" label="音频流大小" width="110" align="center">
+          <template #default="{ row }">{{ getExtraField(row, 'audio_stream_size') }}</template>
+        </el-table-column>
+        <el-table-column v-if="historyColKeys.includes('text_count')" label="字幕数" width="80" align="center">
+          <template #default="{ row }">{{ getExtraField(row, 'text_count') }}</template>
+        </el-table-column>
+        <el-table-column v-if="historyColKeys.includes('text_languages')" label="字幕语言" min-width="150" show-overflow-tooltip>
+          <template #default="{ row }">{{ getExtraField(row, 'text_languages') }}</template>
+        </el-table-column>
+        <el-table-column v-if="historyColKeys.includes('writing_application')" label="封装工具" min-width="150" show-overflow-tooltip>
+          <template #default="{ row }">{{ getExtraField(row, 'writing_application') }}</template>
+        </el-table-column>
+        <el-table-column v-if="historyColKeys.includes('encoded_library')" label="编码库" min-width="150" show-overflow-tooltip>
+          <template #default="{ row }">{{ getExtraField(row, 'encoded_library') }}</template>
+        </el-table-column>
+        <el-table-column v-if="historyColKeys.includes('path')" prop="path" label="文件路径" min-width="300" show-overflow-tooltip />
+      </el-table>
+      <div v-if="historyHasMore" style="text-align: center; padding: 10px 0;">
+        <el-button size="small" :loading="historyLoading" @click="loadMoreHistory">
+          {{ t('加载更多') }} ({{ historyRecords.length }}/{{ historyCount }})
+        </el-button>
+      </div>
+      <div v-else-if="historyRecords.length" style="text-align: center; padding: 6px 0; font-size: 12px; color: #909399;">
+        {{ t('已加载全部') }} {{ historyRecords.length }} {{ t('条记录') }}
+      </div>
+      <template #footer>
+        <el-button type="danger" plain :disabled="!historySelection.length" @click="deleteSelectedHistory">
+          {{ t('删除选中') }}{{ historySelection.length ? ` (${historySelection.length})` : '' }}
+        </el-button>
+        <el-button type="primary" @click="loadHistoryToView">
+          {{ historySelection.length ? `${t('加载选中')} (${historySelection.length})` : t('加载全部') }}
+        </el-button>
+        <el-button @click="historyVisible = false">{{ t('关闭') }}</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
