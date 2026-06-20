@@ -14,60 +14,113 @@
       </section>
 
       <section class="card">
-        <header class="card-head"><h3>{{ t('输出设置') }}</h3></header>
-        <div class="setting-group">
-          <label>{{ t('输出格式') }}</label>
-          <el-select v-model="config.output_format" style="width: 100%;">
-            <el-option label="JPEG XL (.jxl)" value="jxl" />
-            <el-option label="AVIF (.avif)" value="avif" />
-          </el-select>
-          <p class="hint" v-if="config.output_format === 'jxl'">{{ t('JXL 适合本地归档；JPG/JPEG 可用 libjxl 原始封装，其他场景按无损/近无损/有损编码。') }}</p>
-          <p class="hint" v-else>{{ t('AVIF 适合网页和跨设备分享，新版浏览器支持较好。') }}</p>
-        </div>
+        <header class="card-head">
+          <h3>{{ t('输出设置') }}</h3>
+          <el-checkbox v-model="config.advanced_mode">{{ t('高级模式') }}</el-checkbox>
+        </header>
 
-        <div class="setting-group">
-          <label>{{ t('压缩模式') }}</label>
-          <el-radio-group v-model="config.mode" size="small">
-            <el-radio-button label="lossless">{{ t('无损') }}</el-radio-button>
-            <el-radio-button label="near_lossless">{{ t('近无损') }}</el-radio-button>
-            <el-radio-button label="lossy">{{ t('有损') }}</el-radio-button>
-          </el-radio-group>
-          <p class="hint" v-if="config.output_format === 'jxl' && config.mode === 'lossless'">{{ t('d=0，数学无损，体积最大，适合设计原稿/二次编辑。') }}</p>
-          <p class="hint" v-else-if="config.output_format === 'jxl' && config.mode === 'near_lossless'">{{ t('d=1.0，视觉无损，人眼不可辨差异，体积显著缩小。') }}</p>
-          <p class="hint" v-else-if="config.output_format === 'jxl' && config.mode === 'lossy'">{{ t('d=1.0~15，常规有损，按下方 distance 调节体积与质量。') }}</p>
-        </div>
-
-        <div class="setting-group" v-if="config.mode === 'lossy' && config.output_format === 'jxl'">
-          <label>Distance: {{ config.distance.toFixed(1) }}</label>
-          <el-slider v-model="config.distance" :min="1" :max="15" :step="0.5" />
-          <p class="hint">{{ t('越大体积越小、质量越低；1.0=视觉无损，3~5 为常用均衡档。') }}</p>
-        </div>
-
-        <template v-if="config.output_format === 'jxl'">
+        <template v-if="!config.advanced_mode">
           <div class="setting-group">
-            <label>JXL Effort: {{ config.jxl_effort }}</label>
-            <el-slider v-model="config.jxl_effort" :min="1" :max="10" :step="1" />
-            <p class="hint">{{ t('1–10，3=快速，7=均衡（默认），9+=极慢；越大压缩率越好。') }}</p>
+            <label>{{ t('智能输出') }}</label>
+            <p class="hint strong">{{ t('JPG/JPEG 自动输出 JXL；PNG 自动输出 AVIF。') }}</p>
+            <p class="hint">{{ t('默认推荐：严格无损 + 均衡编码 + 保留元数据。') }}</p>
           </div>
-          <el-checkbox v-model="config.jxl_jpeg_lossless" :disabled="!libjxlStatus?.available">{{ t('JPG/JPEG 原始无损封装（可用 djxl 还原原文件）') }}</el-checkbox>
+
+          <div class="setting-group">
+            <label>{{ t('压缩模式') }}</label>
+            <el-radio-group v-model="config.mode" size="small">
+              <el-radio-button label="lossless">{{ t('严格无损') }}</el-radio-button>
+              <el-radio-button label="near_lossless">{{ t('视觉无损') }}</el-radio-button>
+            </el-radio-group>
+            <p class="hint" v-if="config.mode === 'lossless'">{{ t('JPEG→JXL 使用原始 JPEG 无损封装；PNG→AVIF 使用最高质量无损设置。') }}</p>
+            <p class="hint" v-else>{{ t('肉眼几乎不可辨，通常能获得更高压缩率。') }}</p>
+          </div>
+
+          <div class="setting-group">
+            <label>{{ t('编码强度') }}</label>
+            <el-radio-group v-model="config.effort_preset" size="small">
+              <el-radio-button label="fast">{{ t('快速') }}</el-radio-button>
+              <el-radio-button label="balanced">{{ t('均衡') }}</el-radio-button>
+              <el-radio-button label="best">{{ t('最佳压缩') }}</el-radio-button>
+            </el-radio-group>
+            <p class="hint">{{ effortHint }}</p>
+          </div>
+
+          <div class="setting-group">
+            <label>{{ t('元数据') }}</label>
+            <el-radio-group v-model="config.metadata_policy" size="small">
+              <el-radio-button label="keep">{{ t('保留') }}</el-radio-button>
+              <el-radio-button label="strip">{{ t('剥离') }}</el-radio-button>
+            </el-radio-group>
+            <p class="hint">{{ t('保留适合摄影归档；剥离可减小体积并移除拍摄/GPS 等附加信息。JPEG→JXL 原始封装支持该策略，常规像素编码会尽量避免写入额外元数据。') }}</p>
+          </div>
+
           <p class="hint" :class="{ 'is-warn': !libjxlStatus?.available }">{{ libjxlStatus?.message || t('正在检测 libjxl/cjxl...') }}</p>
-          <p class="hint" v-if="config.jxl_jpeg_lossless">{{ t('仅对未缩放的 JPG/JPEG 生效；PNG、缩放或 AVIF 会自动走常规像素编码。') }}</p>
-          <el-checkbox v-model="config.keep_hdr">{{ t('保留 16-bit 精度（PNG 等高位深输入）') }}</el-checkbox>
-          <p class="hint" v-if="config.keep_hdr">{{ t('保留 16-bit 像素精度；不强行标记为 HDR/PQ，避免普通 SDR 图片色彩异常。') }}</p>
         </template>
 
-        <template v-if="config.output_format === 'avif'">
-          <p class="hint" v-if="config.mode === 'lossless'">{{ t('AVIF 无损模式固定使用最高质量；16-bit / HDR 会降为 SDR 8-bit。') }}</p>
-          <div class="setting-group" v-else>
-            <label>{{ t('色彩质量') }}: {{ config.avif_color_quality }}</label>
-            <el-slider v-model="config.avif_color_quality" :min="config.mode === 'near_lossless' ? 80 : 1" :max="100" :step="1" />
+        <template v-else>
+          <div class="setting-group">
+            <label>{{ t('输出格式') }}</label>
+            <el-select v-model="config.output_format" style="width: 100%;">
+              <el-option :label="t('智能自动（JPG→JXL，PNG→AVIF）')" value="auto" />
+              <el-option label="JPEG XL (.jxl)" value="jxl" />
+              <el-option label="AVIF (.avif)" value="avif" />
+            </el-select>
+            <p class="hint" v-if="effectiveFormat === 'jxl'">{{ t('JXL 适合本地归档；JPG/JPEG 可用 libjxl 原始封装。') }}</p>
+            <p class="hint" v-else-if="effectiveFormat === 'avif'">{{ t('AVIF 适合网页和跨设备分享，新版浏览器支持较好。') }}</p>
+            <p class="hint" v-else>{{ t('按输入格式自动选择输出：JPG/JPEG→JXL，PNG→AVIF。') }}</p>
           </div>
-          <div class="setting-group" v-if="config.mode !== 'lossless'">
-            <label>{{ t('Alpha 质量') }}: {{ config.avif_alpha_quality }}</label>
-            <el-slider v-model="config.avif_alpha_quality" :min="config.mode === 'near_lossless' ? 80 : 1" :max="100" :step="1" />
+
+          <div class="setting-group">
+            <label>{{ t('压缩模式') }}</label>
+            <el-radio-group v-model="config.mode" size="small">
+              <el-radio-button label="lossless">{{ t('无损') }}</el-radio-button>
+              <el-radio-button label="near_lossless">{{ t('近无损') }}</el-radio-button>
+              <el-radio-button label="lossy">{{ t('有损') }}</el-radio-button>
+            </el-radio-group>
           </div>
-          <el-checkbox :model-value="false" disabled>{{ t('保留 HDR / 宽色域') }}</el-checkbox>
-          <p class="hint">{{ t('AVIF 编码器（ravif）暂不支持 HDR，该选项无效。') }}</p>
+
+          <div class="setting-group" v-if="config.mode === 'lossy' && effectiveFormat === 'jxl'">
+            <label>Distance: {{ config.distance.toFixed(1) }}</label>
+            <el-slider v-model="config.distance" :min="1" :max="15" :step="0.5" />
+            <p class="hint">{{ t('越大体积越小、质量越低；1.0=视觉无损，3~5 为常用均衡档。') }}</p>
+          </div>
+
+          <template v-if="effectiveFormat === 'jxl' || config.output_format === 'auto'">
+            <div class="setting-group">
+              <label>JXL Effort: {{ config.jxl_effort }}</label>
+              <el-slider v-model="config.jxl_effort" :min="1" :max="10" :step="1" />
+              <p class="hint">{{ t('1–10，3=快速，7=均衡，9+=极慢；越大压缩率越好。') }}</p>
+            </div>
+            <el-checkbox v-model="config.jxl_jpeg_lossless" :disabled="!libjxlStatus?.available">{{ t('JPG/JPEG 原始无损封装') }}</el-checkbox>
+            <p class="hint" :class="{ 'is-warn': !libjxlStatus?.available }">{{ libjxlStatus?.message || t('正在检测 libjxl/cjxl...') }}</p>
+            <el-checkbox v-model="config.keep_hdr">{{ t('保留 16-bit 精度（PNG 等高位深输入）') }}</el-checkbox>
+          </template>
+
+          <template v-if="effectiveFormat === 'avif' || config.output_format === 'auto'">
+            <p class="hint" v-if="config.mode === 'lossless'">{{ t('AVIF 无损模式固定使用最高质量；16-bit / HDR 会降为 SDR 8-bit。') }}</p>
+            <div class="setting-group" v-else>
+              <label>{{ t('色彩质量') }}: {{ config.avif_color_quality }}</label>
+              <el-slider v-model="config.avif_color_quality" :min="config.mode === 'near_lossless' ? 80 : 1" :max="100" :step="1" />
+            </div>
+            <div class="setting-group" v-if="config.mode !== 'lossless'">
+              <label>{{ t('Alpha 质量') }}: {{ config.avif_alpha_quality }}</label>
+              <el-slider v-model="config.avif_alpha_quality" :min="config.mode === 'near_lossless' ? 80 : 1" :max="100" :step="1" />
+            </div>
+            <div class="setting-group">
+              <label>AVIF Speed: {{ config.avif_speed }}</label>
+              <el-slider v-model="config.avif_speed" :min="1" :max="10" :step="1" />
+              <p class="hint">{{ t('1=最慢最佳压缩，6=均衡，8+=快速。') }}</p>
+            </div>
+          </template>
+
+          <div class="setting-group">
+            <label>{{ t('元数据') }}</label>
+            <el-radio-group v-model="config.metadata_policy" size="small">
+              <el-radio-button label="keep">{{ t('保留') }}</el-radio-button>
+              <el-radio-button label="strip">{{ t('剥离') }}</el-radio-button>
+            </el-radio-group>
+          </div>
         </template>
 
         <div class="setting-group">
@@ -75,9 +128,6 @@
           <el-input-number v-model="config.max_dimension" :min="0" :max="100000" :precision="0" :step="256" style="width: 100%;" />
           <p class="hint">0 = {{ t('不缩放') }}</p>
         </div>
-
-        <el-checkbox v-model="config.keep_exif" disabled>{{ t('保留 EXIF 元数据（当前编码器暂不支持写回）') }}</el-checkbox>
-        <p class="hint">{{ t('输出编码暂不写回 EXIF，避免显示一个无效开关。') }}</p>
       </section>
 
       <section class="card">
@@ -195,8 +245,11 @@ const importing = ref(false)
 const libjxlStatus = ref<LibjxlStatus | null>(null)
 
 const config = ref<CompressConfig>({
-  output_format: 'avif',
-  mode: 'lossy',
+  output_format: 'auto',
+  mode: 'lossless',
+  effort_preset: 'balanced',
+  metadata_policy: 'keep',
+  advanced_mode: false,
   quality: 95,
   distance: 3.0,
   keep_exif: false,
@@ -207,6 +260,7 @@ const config = ref<CompressConfig>({
   jxl_jpeg_lossless: false,
   avif_color_quality: 95,
   avif_alpha_quality: 100,
+  avif_speed: 6,
   keep_hdr: false,
 })
 
@@ -219,10 +273,24 @@ const currentFileName = computed(() => {
   return m ? m[0].slice(1) : p
 })
 
+const effectiveFormat = computed(() => {
+  if (config.value.output_format !== 'auto') return config.value.output_format
+  const hasOnlyPng = files.value.length > 0 && files.value.every(f => f.ext === 'png')
+  const hasOnlyJpeg = files.value.length > 0 && files.value.every(f => f.ext === 'jpg' || f.ext === 'jpeg')
+  if (hasOnlyPng) return 'avif'
+  if (hasOnlyJpeg) return 'jxl'
+  return 'auto'
+})
+const effortHint = computed(() => {
+  if (config.value.effort_preset === 'fast') return t('快速：JXL effort=3，AVIF speed=8，速度优先。')
+  if (config.value.effort_preset === 'best') return t('最佳压缩：JXL effort=9，AVIF speed=1，速度最慢但体积更小。')
+  return t('均衡：JXL effort=7，AVIF speed=6，推荐默认。')
+})
+
 watch(
   () => [config.value.output_format, libjxlStatus.value?.available] as const,
   ([format, available]) => {
-    if (format !== 'jxl' || !available) config.value.jxl_jpeg_lossless = false
+    if ((format === 'avif' || !available) && format !== 'auto') config.value.jxl_jpeg_lossless = false
     if (format === 'avif') config.value.keep_hdr = false
   },
 )
@@ -310,24 +378,28 @@ async function handleDrop(e: DragEvent) {
 }
 
 function applyPreset(kind: 'photo' | 'design' | 'web') {
-  if (kind === 'photo') Object.assign(config.value, { output_format: 'jxl', mode: 'near_lossless', quality: 98, distance: 1.0, jxl_effort: 7, jxl_jpeg_lossless: !!libjxlStatus.value?.available, keep_exif: false, max_dimension: 0, keep_hdr: true })
-  if (kind === 'design') Object.assign(config.value, { output_format: 'jxl', mode: 'lossless', quality: 100, distance: 0, jxl_effort: 8, keep_exif: false, max_dimension: 0, keep_hdr: true })
-  if (kind === 'web') Object.assign(config.value, { output_format: 'avif', mode: 'lossy', quality: 70, avif_color_quality: 70, avif_alpha_quality: 90, keep_exif: false, max_dimension: 1920, keep_hdr: false })
+  if (kind === 'photo') Object.assign(config.value, { advanced_mode: false, output_format: 'auto', mode: 'lossless', effort_preset: 'balanced', metadata_policy: 'keep', quality: 98, distance: 1.0, jxl_effort: 7, jxl_jpeg_lossless: !!libjxlStatus.value?.available, keep_exif: false, max_dimension: 0, keep_hdr: true, avif_speed: 6 })
+  if (kind === 'design') Object.assign(config.value, { advanced_mode: true, output_format: 'jxl', mode: 'lossless', effort_preset: 'best', metadata_policy: 'keep', quality: 100, distance: 0, jxl_effort: 8, jxl_jpeg_lossless: !!libjxlStatus.value?.available, keep_exif: false, max_dimension: 0, keep_hdr: true })
+  if (kind === 'web') Object.assign(config.value, { advanced_mode: false, output_format: 'auto', mode: 'near_lossless', effort_preset: 'balanced', metadata_policy: 'strip', quality: 70, avif_color_quality: 80, avif_alpha_quality: 80, avif_speed: 6, keep_exif: false, max_dimension: 1920, keep_hdr: false })
 }
 
 function normalizedConfig(): CompressConfig {
   const maxDimension = Number.isFinite(Number(config.value.max_dimension))
     ? Math.trunc(Number(config.value.max_dimension))
     : 0
-  return {
+  const cfg = {
     ...config.value,
+    output_format: config.value.advanced_mode ? config.value.output_format : 'auto',
+    mode: config.value.advanced_mode ? config.value.mode : (config.value.mode === 'lossy' ? 'near_lossless' : config.value.mode),
     max_dimension: Math.min(Math.max(maxDimension, 0), 100000),
-    keep_hdr: config.value.output_format === 'jxl' && config.value.keep_hdr,
-    jxl_jpeg_lossless: config.value.output_format === 'jxl' && !!libjxlStatus.value?.available && config.value.jxl_jpeg_lossless,
+    keep_hdr: (config.value.output_format === 'jxl' || config.value.output_format === 'auto') && config.value.keep_hdr,
+    jxl_jpeg_lossless: (config.value.output_format === 'jxl' || config.value.output_format === 'auto') && !!libjxlStatus.value?.available && (config.value.jxl_jpeg_lossless || !config.value.advanced_mode && config.value.mode === 'lossless'),
     avif_color_quality: Math.min(Math.max(Math.trunc(Number(config.value.avif_color_quality) || 95), 1), 100),
     avif_alpha_quality: Math.min(Math.max(Math.trunc(Number(config.value.avif_alpha_quality) || 100), 1), 100),
+    avif_speed: Math.min(Math.max(Math.trunc(Number(config.value.avif_speed) || 6), 1), 10),
     jxl_effort: Math.min(Math.max(Math.trunc(Number(config.value.jxl_effort) || 7), 1), 10),
   }
+  return cfg
 }
 
 async function startCompress() {
@@ -386,6 +458,7 @@ onBeforeUnmount(() => {
 .eyebrow { margin: 0 0 2px; color: var(--accent); font-size: 11px; font-weight: 700; }
 h3 { margin: 0; font-size: 15px; }
 .hint, .drop-hint { font-size: 12px; color: var(--text-muted); line-height: 1.5; }
+.hint.strong { color: var(--text-secondary); font-weight: 600; }
 .hint.is-warn { color: var(--warning, #d46b08); }
 .action-row { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
 .mt8 { margin-top: 8px; }

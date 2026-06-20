@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, defineAsyncComponent, type Component } from 'vue'
-import { Grid, FolderChecked, DataAnalysis, Key, Document, Picture } from '@element-plus/icons-vue'
+import { Grid, FolderChecked, Key, Picture } from '@element-plus/icons-vue'
 
 import { provideSettings } from './hooks/useSettings'
 import { getClickEffectInstance } from './hooks/useClickEffect'
@@ -10,11 +10,9 @@ import SettingsDrawer from './components/SettingsDrawer.vue'
 import AboutDialog from './components/AboutDialog.vue'
 
 const MediaBatchTool = defineAsyncComponent(() => import('@media-batch/index.vue'))
-const ImageBatchTool = defineAsyncComponent(() => import('@image-batch/index.vue'))
+const ImageToolsTool = defineAsyncComponent(() => import('@image-tools/index.vue'))
 const FileTraverseTool = defineAsyncComponent(() => import('@file-traverse/index.vue'))
 const CodebookTool = defineAsyncComponent(() => import('@codebook/index.vue'))
-const ImageToPdfTool = defineAsyncComponent(() => import('@image-to-pdf/index.vue'))
-const ImageCompressTool = defineAsyncComponent(() => import('@image-compress/index.vue'))
 
 type Tool = {
   key: string
@@ -41,15 +39,15 @@ const tools: Tool[] = [
     meta: '元数据提取 · 视频体检 · 批量整理'
   },
   {
-    key: 'image-pdf-lite',
-    name: 'PDF合成（原样）',
-    desc: '无损合成：按批或全部图片快速生成PDF，显示问题列表',
-    tag: 'Lite',
+    key: 'image-tools',
+    name: '图片工具箱',
+    desc: '集中处理图片批量操作、AVIF/JXL 压缩转换与图片合成 PDF',
+    tag: 'Suite',
     tagType: 'success',
-    icon: DataAnalysis,
+    icon: Picture,
     iconImage: '/assets/tool2.webp',
-    accent: 'linear-gradient(135deg, #9be15d, #00e3ae)',
-    meta: '原样嵌入 · 批量合成'
+    accent: 'linear-gradient(135deg, #43e97b, #38f9d7)',
+    meta: '批量处理 · AVIF/JXL · 图片转PDF'
   },
   {
     key: 'file-traverse',
@@ -73,28 +71,6 @@ const tools: Tool[] = [
     accent: 'linear-gradient(135deg, #f093fb, #f5576c)',
     meta: '密码生成 · 账号管理'
   },
-  {
-    key: 'image-to-pdf',
-    name: '图片合成PDF',
-    desc: '高确定性图片合并PDF，支持边距、多尺寸、预览',
-    tag: 'Pro',
-    tagType: 'primary',
-    icon: Document,
-    iconImage: '/assets/tool4.webp',
-    accent: 'linear-gradient(135deg, #667eea, #764ba2)',
-    meta: '比例适配 · 边距系统 · 预览一致'
-  },
-  {
-    key: 'image-compress',
-    name: '图片压缩',
-    desc: '本地离线压缩 JPG/PNG，输出 AVIF/JXL，适合归档与网页分发',
-    tag: 'New',
-    tagType: 'success',
-    icon: Picture,
-    iconImage: '/assets/tool2.webp',
-    accent: 'linear-gradient(135deg, #43e97b, #38f9d7)',
-    meta: 'JPG/PNG · AVIF/JXL · 本地离线'
-  }
 ]
 
 const activeToolKey = ref<string>(tools[0]!.key)
@@ -124,11 +100,9 @@ const activeTool = computed<Tool>(
 
 const toolComponentMap: Record<string, Component> = {
   'media-batch': MediaBatchTool,
-  'image-pdf-lite': ImageBatchTool,
+  'image-tools': ImageToolsTool,
   'file-traverse': FileTraverseTool,
-  'codebook': CodebookTool,
-  'image-to-pdf': ImageToPdfTool,
-  'image-compress': ImageCompressTool
+  'codebook': CodebookTool
 }
 
 const handleToolSelect = (key: string) => {

@@ -15,7 +15,8 @@ export default defineConfig({
       '@image-batch': path.resolve(__dirname, '../tools/image-batch/src'),
       '@media-batch': path.resolve(__dirname, '../tools/media-batch/src'),
       '@image-to-pdf': path.resolve(__dirname, '../tools/image-to-pdf/src'),
-      '@image-compress': path.resolve(__dirname, '../tools/image-compress/src')
+      '@image-compress': path.resolve(__dirname, '../tools/image-compress/src'),
+      '@image-tools': path.resolve(__dirname, '../tools/image-tools/src')
     }
   },
   build: {

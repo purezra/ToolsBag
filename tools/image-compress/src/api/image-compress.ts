@@ -1,7 +1,9 @@
 import { invoke } from '@tauri-apps/api/core'
 
-export type OutputFormat = 'jxl' | 'avif'
+export type OutputFormat = 'auto' | 'jxl' | 'avif'
 export type CompressMode = 'lossless' | 'near_lossless' | 'lossy'
+export type EffortPreset = 'fast' | 'balanced' | 'best'
+export type MetadataPolicy = 'keep' | 'strip'
 
 export interface LibjxlStatus {
   available: boolean
@@ -13,6 +15,9 @@ export interface LibjxlStatus {
 export interface CompressConfig {
   output_format: OutputFormat
   mode: CompressMode
+  effort_preset: EffortPreset
+  metadata_policy: MetadataPolicy
+  advanced_mode: boolean
   quality: number
   /** JXL 有损档的 butteraugli distance（1.0=视觉无损，越大体积越小）。近无损档固定 1.0；无损档忽略。 */
   distance: number
@@ -24,6 +29,7 @@ export interface CompressConfig {
   jxl_jpeg_lossless: boolean
   avif_color_quality: number
   avif_alpha_quality: number
+  avif_speed: number
   keep_hdr: boolean
 }
 

@@ -31,6 +31,7 @@ use zip::write::FileOptions;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum OutputFormat {
+    Auto,
     Jxl,
     Avif,
 }
@@ -44,9 +45,38 @@ pub enum CompressMode {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EffortPreset {
+    Fast,
+    Balanced,
+    Best,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MetadataPolicy {
+    Keep,
+    Strip,
+}
+
+fn default_effort_preset() -> EffortPreset {
+    EffortPreset::Balanced
+}
+
+fn default_metadata_policy() -> MetadataPolicy {
+    MetadataPolicy::Keep
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CompressConfig {
     pub output_format: OutputFormat,
     pub mode: CompressMode,
+    #[serde(default = "default_effort_preset")]
+    pub effort_preset: EffortPreset,
+    #[serde(default = "default_metadata_policy")]
+    pub metadata_policy: MetadataPolicy,
+    #[serde(default)]
+    pub advanced_mode: bool,
     pub quality: u8,
     /// JXL 有损档的 butteraugli distance（1.0=视觉无损，越大体积越小）。
     /// 近无损档固定 1.0；无损档忽略。
@@ -60,7 +90,13 @@ pub struct CompressConfig {
     pub jxl_jpeg_lossless: bool,
     pub avif_color_quality: u8,
     pub avif_alpha_quality: u8,
+    #[serde(default = "default_avif_speed")]
+    pub avif_speed: u8,
     pub keep_hdr: bool,
+}
+
+fn default_avif_speed() -> u8 {
+    6
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -316,13 +352,13 @@ fn unique_output_path(dir: &Path, stem: &str, ext: &str, reserved: &mut HashSet<
 fn plan_outputs(files: Vec<CompressInput>, config: &CompressConfig) -> Result<Vec<PlannedOutput>, String> {
     let out_dir = PathBuf::from(&config.output_dir);
     std::fs::create_dir_all(&out_dir).map_err(|e| format!("创建输出目录失败: {e}"))?;
-    let out_ext = match config.output_format { OutputFormat::Jxl => "jxl", OutputFormat::Avif => "avif" };
     let mut reserved = HashSet::<PathBuf>::new();
     Ok(files
         .into_iter()
         .map(|input| {
             let input_path = PathBuf::from(&input.path);
             let stem = input_path.file_stem().and_then(|s| s.to_str()).unwrap_or("image");
+            let out_ext = match resolve_output_format(&input, config) { OutputFormat::Jxl => "jxl", OutputFormat::Avif => "avif", OutputFormat::Auto => unreachable!() };
             let output_path = unique_output_path(&out_dir, stem, out_ext, &mut reserved)
                 .to_string_lossy()
                 .to_string();
@@ -347,20 +383,63 @@ fn num_cpus_half() -> usize {
         .unwrap_or(1)
 }
 
+fn resolve_output_format(input: &CompressInput, config: &CompressConfig) -> OutputFormat {
+    match config.output_format {
+        OutputFormat::Auto => {
+            if matches!(input.ext.as_str(), "jpg" | "jpeg") {
+                OutputFormat::Jxl
+            } else {
+                OutputFormat::Avif
+            }
+        }
+        OutputFormat::Jxl => OutputFormat::Jxl,
+        OutputFormat::Avif => OutputFormat::Avif,
+    }
+}
+
+fn jxl_effort(config: &CompressConfig) -> u8 {
+    if config.advanced_mode {
+        config.jxl_effort.clamp(1, 10)
+    } else {
+        match config.effort_preset {
+            EffortPreset::Fast => 3,
+            EffortPreset::Balanced => 7,
+            EffortPreset::Best => 9,
+        }
+    }
+}
+
+fn avif_speed(config: &CompressConfig) -> u8 {
+    if config.advanced_mode {
+        config.avif_speed.clamp(1, 10)
+    } else {
+        match config.effort_preset {
+            EffortPreset::Fast => 8,
+            EffortPreset::Balanced => 6,
+            EffortPreset::Best => 1,
+        }
+    }
+}
+
+fn keep_metadata(config: &CompressConfig) -> bool {
+    matches!(config.metadata_policy, MetadataPolicy::Keep)
+}
+
 fn can_use_jpeg_lossless(input: &CompressInput, config: &CompressConfig) -> bool {
-    matches!(config.output_format, OutputFormat::Jxl)
+    matches!(resolve_output_format(input, config), OutputFormat::Jxl)
         && config.jxl_jpeg_lossless
         && config.max_dimension == 0
         && matches!(input.ext.as_str(), "jpg" | "jpeg")
 }
 
-fn encode_jpeg_lossless_with_cjxl(input_path: &Path, out_path: &Path, effort: u8) -> Result<u64, String> {
+fn encode_jpeg_lossless_with_cjxl(input_path: &Path, out_path: &Path, effort: u8, keep_metadata: bool) -> Result<u64, String> {
     let cjxl = find_cjxl().ok_or_else(|| "未找到 cjxl，无法执行 JPEG 原始无损封装".to_string())?;
     let effort = effort.clamp(1, 10).to_string();
     let mut cmd = Command::new(&cjxl);
     cmd.arg(input_path)
         .arg(out_path)
         .arg("--lossless_jpeg=1")
+        .arg(if keep_metadata { "--container=1" } else { "--container=0" })
         .arg("-e")
         .arg(&effort);
     let output = run_command_hidden(&mut cmd)
@@ -382,7 +461,7 @@ fn compress_one(plan: &PlannedOutput, config: &CompressConfig) -> CompressResult
     let out_path = PathBuf::from(&plan.output_path);
 
     if can_use_jpeg_lossless(input, config) {
-        let res = encode_jpeg_lossless_with_cjxl(&input_path, &out_path, config.jxl_effort);
+        let res = encode_jpeg_lossless_with_cjxl(&input_path, &out_path, jxl_effort(config), keep_metadata(config));
         return match res {
             Ok(output_size) => CompressResult {
                 input_path: input.path.clone(),
@@ -405,7 +484,7 @@ fn compress_one(plan: &PlannedOutput, config: &CompressConfig) -> CompressResult
         };
     }
 
-    match config.output_format {
+    match resolve_output_format(input, config) {
         OutputFormat::Jxl => {
             let res = (|| -> Result<u64, String> {
                 // 只有 libjxl/cjxl 路径支持 JPEG 原始无损封装；当前像素编码路径
@@ -450,7 +529,7 @@ fn compress_one(plan: &PlannedOutput, config: &CompressConfig) -> CompressResult
                 };
 
                 // effort 库支持 1–10，clamp 到合法区间。
-                let effort = config.jxl_effort.clamp(1, 10);
+                let effort = jxl_effort(config);
 
                 // 三档分流：无损=Modular；近无损/有损=VarDCT(distance)。
                 // with_threads(0) 使用环境 rayon 池（由 compress_images 安装的限定池），
@@ -508,7 +587,8 @@ fn compress_one(plan: &PlannedOutput, config: &CompressConfig) -> CompressResult
                 // 这是绕过 image::AvifEncoder（锁死 color=alpha）的原因。
                 let (color_q, alpha_q): (f32, f32) = match config.mode {
                     CompressMode::Lossless => (100.0, 100.0),
-                    // AVIF 无独立近无损档：近无损按高质量有损处理
+                    // AVIF 无独立近无损档：简洁模式固定 q=80；高级模式允许用户调节。
+                    CompressMode::NearLossless if !config.advanced_mode => (80.0, 80.0),
                     CompressMode::NearLossless => (
                         config.avif_color_quality.clamp(80, 100) as f32,
                         config.avif_alpha_quality.clamp(80, 100) as f32,
@@ -522,7 +602,7 @@ fn compress_one(plan: &PlannedOutput, config: &CompressConfig) -> CompressResult
                 let encoder = ravif::Encoder::new()
                     .with_quality(color_q)
                     .with_alpha_quality(alpha_q)
-                    .with_speed(4) // balanced
+                    .with_speed(avif_speed(config))
                     .with_bit_depth(ravif::BitDepth::Ten); // 10-bit 内部精度，即便 8-bit 输入也更好
 
                 let encoded = if has_alpha {
@@ -557,6 +637,7 @@ fn compress_one(plan: &PlannedOutput, config: &CompressConfig) -> CompressResult
                 Err(e) => CompressResult { input_path: input.path.clone(), output_path: None, success: false, original_size, output_size: 0, compression_ratio: 0.0, error: Some(e) },
             }
         }
+        OutputFormat::Auto => unreachable!("resolve_output_format never returns Auto"),
     }
 }
 
@@ -620,6 +701,7 @@ pub async fn compress_images(files: Vec<CompressInput>, config: CompressConfig, 
         let phase = match config.output_format {
             OutputFormat::Jxl => "JXL 编码",
             OutputFormat::Avif => "AVIF 编码",
+            OutputFormat::Auto => "自动编码",
         };
         let results: Vec<CompressResult> = pool.install(|| {
             planned.par_iter().map(|plan| {
