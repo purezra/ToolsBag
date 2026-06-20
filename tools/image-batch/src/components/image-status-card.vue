@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import { Link as LinkIcon } from '@element-plus/icons-vue'
 
 type ProgressState = { stage: string; percent: number; message: string }
@@ -9,6 +9,8 @@ type ResultInfo = {
   outputSize: string
   deltaText: string
   increase: boolean
+  pageCount?: number
+  pageSize?: string
 }
 
 const props = defineProps<{
@@ -23,115 +25,87 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <div class="status-panel">
-    <div v-if="props.progress" class="progress-box">
-      <div class="progress-title">{{ props.progress.stage }}</div>
-      <el-progress :percentage="props.progress.percent" :text-inside="true" class="flow-progress" />
-      <div class="progress-msg">{{ props.progress.message }}</div>
-    </div>
+  <!-- 转换进度 -->
+  <div v-if="props.progress" class="tb-section">
+    <div class="tb-section-title">{{ props.progress.stage }}</div>
+    <el-progress :percentage="props.progress.percent" :text-inside="true" class="flow-progress" />
+    <div class="progress-msg">{{ props.progress.message }}</div>
+  </div>
 
-    <div v-if="props.resultInfo" class="result-card">
-      <div class="result-left">
-        <div class="label">输出位置</div>
-        <div class="path">{{ props.resultInfo.path }}</div>
-        <el-button text :icon="LinkIcon" @click="emit('openOutput', props.resultInfo.path)">打开所在文件夹</el-button>
+  <!-- 转换结果 -->
+  <div v-if="props.resultInfo" class="tb-section">
+    <div class="tb-section-title">转换结果</div>
+
+    <!-- 统计数据 -->
+    <div class="tb-stat-grid">
+      <div v-if="props.resultInfo.pageCount" class="tb-stat-item">
+        <div class="tb-stat-value">{{ props.resultInfo.pageCount }}</div>
+        <div class="tb-stat-label">页数</div>
       </div>
-      <div class="result-right">
-        <div class="size-line">输入总大小：{{ props.resultInfo.inputSize }}</div>
-        <div class="size-line">输出总大小：{{ props.resultInfo.outputSize }}</div>
-        <div class="size-delta" :class="{ up: props.resultInfo.increase, down: !props.resultInfo.increase }">
+      <div v-if="props.resultInfo.pageSize" class="tb-stat-item">
+        <div class="tb-stat-value" style="font-size: 14px;">{{ props.resultInfo.pageSize }}</div>
+        <div class="tb-stat-label">页面尺寸</div>
+      </div>
+      <div class="tb-stat-item">
+        <div class="tb-stat-value" style="font-size: 16px;">{{ props.resultInfo.inputSize }}</div>
+        <div class="tb-stat-label">输入大小</div>
+      </div>
+      <div class="tb-stat-item">
+        <div class="tb-stat-value" style="font-size: 16px;">{{ props.resultInfo.outputSize }}</div>
+        <div class="tb-stat-label">输出大小</div>
+      </div>
+      <div class="tb-stat-item">
+        <div class="tb-delta" :class="props.resultInfo.increase ? 'tb-delta--up' : 'tb-delta--down'">
           {{ props.resultInfo.deltaText }}
         </div>
+        <div class="tb-stat-label">体积变化</div>
       </div>
     </div>
 
-    <div class="log">
-      <div class="log-title">问题日志</div>
-      <pre class="log-box">{{ props.problemLog || '暂无问题' }}</pre>
+    <!-- 输出路径 -->
+    <div class="tb-result-path" style="margin-top: 12px;">
+      <el-button text :icon="LinkIcon" size="small" @click="emit('openOutput', props.resultInfo!.path)">
+        打开所在文件夹
+      </el-button>
+      <span style="margin-left: 8px;">{{ props.resultInfo.path }}</span>
     </div>
+  </div>
+
+  <!-- 问题日志 -->
+  <div v-if="props.problemLog && props.problemLog !== '暂无问题'" class="tb-section">
+    <div class="tb-section-title" style="color: var(--warning);">
+      问题日志
+      <el-tag size="small" type="warning">有异常</el-tag>
+    </div>
+    <pre class="log-box">{{ props.problemLog }}</pre>
   </div>
 </template>
 
 <style scoped>
-.status-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-.progress-box {
-  border: 1px solid #e5e5e5;
-  padding: 10px;
-  border-radius: 8px;
-  background: #fafafa;
-}
-.progress-title {
-  font-weight: 600;
-  margin-bottom: 4px;
-}
 .progress-msg {
-  margin-top: 4px;
-  color: #666;
+  margin-top: 8px;
+  color: var(--text-secondary);
+  font-size: 13px;
 }
-.flow-progress .el-progress-bar__inner {
+.flow-progress :deep(.el-progress-bar__inner) {
   background: linear-gradient(120deg, #6dd5ed, #2193b0, #6dd5ed);
   background-size: 200% 200%;
   animation: flow-bar 1.2s linear infinite;
 }
 @keyframes flow-bar {
-  0% {
-    background-position: 0% 50%;
-  }
-  100% {
-    background-position: 200% 50%;
-  }
-}
-.result-card {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 12px;
-  padding: 12px;
-  border: 1px solid #e5e5e5;
-  border-radius: 10px;
-  background: #f8fbff;
-}
-.result-left .label {
-  font-weight: 600;
-  margin-bottom: 4px;
-}
-.path {
-  font-family: Consolas, 'SFMono-Regular', monospace;
-  font-size: 13px;
-  color: #2c3e50;
-  word-break: break-all;
-}
-.result-right {
-  text-align: right;
-}
-.size-line {
-  color: #444;
-  margin-bottom: 2px;
-}
-.size-delta {
-  font-weight: 700;
-}
-.size-delta.up {
-  color: #e67e22;
-}
-.size-delta.down {
-  color: #2ecc71;
-}
-.log {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+  0% { background-position: 0% 50%; }
+  100% { background-position: 200% 50%; }
 }
 .log-box {
-  border: 1px solid #e5e5e5;
-  background: #f8f8f8;
-  padding: 8px;
-  min-height: 120px;
-  border-radius: 6px;
+  padding: 10px;
+  min-height: 48px;
   white-space: pre-wrap;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-secondary);
+  border-radius: var(--radius-sm);
+  font-family: 'JetBrains Mono', Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-primary);
 }
 </style>

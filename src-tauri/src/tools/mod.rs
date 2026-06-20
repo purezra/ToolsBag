@@ -1,5 +1,6 @@
 pub mod file_traverse;
 pub mod image_batch;
+pub mod image_compress;
 pub mod image_to_pdf;
 pub mod media_batch;
 
@@ -38,6 +39,15 @@ pub mod mediainfo {
         None
     }
     pub fn get_video_xml(_path: &Path) -> Option<String> {
+        None
+    }
+    pub fn get_complete_info(_path: &Path) -> Option<String> {
+        None
+    }
+    pub fn get_xml_as_json(_path: &Path) -> Option<String> {
+        None
+    }
+    pub fn get_xml_as_markdown(_path: &Path) -> Option<String> {
         None
     }
 }

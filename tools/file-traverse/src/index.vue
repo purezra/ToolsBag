@@ -7,6 +7,7 @@ import { openParentDir } from '@core/api/common'
 import { traverseCopy, checkMediaInfo } from './api/file-traverse'
 import { useFileSelect } from '@core/hooks/useFileSelect'
 import { useSettings } from '@core/hooks/useSettings'
+import { hasTauriRuntime } from '@core/utils/tauri'
 import { splitPatterns } from './utils/path'
 import { formatThroughput, formatBytes as formatFileSize } from '@core/utils/format'
 import type { TraverseReq } from './types/file'
@@ -208,6 +209,8 @@ const runTraverse = async () => {
 }
 
 const setupProgress = async () => {
+  if (!hasTauriRuntime()) return null
+
   let unlisten: (() => void) | null = null
   unlisten = await listen('progress-update', (event) => {
     const payload = event.payload as any
@@ -241,6 +244,10 @@ const openOutputDirPreview = async () => {
 let unlistenFn: (() => void) | null = null
 onMounted(async () => {
   unlistenFn = await setupProgress()
+  if (!hasTauriRuntime()) {
+    mediaInfoAvailable.value = false
+    return
+  }
   // 检测 MediaInfo.dll
   try {
     mediaInfoAvailable.value = await checkMediaInfo()
@@ -265,6 +272,7 @@ onBeforeUnmount(() => unlistenFn?.())
       </div>
     </div>
 
+    <div class="file-traverse-body">
     <!-- ========== 仅媒体模式 GUI ========== -->
     <template v-if="mediaOnlyMode">
       <div class="form-row">
@@ -611,7 +619,7 @@ onBeforeUnmount(() => unlistenFn?.())
       
       <!-- 视频列表 -->
       <div v-if="videoFiles.length > 0" class="media-section">
-        <div class="media-section-title">🎬 {{ t('视频') }} ({{ videoFiles.length }})</div>
+        <div class="media-section-title">{{ t('视频') }} ({{ videoFiles.length }})</div>
         <el-table :data="videoFiles" size="small" max-height="300">
           <el-table-column prop="newName" :label="t('新文件名')" min-width="150" show-overflow-tooltip />
           <el-table-column :label="t('分辨率')" width="100">
@@ -643,7 +651,7 @@ onBeforeUnmount(() => unlistenFn?.())
 
       <!-- 音频列表 -->
       <div v-if="audioFiles.length > 0" class="media-section">
-        <div class="media-section-title">🎵 {{ t('音频') }} ({{ audioFiles.length }})</div>
+        <div class="media-section-title">{{ t('音频') }} ({{ audioFiles.length }})</div>
         <el-table :data="audioFiles" size="small" max-height="300">
           <el-table-column prop="newName" :label="t('新文件名')" min-width="150" show-overflow-tooltip />
           <el-table-column :label="t('编码')" width="100">
@@ -666,7 +674,7 @@ onBeforeUnmount(() => unlistenFn?.())
 
       <!-- 图片列表 -->
       <div v-if="imageFiles.length > 0" class="media-section">
-        <div class="media-section-title">🖼️ {{ t('图片') }} ({{ imageFiles.length }})</div>
+        <div class="media-section-title">{{ t('图片') }} ({{ imageFiles.length }})</div>
         <el-table :data="imageFiles" size="small" max-height="300">
           <el-table-column prop="newName" :label="t('新文件名')" min-width="150" show-overflow-tooltip />
           <el-table-column :label="t('格式')" width="80">
@@ -687,6 +695,7 @@ onBeforeUnmount(() => unlistenFn?.())
       <pre class="log-box">{{ problemLog || t('暂无问题') }}</pre>
     </div>
     </template>
+    </div>
   </div>
 </template>
 
@@ -694,85 +703,102 @@ onBeforeUnmount(() => unlistenFn?.())
 .file-traverse {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
+  height: 100%;
+  overflow: hidden;
+  min-height: 0;
+}
+.file-traverse-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 /* 顶部状态栏 */
 .top-status-bar {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 8px 12px;
-  background: #f5f7fa;
-  border-radius: 8px;
+  padding: 7px 10px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-secondary);
+  border-radius: var(--radius-md);
   margin-bottom: 4px;
+  flex-shrink: 0;
 }
 .mediainfo-status {
   display: flex;
   align-items: center;
   gap: 6px;
   font-size: 12px;
-  color: #909399;
+  color: var(--text-muted);
 }
 .mediainfo-status .status-dot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #909399;
+  background: var(--text-muted);
 }
 .mediainfo-status.available .status-dot {
-  background: #67c23a;
+  background: var(--success);
 }
 .mediainfo-status.available .status-text {
-  color: #67c23a;
+  color: var(--success);
 }
 .mediainfo-status.unavailable .status-dot {
-  background: #f56c6c;
+  background: var(--danger);
 }
 .mediainfo-status.unavailable .status-text {
-  color: #f56c6c;
+  color: var(--danger);
 }
 .media-mode-toggle {
   display: flex;
   align-items: center;
   gap: 8px;
-  background: linear-gradient(135deg, #fff7e6, #fff3cd);
-  border: 1px solid #ffc107;
-  border-radius: 20px;
-  padding: 4px 12px;
+  background: var(--warning-light);
+  border: 1px solid var(--warning);
+  border-radius: var(--radius-sm);
+  padding: 4px 10px;
+  opacity: 0.9;
 }
 .media-mode-label {
   font-size: 13px;
-  color: #856404;
+  color: var(--text-secondary);
   font-weight: 500;
 }
 .form-row {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  flex-shrink: 0;
 }
 .inline {
   display: flex;
   gap: 8px;
+  min-width: 0;
 }
 .grid {
   display: grid;
   gap: 10px;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  flex-shrink: 0;
 }
 .actions {
   display: flex;
   align-items: center;
   gap: 12px;
+  flex-shrink: 0;
 }
 .hint {
-  color: #7a8194;
+  color: var(--text-muted);
   font-size: 12px;
 }
 .progress-card {
-  border: 1px solid rgba(20, 23, 31, 0.08);
   padding: 10px;
-  border-radius: 10px;
-  background: #f8fbff;
+  flex-shrink: 0;
 }
 .progress-title {
   font-weight: 600;
@@ -780,9 +806,9 @@ onBeforeUnmount(() => unlistenFn?.())
 }
 .progress-msg {
   margin-top: 4px;
-  color: #666;
+  color: var(--text-secondary);
 }
-.flow-progress .el-progress-bar__inner {
+.flow-progress :deep(.el-progress-bar__inner) {
   background: linear-gradient(120deg, #6dd5ed, #2193b0, #6dd5ed);
   background-size: 200% 200%;
   animation: flow-bar 1.2s linear infinite;
@@ -796,13 +822,11 @@ onBeforeUnmount(() => unlistenFn?.())
   }
 }
 .result-card {
-  border: 1px solid #e5e5e5;
-  border-radius: 10px;
   padding: 12px;
-  background: #fafafa;
   display: flex;
   flex-direction: column;
   gap: 10px;
+  flex-shrink: 0;
 }
 .stats {
   display: flex;
@@ -811,29 +835,27 @@ onBeforeUnmount(() => unlistenFn?.())
   font-size: 13px;
 }
 .path {
-  font-family: Consolas, 'SFMono-Regular', monospace;
+  font-family: var(--font-mono);
   word-break: break-all;
 }
 .log {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  flex-shrink: 0;
 }
 .log-box {
-  border: 1px solid #e5e5e5;
-  background: #f8f8f8;
   padding: 8px;
-  min-height: 120px;
-  border-radius: 6px;
+  min-height: 48px;
   white-space: pre-wrap;
 }
 
 /* Preview Section */
 .preview-section {
-  background: #f0f7ff;
-  border: 1px dashed #a0cfff;
-  border-radius: 8px;
-  padding: 12px;
+  background: var(--bg-secondary);
+  border: 1px dashed var(--border-focus);
+  border-radius: var(--radius-md);
+  padding: 10px;
   margin-bottom: 8px;
 }
 .category-header {
@@ -842,7 +864,7 @@ onBeforeUnmount(() => unlistenFn?.())
   align-items: center;
   margin-bottom: 10px;
   font-weight: 600;
-  color: #409eff;
+  color: var(--accent);
 }
 .header-right {
   display: flex;
@@ -868,9 +890,9 @@ onBeforeUnmount(() => unlistenFn?.())
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  background: #fff;
-  border: 1px solid #dcdfe6;
-  border-radius: 16px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-sm);
   padding: 4px 10px;
   cursor: pointer;
   transition: border-color 0.2s, background 0.2s;
@@ -878,38 +900,38 @@ onBeforeUnmount(() => unlistenFn?.())
   font-size: 13px;
 }
 .category-chip:hover {
-  border-color: #409eff;
+  border-color: var(--accent);
 }
 .category-chip.active {
-  background: #409eff;
-  color: #fff;
-  border-color: #409eff;
+  background: var(--accent);
+  color: var(--text-inverse);
+  border-color: var(--accent);
 }
 .category-chip.active .chip-count {
   background: rgba(255,255,255,0.25);
   color: #fff;
 }
 .category-chip.partial {
-  background: #ecf5ff;
-  border-color: #409eff;
-  color: #409eff;
+  background: var(--accent-light);
+  border-color: var(--accent);
+  color: var(--accent);
 }
 .category-chip.expanded {
-  border-color: #409eff;
+  border-color: var(--accent);
 }
 .chip-name {
   font-weight: 500;
 }
 .chip-count {
   font-size: 11px;
-  background: rgba(0,0,0,0.08);
+  background: var(--bg-tertiary);
   padding: 0 5px;
   border-radius: 8px;
-  color: #606266;
+  color: var(--text-secondary);
 }
 .chip-arrow {
   font-size: 11px;
-  color: #909399;
+  color: var(--text-muted);
 }
 .category-chip.active .chip-arrow {
   color: rgba(255,255,255,0.7);
@@ -919,11 +941,11 @@ onBeforeUnmount(() => unlistenFn?.())
 .format-panel {
   margin-top: 8px;
   margin-left: 12px;
-  background: #fff;
-  border: 1px solid #e4e7ed;
-  border-radius: 8px;
-  padding: 12px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  background: var(--bg-primary);
+  border: 1px solid var(--border-secondary);
+  border-radius: var(--radius-md);
+  padding: 10px;
+  box-shadow: none;
 }
 .format-header {
   display: flex;
@@ -931,7 +953,7 @@ onBeforeUnmount(() => unlistenFn?.())
   align-items: center;
   margin-bottom: 10px;
   font-size: 13px;
-  color: #606266;
+  color: var(--text-secondary);
 }
 .format-actions {
   display: flex;
@@ -949,43 +971,43 @@ onBeforeUnmount(() => unlistenFn?.())
   align-items: center;
   gap: 4px;
   padding: 4px 8px;
-  border: 1px solid #e4e7ed;
-  border-radius: 4px;
+  border: 1px solid var(--border-secondary);
+  border-radius: var(--radius-xs);
   cursor: pointer;
   transition: border-color 0.15s, background 0.15s;
   font-size: 12px;
 }
 .format-item:hover {
-  border-color: #409eff;
-  background: #f0f7ff;
+  border-color: var(--accent);
+  background: var(--accent-light);
 }
 .format-item.selected {
-  background: #ecf5ff;
-  border-color: #409eff;
+  background: var(--accent-light);
+  border-color: var(--accent);
 }
 .format-ext {
-  font-family: 'JetBrains Mono', Consolas, monospace;
+  font-family: var(--font-mono);
   font-weight: 500;
 }
 .format-count {
   margin-left: auto;
-  color: #909399;
+  color: var(--text-muted);
   font-size: 11px;
 }
 
 /* 表格视图 */
 .table-view {
-  background: #fff;
-  border-radius: 6px;
+  background: var(--bg-primary);
+  border-radius: var(--radius-sm);
   overflow: hidden;
 }
 .table-cat-tag {
   font-size: 12px;
   font-weight: 500;
-  color: #409eff;
+  color: var(--accent);
 }
 .table-ext {
-  font-family: 'JetBrains Mono', Consolas, monospace;
+  font-family: var(--font-mono);
   font-weight: 500;
   font-size: 13px;
 }
@@ -997,28 +1019,25 @@ onBeforeUnmount(() => unlistenFn?.())
 }
 .ratio-bar {
   height: 6px;
-  background: linear-gradient(90deg, #409eff, #79bbff);
+  background: var(--accent-gradient);
   border-radius: 3px;
   min-width: 2px;
   transition: width 0.3s;
 }
 .ratio-text {
   font-size: 11px;
-  color: #909399;
+  color: var(--text-muted);
   white-space: nowrap;
 }
 
 /* 媒体结果 */
 .media-result {
-  border: 1px solid #e5e5e5;
-  border-radius: 10px;
   padding: 12px;
-  background: #fafafa;
 }
 .media-result-header {
   font-weight: 600;
   margin-bottom: 12px;
-  color: #333;
+  color: var(--text-primary);
 }
 .media-section {
   margin-bottom: 16px;
@@ -1029,16 +1048,16 @@ onBeforeUnmount(() => unlistenFn?.())
 .media-section-title {
   font-weight: 500;
   margin-bottom: 8px;
-  color: #606266;
+  color: var(--text-secondary);
   font-size: 14px;
 }
 
 /* 媒体预览折叠块 */
 .media-preview-section {
-  background: linear-gradient(135deg, #f0f7ff, #e8f4fd);
-  border: 1px solid #b3d8ff;
-  border-radius: 10px;
-  padding: 16px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-secondary);
+  border-radius: var(--radius-md);
+  padding: 8px 10px;
   margin: 8px 0;
 }
 .media-preview-header {
@@ -1047,11 +1066,11 @@ onBeforeUnmount(() => unlistenFn?.())
   align-items: center;
   margin-bottom: 12px;
   font-weight: 600;
-  color: #409eff;
+  color: var(--accent);
 }
 .media-total-count {
   font-size: 13px;
-  color: #909399;
+  color: var(--text-muted);
   font-weight: normal;
 }
 .media-collapse-list {
@@ -1060,21 +1079,22 @@ onBeforeUnmount(() => unlistenFn?.())
   gap: 8px;
 }
 .media-collapse-item {
-  background: #fff;
-  border-radius: 8px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-secondary);
+  border-radius: var(--radius-sm);
   overflow: hidden;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+  box-shadow: none;
 }
 .media-collapse-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 12px 16px;
+  padding: 8px 12px;
   cursor: pointer;
   transition: background 0.2s;
 }
 .media-collapse-header:hover {
-  background: #f5f7fa;
+  background: var(--bg-tertiary);
 }
 .collapse-left {
   display: flex;
@@ -1083,7 +1103,7 @@ onBeforeUnmount(() => unlistenFn?.())
 }
 .collapse-arrow {
   transition: transform 0.2s;
-  color: #909399;
+  color: var(--text-muted);
 }
 .collapse-arrow.expanded {
   transform: rotate(90deg);
@@ -1093,15 +1113,15 @@ onBeforeUnmount(() => unlistenFn?.())
 }
 .collapse-label {
   font-weight: 500;
-  color: #303133;
+  color: var(--text-primary);
 }
 .collapse-count {
-  color: #909399;
+  color: var(--text-muted);
   font-size: 13px;
 }
 .collapse-formats {
   font-size: 12px;
-  color: #606266;
+  color: var(--text-secondary);
   max-width: 60%;
   text-align: right;
   white-space: nowrap;
@@ -1109,9 +1129,9 @@ onBeforeUnmount(() => unlistenFn?.())
   text-overflow: ellipsis;
 }
 .media-collapse-content {
-  border-top: 1px solid #ebeef5;
-  padding: 12px;
-  background: #fafafa;
+  border-top: 1px solid var(--border-secondary);
+  padding: 8px;
+  background: var(--bg-secondary);
 }
 .group-header {
   display: flex;
@@ -1123,27 +1143,37 @@ onBeforeUnmount(() => unlistenFn?.())
 .group-label {
   font-size: 13px;
   font-weight: 600;
-  color: #303133;
-  background: #e8f4fd;
+  color: var(--text-primary);
+  background: var(--accent-light);
   padding: 2px 10px;
   border-radius: 10px;
 }
 .group-count {
   font-size: 12px;
-  color: #909399;
+  color: var(--text-muted);
 }
 
 /* 媒体操作按钮 */
 .media-actions {
   display: flex;
   align-items: center;
-  gap: 16px;
-  margin-top: 12px;
-  padding-top: 12px;
-  border-top: 1px dashed #dcdfe6;
+  gap: 10px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border-primary);
+  flex-shrink: 0;
 }
 .media-action-hint {
   font-size: 12px;
-  color: #909399;
+  color: var(--text-muted);
+}
+
+@media (max-width: 820px) {
+  .inline,
+  .top-status-bar,
+  .actions,
+  .media-actions {
+    flex-wrap: wrap;
+  }
 }
 </style>

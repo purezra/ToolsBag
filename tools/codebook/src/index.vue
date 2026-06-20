@@ -296,7 +296,7 @@ const handleChangePassword = async () => {
           <!-- Lock icon with animation -->
           <div class="lock-icon-wrap" :class="{ 'is-shaking': codebook.busy }">
             <div class="lock-icon-circle">
-              <el-icon :size="48" class="lock-icon">
+              <el-icon :size="36" class="lock-icon">
                 <Lock />
               </el-icon>
             </div>
@@ -322,7 +322,7 @@ const handleChangePassword = async () => {
                     autocomplete="off"
                     size="large"
                     :placeholder="t('输入主密码')"
-                    @keyup.enter="codebook.status.initialized ? handleUnlock() : undefined"
+                    @keyup.enter="codebook.status.initialized ? handleUnlock() : handleInitVault()"
                   />
                 </el-form-item>
 
@@ -335,6 +335,7 @@ const handleChangePassword = async () => {
                       autocomplete="off"
                       size="large"
                       :placeholder="t('再次输入主密码')"
+                      @keyup.enter="handleInitVault()"
                     />
                   </el-form-item>
                   <el-form-item :label="t('设备名称（可选）')" class="lock-form-item">
@@ -518,7 +519,7 @@ const handleChangePassword = async () => {
         <el-dialog
           v-model="editDialogVisible"
           :title="t('编辑账号')"
-          width="500px"
+          width="clamp(320px, 50vw, 500px)"
           destroy-on-close
         >
           <AccountForm
@@ -544,7 +545,7 @@ const handleChangePassword = async () => {
         <el-dialog
           v-model="webdavSettingsVisible"
           title="WebDAV 云同步"
-          width="560px"
+          width="clamp(320px, 50vw, 560px)"
           destroy-on-close
         >
           <WebdavSettings @close="webdavSettingsVisible = false" />
@@ -553,7 +554,7 @@ const handleChangePassword = async () => {
         <el-dialog
           v-model="changePwdDialogVisible"
           :title="t('修改主密码')"
-          width="420px"
+          width="clamp(280px, 40vw, 420px)"
         >
           <el-form label-position="top">
             <el-form-item :label="t('新主密码')">
@@ -572,7 +573,7 @@ const handleChangePassword = async () => {
         <el-dialog
           v-model="vaultxPreviewDialogVisible"
           :title="t('导入 VaultX 预览')"
-          width="600px"
+          width="clamp(360px, 55vw, 600px)"
         >
           <template v-if="vaultxPreviewData">
             <div class="vaultx-preview">
@@ -629,7 +630,7 @@ const handleChangePassword = async () => {
         <el-dialog
           v-model="vaultxDirDialogVisible"
           :title="t('VaultX 导入导出目录')"
-          width="500px"
+          width="clamp(320px, 50vw, 500px)"
         >
           <div class="vaultx-dir-setting">
             <el-alert
@@ -688,9 +689,11 @@ const handleChangePassword = async () => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 16px;
-  background: var(--el-bg-color);
-  border-bottom: 1px solid var(--el-border-color-lighter);
+  padding: 10px 12px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-secondary);
+  border-radius: var(--radius-md);
+  margin-bottom: 10px;
 }
 .header-left {
   display: flex;
@@ -699,7 +702,7 @@ const handleChangePassword = async () => {
 }
 .header-right {
   display: flex;
-  gap: 10px;
+  gap: 8px;
   flex-wrap: wrap;
   justify-content: flex-end;
 }
@@ -709,8 +712,9 @@ const handleChangePassword = async () => {
 }
 .tool-body {
   flex: 1;
-  padding: 16px;
-  overflow: auto;
+  padding: 0;
+  overflow: hidden;
+  min-height: 0;
 }
 .list-stats {
   margin-bottom: 12px;
@@ -744,20 +748,20 @@ const handleChangePassword = async () => {
   flex-direction: column;
   align-items: center;
   width: 100%;
-  max-width: 440px;
-  padding: 40px 32px;
+  max-width: 420px;
+  padding: 20px;
 }
 
 /* Lock icon */
 .lock-icon-wrap {
   position: relative;
-  margin-bottom: 32px;
+  margin-bottom: 14px;
 }
 
 .lock-icon-circle {
-  width: 88px;
-  height: 88px;
-  border-radius: 50%;
+  width: 56px;
+  height: 56px;
+  border-radius: var(--radius-lg);
   display: grid;
   place-items: center;
   background: var(--accent-gradient);
@@ -811,20 +815,20 @@ const handleChangePassword = async () => {
 
 .lock-title {
   margin: 0 0 8px;
-  font-size: 24px;
+  font-size: 21px;
   font-weight: 800;
   color: var(--text-primary);
-  letter-spacing: -0.5px;
+  letter-spacing: 0;
 }
 
 .lock-subtitle {
-  margin: 0 0 20px;
+  margin: 0 0 12px;
   font-size: 14px;
   color: var(--text-secondary);
 }
 
 .lock-status {
-  margin-bottom: 28px;
+  margin-bottom: 12px;
 }
 
 /* Form */
@@ -836,7 +840,7 @@ const handleChangePassword = async () => {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  margin-bottom: 20px;
+  margin-bottom: 12px;
 }
 
 .lock-form-item {
@@ -853,11 +857,11 @@ const handleChangePassword = async () => {
   display: flex;
   gap: 12px;
   justify-content: center;
-  margin-bottom: 24px;
+  margin-bottom: 12px;
 }
 
 .lock-btn {
-  min-width: 140px;
+  min-width: 120px;
 }
 
 .lock-btn--primary {
@@ -866,7 +870,6 @@ const handleChangePassword = async () => {
 
 .lock-btn--primary:hover {
   box-shadow: 0 12px 32px rgba(79, 139, 255, 0.4);
-  transform: translateY(-1px);
 }
 
 .lock-btn--primary:active {
@@ -928,6 +931,6 @@ const handleChangePassword = async () => {
 .codebook-tool input[type="password"],
 .codebook-tool .preset-value,
 .codebook-tool .preset-option {
-  font-family: 'JetBrains Mono', 'Consolas', 'Monaco', monospace !important;
+  font-family: var(--font-mono) !important;
 }
 </style>

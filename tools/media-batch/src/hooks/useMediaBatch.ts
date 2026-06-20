@@ -5,6 +5,7 @@ import { listen } from '@tauri-apps/api/event'
 import { importMedia, getMediaInfoStatus } from '../api/media-batch'
 import { openParentDir, pathExists, renamePath } from '@core/api/common'
 import { formatBytes, formatDuration, type DurationFormat } from '@core/utils/format'
+import { hasTauriRuntime } from '@core/utils/tauri'
 import { useFileSelect } from '@core/hooks/useFileSelect'
 import { useSettings } from '@core/hooks/useSettings'
 import type { ImageRow, MediaKind, MediaInfoStatus, RenameField, RenameSafetySummary, VideoRow } from '../types/media'
@@ -135,6 +136,8 @@ export const useMediaBatch = () => {
 
   // 初始化时检测 MediaInfo 状态
   onMounted(async () => {
+    if (!hasTauriRuntime()) return
+
     try {
       mediaInfoStatus.value = await getMediaInfoStatus()
     } catch (e) {
@@ -423,11 +426,22 @@ export const useMediaBatch = () => {
       }
       if (mediaType === 'video') {
         pendingVideos.push({
-          ...base
+          ...base,
+          width: 0,
+          height: 0,
+          durationSec: 0,
+          bitrateMbps: 0,
+          codec: '',
+          frameRate: ''
         })
       } else {
         pendingImages.push({
-          ...base
+          ...base,
+          width: 0,
+          height: 0,
+          device: '',
+          takenAt: '',
+          focalLength: ''
         })
       }
     })
@@ -833,14 +847,20 @@ export const useMediaBatch = () => {
 
     let success = 0
     const failed: { name: string; reason: string }[] = []
-    for (const item of [...lastRenameBatch.value].reverse()) {
+    const failedIndices = new Set<number>()
+    const batch = lastRenameBatch.value
+    for (let i = batch.length - 1; i >= 0; i--) {
+      const item = batch[i]
+      if (!item) continue
       try {
         if (!await pathExists(item.currentPath)) {
           failed.push({ name: item.currentName, reason: t('当前文件不存在') })
+          failedIndices.add(i)
           continue
         }
         if (await pathExists(item.originalPath)) {
           failed.push({ name: item.currentName, reason: t('原路径已有文件，已跳过') })
+          failedIndices.add(i)
           continue
         }
         await renamePath(item.currentPath, item.originalPath)
@@ -848,15 +868,17 @@ export const useMediaBatch = () => {
         success++
       } catch (e: any) {
         failed.push({ name: item.currentName, reason: e?.toString() || t('撤销失败') })
+        failedIndices.add(i)
       }
     }
 
     if (failed.length) {
+      lastRenameBatch.value = batch.filter((_, i) => failedIndices.has(i))
       ElMessage.warning(t('撤销完成：成功 {success} 个，失败 {failed} 个', { success, failed: failed.length }))
     } else {
+      lastRenameBatch.value = []
       ElMessage.success(t('撤销完成：成功 {success} 个', { success }))
     }
-    if (!failed.length) lastRenameBatch.value = []
   }
 
   const toggleAllColumns = (kind: MediaKind, field?: string, value?: boolean) => {
@@ -877,6 +899,13 @@ export const useMediaBatch = () => {
     list.forEach((field) => {
       field.enabled = !allOn
     })
+  }
+
+  const toggleRenameField = (kind: MediaKind, index: number, enabled: boolean) => {
+    const list = kind === 'video' ? renameFieldsVideo : renameFieldsImage
+    if (list[index]) {
+      list[index].enabled = enabled
+    }
   }
 
   const setRenameEnabled = (list: RenameField[], keys: string[]) => {
@@ -1021,6 +1050,7 @@ export const useMediaBatch = () => {
     handleTableSortChange,
     toggleAllColumns,
     toggleRenameFields,
+    toggleRenameField,
     applyOrganizePreset,
     failedItems,
     failedReasonStats,

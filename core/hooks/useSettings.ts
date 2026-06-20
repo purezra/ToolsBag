@@ -346,7 +346,42 @@ const enMessages = Object.fromEntries<string>([
   ['慢', 'Slow'],
   ['工具水印', 'Tool Watermark'],
   ['加载更多', 'Load more'],
-  ['已加载全部', 'All loaded']
+  ['已加载全部', 'All loaded'],
+  // Image-to-PDF translations
+  ['选择图片文件夹', 'Select Image Folder'],
+  ['分析中', 'Analyzing...'],
+  ['选择文件夹', 'Select Folder'],
+  ['图片分析结果', 'Image Analysis Results'],
+  ['张', 'pcs'],
+  ['总数量', 'Total count'],
+  ['竖图', 'Portrait'],
+  ['横图', 'Landscape'],
+  ['总大小', 'Total size'],
+  ['建议方向', 'Suggested orientation'],
+  ['页面设置', 'Page Settings'],
+  ['页面尺寸', 'Page size'],
+  ['页面方向', 'Page orientation'],
+  ['边距 (mm)', 'Margin (mm)'],
+  ['压缩比例', 'Compression ratio'],
+  ['不压缩，保持原始质量', 'No compression, keep original quality'],
+  ['预览', 'Preview'],
+  ['点击缩略图切换页面', 'Click thumbnail to switch page'],
+  ['加载中', 'Loading...'],
+  ['页', 'pages'],
+  ['生成 PDF', 'Generate PDF'],
+  ['生成中', 'Generating...'],
+  ['合成 PDF', 'Compose PDF'],
+  ['PDF 生成成功', 'PDF generated successfully'],
+  ['页数', 'Pages'],
+  ['文件大小', 'File size'],
+  ['原始大小', 'Original size'],
+  ['耗时', 'Elapsed'],
+  ['生成失败', 'Generation failed'],
+  ['分析失败', 'Analysis failed'],
+  ['预览更新失败', 'Preview update failed'],
+  ['页面', 'Page'],
+  ['边距不能为负', 'Margin cannot be negative'],
+  ['边距不能超过', 'Margin cannot exceed'],
 ])
 
 const messages: Record<Locale, Record<string, string>> = {
@@ -355,7 +390,7 @@ const messages: Record<Locale, Record<string, string>> = {
 }
 
 export const provideSettings = () => {
-  const appearance = ref<Appearance>('light')
+  const appearance = ref<Appearance>('dark')
   const skin = ref<ThemeSkin>('modern')
 
   // System dark mode detection
@@ -403,6 +438,11 @@ export const provideSettings = () => {
     () => theme.value,
     (val) => {
       document.documentElement.setAttribute('data-theme', val)
+      if (val === 'dark') {
+        document.documentElement.classList.add('dark')
+      } else {
+        document.documentElement.classList.remove('dark')
+      }
     },
     { immediate: true }
   )

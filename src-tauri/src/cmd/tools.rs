@@ -56,6 +56,11 @@ pub async fn preview_directory_files(input_dir: PathBuf) -> Result<DirectoryPrev
 #[tauri::command]
 pub fn write_text_export_file(path: String, contents: String) -> Result<(), String> {
     validate_export_extension(&path, &["csv", "md", "html", "json", "txt"])?;
+    if let Some(parent) = Path::new(&path).parent() {
+        if !parent.as_os_str().is_empty() && !parent.exists() {
+            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+    }
     std::fs::write(path, contents).map_err(|e| e.to_string())
 }
 

@@ -24,3 +24,15 @@ export const importDetailedVideoInfo = (paths: string[], recursive: boolean) => 
 export const getVideoRawXml = (path: string) => {
   return invoke<string | null>('get_video_raw_xml', { path })
 }
+
+export const getVideoCompleteInfo = (path: string) => {
+  return invoke<string | null>('get_video_complete_info', { path })
+}
+
+export const getVideoXmlJson = (path: string) => {
+  return invoke<string | null>('get_video_xml_json', { path })
+}
+
+export const getVideoXmlMarkdown = (path: string) => {
+  return invoke<string | null>('get_video_xml_markdown', { path })
+}

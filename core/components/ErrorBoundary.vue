@@ -34,7 +34,7 @@ onErrorCaptured((err: unknown) => {
     <p class="error-message">{{ error.message }}</p>
     <el-button type="primary" size="small" @click="reset">重试</el-button>
   </div>
-  <div v-else>
+  <div v-else class="error-slot">
     <slot />
   </div>
 </template>
@@ -42,10 +42,10 @@ onErrorCaptured((err: unknown) => {
 <style scoped>
 .error-boundary {
   padding: 20px;
-  border: 1px solid var(--el-border-color);
-  border-radius: 8px;
-  background: var(--el-fill-color-light);
-  color: var(--el-color-danger);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  background: var(--bg-tertiary);
+  color: var(--danger);
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -56,6 +56,20 @@ onErrorCaptured((err: unknown) => {
 }
 .error-message {
   margin: 0;
-  color: var(--el-text-color-primary);
+  color: var(--text-primary);
+}
+.error-slot {
+  height: 100%;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+</style>
+
+<style>
+.error-slot > * {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
 }
 </style>

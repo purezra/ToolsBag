@@ -13,6 +13,7 @@ mod tools;
 mod utils;
 mod webdav;
 
+use crate::tools::image_compress;
 use crate::tools::image_to_pdf;
 use crate::tools::media_batch;
 use std::{path::PathBuf, process::Command};
@@ -104,6 +105,17 @@ fn read_tool3_note() -> Result<String, String> {
 }
 
 fn main() {
+    // 配置 rayon 全局线程池：限制线程数避免 I/O 密集型任务（如读取大量视频文件）时的线程争用
+    // 对于 I/O 密集型任务，线程数过多反而会降低性能
+    let num_threads = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(4)
+        .min(8);
+    rayon::ThreadPoolBuilder::new()
+        .num_threads(num_threads)
+        .build_global()
+        .ok();  // 忽略错误（可能已被初始化）
+
     let video_db_migrations = vec![
         Migration {
             version: 1,
@@ -138,7 +150,8 @@ fn main() {
     tauri::Builder::default()
         .setup(|app| {
             if let Ok(res_dir) = app.path().resource_dir() {
-                tools::mediainfo::set_resource_dir(res_dir);
+                tools::mediainfo::set_resource_dir(res_dir.clone());
+                image_compress::set_resource_dir(res_dir);
             }
             Ok(())
         })
@@ -158,6 +171,9 @@ fn main() {
             media_batch::check_exiftool_status,
             media_batch::import_detailed_video_info,
             media_batch::get_video_raw_xml,
+            media_batch::get_video_complete_info,
+            media_batch::get_video_xml_json,
+            media_batch::get_video_xml_markdown,
             open_parent_dir,
             read_tool3_note,
             cmd::analyze_folder,
@@ -205,7 +221,11 @@ fn main() {
             image_to_pdf::analyze_folder_for_pdf,
             image_to_pdf::calculate_preview_layout,
             image_to_pdf::generate_pdf,
-            image_to_pdf::get_image_thumbnail
+            image_to_pdf::get_image_thumbnail,
+            // Tool6: Image Compress
+            image_compress::get_libjxl_status,
+            image_compress::analyze_compress_inputs,
+            image_compress::compress_images
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

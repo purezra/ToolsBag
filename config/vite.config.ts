@@ -14,7 +14,8 @@ export default defineConfig({
       '@file-traverse': path.resolve(__dirname, '../tools/file-traverse/src'),
       '@image-batch': path.resolve(__dirname, '../tools/image-batch/src'),
       '@media-batch': path.resolve(__dirname, '../tools/media-batch/src'),
-      '@image-to-pdf': path.resolve(__dirname, '../tools/image-to-pdf/src')
+      '@image-to-pdf': path.resolve(__dirname, '../tools/image-to-pdf/src'),
+      '@image-compress': path.resolve(__dirname, '../tools/image-compress/src')
     }
   },
   build: {

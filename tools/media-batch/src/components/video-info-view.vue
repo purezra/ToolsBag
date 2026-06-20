@@ -2,17 +2,19 @@
 import { computed, onMounted, onUnmounted, reactive, ref, shallowRef } from 'vue'
 import { ElMessage } from 'element-plus'
 import { FolderAdd, Upload, Grid, List, Filter, Download, Coin } from '@element-plus/icons-vue'
-import { save } from '@tauri-apps/plugin-dialog'
+import { save, open as openDialog } from '@tauri-apps/plugin-dialog'
+import { listen } from '@tauri-apps/api/event'
 import { useFileSelect } from '@core/hooks/useFileSelect'
 import { useSettings } from '@core/hooks/useSettings'
 import { formatBytes } from '@core/utils/format'
+import { hasTauriRuntime } from '@core/utils/tauri'
 import { writeBinaryExportFile, writeTextExportFile } from '@core/api/common'
-import { importDetailedVideoInfo, getVideoRawXml } from '../api/media-batch'
+import { importDetailedVideoInfo, getVideoRawXml, getVideoCompleteInfo, getVideoXmlJson, getVideoXmlMarkdown } from '../api/media-batch'
 import { saveVideoRecords, loadVideoRecords, deleteVideoRecords, getRecordCount, rowToVideoInfoItem, type VideoRecordRow } from '../api/video-db'
 import VideoInfoDetailCard from './video-info-detail-card.vue'
 import type { DisplayLevel, VideoInfoImportResponse, VideoInfoItem } from '../types/media'
 
-type ExportFormat = 'xlsx' | 'csv' | 'markdown' | 'html' | 'json'
+type ExportFormat = 'xlsx' | 'csv' | 'markdown' | 'html' | 'json' | 'txt' | 'xml2json' | 'xml2md'
 type HealthSeverity = 'danger' | 'warning' | 'info'
 
 // MediaInfo 语言名称 -> 中文映射
@@ -70,6 +72,13 @@ const importing = ref(false)
 const items = shallowRef<VideoInfoItem[]>([])
 const expandedIds = ref<Set<number>>(new Set())
 const importSummary = ref('')
+
+// 批量导出输出目录模式
+type OutputMode = 'same' | 'folder'
+const outputModeDialogVisible = ref(false)
+const pendingExportFormat = ref<ExportFormat | null>(null)
+const outputMode = ref<OutputMode>('same')
+const customOutputDir = ref('')
 
 // 数据库相关状态
 const saving = ref(false)
@@ -129,15 +138,20 @@ const historyGroupedCols = computed(() => {
   return groups
 })
 
-// 从 detail_json 提取额外字段（带 WeakMap 缓存避免重复 parse）
-const detailCache = new WeakMap<VideoRecordRow, any>()
+// 从 detail_json 提取额外字段（Map 缓存，用 id 做键，避免 WeakMap 因对象重建而失效）
+const detailCache = new Map<string, any>()
+const DETAIL_CACHE_MAX = 200
 function getExtraField(row: VideoRecordRow, key: string): string {
   if (!row.detail_json) return '-'
   try {
-    let d = detailCache.get(row)
+    let d = detailCache.get(row.id)
     if (d === undefined) {
       d = JSON.parse(row.detail_json)
-      detailCache.set(row, d)
+      if (detailCache.size >= DETAIL_CACHE_MAX) {
+        const firstKey = detailCache.keys().next().value
+        if (firstKey) detailCache.delete(firstKey)
+      }
+      detailCache.set(row.id, d)
     }
     const g = d.general ?? {}
     const v = d.videoStreams?.[0] ?? {}
@@ -810,6 +824,7 @@ const observeTableContainer = (el: HTMLElement | null) => {
 }
 
 onUnmounted(() => {
+  isMounted = false
   if (resizeObserver) {
     resizeObserver.disconnect()
     resizeObserver = null
@@ -817,6 +832,10 @@ onUnmounted(() => {
   if (windowResizeHandler) {
     window.removeEventListener('resize', windowResizeHandler)
     windowResizeHandler = null
+  }
+  if (unlistenProgress) {
+    unlistenProgress()
+    unlistenProgress = null
   }
 })
 
@@ -871,8 +890,6 @@ const handleImport = async (kind: 'folder' | 'clipboard') => {
   }
 
   importing.value = true
-  importProgress.active = true
-  importProgress.percent = 0
   importSummary.value = ''
   expandedIds.value.clear()
 
@@ -892,7 +909,7 @@ const handleImport = async (kind: 'folder' | 'clipboard') => {
   } finally {
     importing.value = false
     importProgress.active = false
-    importProgress.percent = 100
+    importProgress.percent = 0
   }
 }
 
@@ -904,7 +921,7 @@ const handleClear = () => {
 }
 
 // ==================== 数据库入库 ====================
-const formatDuration = (ms: number): string => {
+const formatDurationMs = (ms: number): string => {
   const totalSecs = Math.floor(ms / 1000)
   const h = Math.floor(totalSecs / 3600)
   const m = Math.floor((totalSecs % 3600) / 60)
@@ -1017,8 +1034,36 @@ const deleteSelectedHistory = async () => {
   }
 }
 
+let unlistenProgress: (() => void) | null = null
+let isMounted = false
+
 onMounted(() => {
+  isMounted = true
   refreshHistoryCount()
+
+  if (!hasTauriRuntime()) return
+
+  // 监听后端进度事件
+  listen<{ done: number; total: number; phase: string }>('video_info_import', (event) => {
+    const { done, total, phase } = event.payload
+    if (phase === 'start') {
+      importProgress.active = true
+      importProgress.percent = 0
+    } else if (phase === 'done') {
+      importProgress.percent = 100
+      setTimeout(() => {
+        importProgress.active = false
+      }, 500)
+    } else if (total > 0) {
+      importProgress.percent = Math.round((done / total) * 100)
+    }
+  }).then(unlisten => {
+    if (isMounted) {
+      unlistenProgress = unlisten
+    } else {
+      unlisten()
+    }
+  })
 })
 
 // ==================== 导出功能 ====================
@@ -1028,7 +1073,7 @@ const csvEscape = (v: string | number) => {
     ? `"${s.replace(/"/g, '""')}"` : s
 }
 
-const exportRows = computed(() => flatTableData.value)
+const exportRows = computed(() => preFilterTableData.value)
 
 const exportHeaders = computed(() => [t('序号'), t('文件名'), ...visibleColumns.value.map(c => t(c.label)), t('文件大小'), t('流')])
 
@@ -1130,6 +1175,111 @@ const buildHtmlReport = () => {
 </html>`
 }
 
+const generateOutputDirName = (format: ExportFormat): string => {
+  const extMap: Record<string, string> = { txt: 'txt', xml2json: 'json', xml2md: 'md' }
+  const ext = extMap[format] || format
+  const now = new Date()
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const timestamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`
+  return `mediainfo_${ext}_${timestamp}`
+}
+
+const confirmOutputMode = async () => {
+  outputModeDialogVisible.value = false
+  const format = pendingExportFormat.value
+  if (!format) return
+  // 选择文件夹模式时，如果未指定目录则自动生成默认目录名
+  if (outputMode.value === 'folder' && !customOutputDir.value) {
+    const dirName = generateOutputDirName(format)
+    const selected = await openDialog({
+      directory: true,
+      multiple: false,
+      title: '选择输出目录',
+      defaultPath: dirName
+    })
+    if (!selected) return
+    customOutputDir.value = selected as string
+  }
+  await doBatchExport(format)
+}
+
+const doBatchExport = async (format: ExportFormat) => {
+  const extMap: Record<string, string> = { txt: 'txt', xml2json: 'json', xml2md: 'md' }
+  const ext = extMap[format]
+
+  const validItems = items.value.filter(i => i.status === 'success' && i.detail)
+  if (!validItems.length) {
+    ElMessage.warning(t('没有可导出的 MediaInfo 数据'))
+    return
+  }
+
+  const getExportFn = (path: string) => {
+    if (format === 'txt') return getVideoCompleteInfo(path)
+    if (format === 'xml2json') return getVideoXmlJson(path)
+    return getVideoXmlMarkdown(path)
+  }
+
+  try {
+    if (outputMode.value === 'same') {
+      // 源目录内生成模式：每个视频旁边生成对应文件
+      let count = 0
+      for (const item of validItems) {
+        const result = await getExportFn(item.path)
+        if (!result) continue
+        const baseName = item.name.replace(/\.[^.]+$/, '')
+        const dir = item.path.replace(/[/\\][^/\\]+$/, '')
+        const outPath = `${dir}/${baseName}_MediaInfo.${ext}`
+        await writeTextExportFile(outPath, result)
+        count++
+      }
+      ElMessage.success(`导出完成（${count} 个文件，已保存到源文件所在目录）`)
+    } else {
+      // 集中导出模式
+      const outDir = customOutputDir.value
+      if (!outDir) return
+
+      if (format === 'xml2json') {
+        // XML→JSON 合并为一个数组文件
+        const results: any[] = []
+        for (const item of validItems) {
+          const result = await getVideoXmlJson(item.path)
+          if (result) {
+            try { results.push(JSON.parse(result)) } catch { /* skip */ }
+          }
+        }
+        const outPath = `${outDir}/MediaInfo_ALL.json`
+        await writeTextExportFile(outPath, JSON.stringify(results, null, 2))
+        ElMessage.success(`导出完成（${results.length} 个文件 → ${outPath}）`)
+      } else if (format === 'xml2md') {
+        // XML→MD 合并为一个 MD 文件
+        const header = `# MediaInfo 批量导出报告\n\n**导出时间:** ${new Date().toLocaleString()}\n**文件数量:** ${validItems.length}\n\n---\n\n`
+        const parts: string[] = []
+        for (const item of validItems) {
+          const result = await getVideoXmlMarkdown(item.path)
+          if (result) parts.push(result)
+        }
+        const outPath = `${outDir}/MediaInfo_ALL.md`
+        await writeTextExportFile(outPath, header + parts.join('\n\n---\n\n'))
+        ElMessage.success(`导出完成（${parts.length} 个文件 → ${outPath}）`)
+      } else {
+        // TXT：每个视频单独一个文件
+        let count = 0
+        for (const item of validItems) {
+          const result = await getVideoCompleteInfo(item.path)
+          if (!result) continue
+          const baseName = item.name.replace(/\.[^.]+$/, '')
+          const outPath = `${outDir}/${baseName}_MediaInfo.txt`
+          await writeTextExportFile(outPath, result)
+          count++
+        }
+        ElMessage.success(`导出完成（${count} 个文件 → ${outDir}）`)
+      }
+    }
+  } catch (e: any) {
+    ElMessage.error(`导出失败：${e?.message || e}`)
+  }
+}
+
 const exportData = async (format: ExportFormat) => {
   const rows = flatTableData.value
   if (!rows.length) {
@@ -1137,8 +1287,16 @@ const exportData = async (format: ExportFormat) => {
     return
   }
 
-  // 弹出原生保存对话框
-  const extensionMap: Record<ExportFormat, string> = {
+  // 批量格式需要先选择输出模式
+  if (format === 'txt' || format === 'xml2json' || format === 'xml2md') {
+    pendingExportFormat.value = format
+    customOutputDir.value = '' // 重置目录选择
+    outputModeDialogVisible.value = true
+    return
+  }
+
+  // 弹出原生保存对话框（仅 xlsx/csv/markdown/html/json）
+  const extensionMap: Record<string, string> = {
     xlsx: 'xlsx',
     csv: 'csv',
     markdown: 'md',
@@ -1146,7 +1304,7 @@ const exportData = async (format: ExportFormat) => {
     json: 'json'
   }
   const defaultName = `video-health-${Date.now()}.${extensionMap[format]}`
-  const filters: Record<ExportFormat, { name: string; extensions: string[] }[]> = {
+  const filters: Record<string, { name: string; extensions: string[] }[]> = {
     xlsx: [{ name: 'Excel', extensions: ['xlsx'] }],
     csv: [{ name: 'CSV', extensions: ['csv'] }],
     markdown: [{ name: 'Markdown', extensions: ['md'] }],
@@ -1244,7 +1402,7 @@ const exportData = async (format: ExportFormat) => {
 
     <!-- 进度条 -->
     <div v-if="importProgress.active" class="progress-bar">
-      <el-progress :percentage="importProgress.percent" :indeterminate="true" :stroke-width="4" />
+      <el-progress :percentage="importProgress.percent" :stroke-width="4" />
     </div>
 
     <!-- 等级选择 + 统计 -->
@@ -1281,10 +1439,10 @@ const exportData = async (format: ExportFormat) => {
           <el-button :type="viewMode === 'card' ? 'primary' : ''" :icon="Grid" @click="viewMode = 'card'" />
           <el-button :type="viewMode === 'table' ? 'primary' : ''" :icon="List" @click="viewMode = 'table'" />
         </el-button-group>
-        <el-button v-if="viewMode === 'card'" size="small" text type="primary" @click="expandAll">{{ t('全部展开') }}</el-button>
-        <el-button v-if="viewMode === 'card'" size="small" text type="primary" @click="collapseAll">{{ t('全部收起') }}</el-button>
+        <el-button v-if="viewMode === 'card'" size="small" type="primary" plain @click="expandAll">{{ t('全部展开') }}</el-button>
+        <el-button v-if="viewMode === 'card'" size="small" type="primary" plain @click="collapseAll">{{ t('全部收起') }}</el-button>
         <el-dropdown v-if="viewMode === 'table'" trigger="click" @command="(cmd: any) => exportData(cmd as ExportFormat)">
-          <el-button size="small" text type="primary" :icon="Download">{{ t('导出') }}</el-button>
+          <el-button size="small" type="primary" plain :icon="Download">{{ t('导出') }}</el-button>
           <template #dropdown>
             <el-dropdown-menu>
               <el-dropdown-item command="xlsx">XLSX</el-dropdown-item>
@@ -1292,10 +1450,13 @@ const exportData = async (format: ExportFormat) => {
               <el-dropdown-item command="markdown">Markdown {{ t('报告') }}</el-dropdown-item>
               <el-dropdown-item command="html">HTML {{ t('报告') }}</el-dropdown-item>
               <el-dropdown-item command="json">JSON</el-dropdown-item>
+              <el-dropdown-item divided command="txt">TXT {{ t('完整') }}</el-dropdown-item>
+              <el-dropdown-item command="xml2json">XML→JSON</el-dropdown-item>
+              <el-dropdown-item command="xml2md">XML→MD</el-dropdown-item>
             </el-dropdown-menu>
           </template>
         </el-dropdown>
-        <el-button size="small" text type="danger" @click="handleClear">{{ t('清空') }}</el-button>
+        <el-button size="small" type="danger" plain @click="handleClear">{{ t('清空') }}</el-button>
       </div>
     </div>
 
@@ -1605,7 +1766,7 @@ const exportData = async (format: ExportFormat) => {
     </div>
 
     <!-- 历史记录对话框 -->
-    <el-dialog v-model="historyVisible" :title="t('历史记录')" width="90%" top="5vh" append-to-body>
+    <el-dialog v-model="historyVisible" :title="t('历史记录')" width="clamp(600px, 85vw, 1400px)" top="5vh" append-to-body>
       <div style="margin-bottom: 10px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
         <el-popover v-model:visible="historyColPopoverVisible" placement="bottom-start" :width="480" trigger="click">
           <template #reference>
@@ -1645,7 +1806,7 @@ const exportData = async (format: ExportFormat) => {
         <el-table-column v-if="historyColKeys.includes('codec')" prop="codec" :label="t('编码')" width="100" align="center" />
         <el-table-column v-if="historyColKeys.includes('frame_rate')" prop="frame_rate" :label="t('帧率')" width="80" align="center" />
         <el-table-column v-if="historyColKeys.includes('duration')" :label="t('时长')" width="90" align="center">
-          <template #default="{ row }">{{ row.duration_ms ? formatDuration(row.duration_ms) : '-' }}</template>
+          <template #default="{ row }">{{ row.duration_ms ? formatDurationMs(row.duration_ms) : '-' }}</template>
         </el-table-column>
         <el-table-column v-if="historyColKeys.includes('overall_bit_rate')" prop="overall_bit_rate" :label="t('码率')" width="120" align="center" />
         <el-table-column v-if="historyColKeys.includes('size')" :label="t('文件大小')" width="100" align="center">
@@ -1736,6 +1897,30 @@ const exportData = async (format: ExportFormat) => {
           {{ historySelection.length ? `${t('加载选中')} (${historySelection.length})` : t('加载全部') }}
         </el-button>
         <el-button @click="historyVisible = false">{{ t('关闭') }}</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 输出目录模式选择对话框 -->
+    <el-dialog v-model="outputModeDialogVisible" title="选择输出方式" width="clamp(300px, 40vw, 440px)" append-to-body>
+      <div style="display: flex; flex-direction: column; gap: 16px;">
+        <el-radio-group v-model="outputMode" style="display: flex; flex-direction: column; gap: 12px;">
+          <el-radio value="same">
+            <div>
+              <div style="font-weight: 600;">源目录内生成</div>
+              <div style="font-size: 12px; color: #8b8fa3; margin-top: 2px;">在每个视频所在目录下生成对应的 MediaInfo 文件</div>
+            </div>
+          </el-radio>
+          <el-radio value="folder">
+            <div>
+              <div style="font-weight: 600;">集中导出到指定目录</div>
+              <div style="font-size: 12px; color: #8b8fa3; margin-top: 2px;">所有导出文件统一保存到一个目录，默认目录名如 mediainfo_txt_20260513182112</div>
+            </div>
+          </el-radio>
+        </el-radio-group>
+      </div>
+      <template #footer>
+        <el-button @click="outputModeDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="confirmOutputMode">确定导出</el-button>
       </template>
     </el-dialog>
   </div>
@@ -1926,8 +2111,8 @@ const exportData = async (format: ExportFormat) => {
 .group-header {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 16px;
+  gap: 8px;
+  padding: 6px 12px;
   background: linear-gradient(135deg, #f0f4ff, #e8eeff);
   border-bottom: 1px solid rgba(20, 23, 31, 0.06);
 }
@@ -1941,12 +2126,12 @@ const exportData = async (format: ExportFormat) => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 16px 20px;
-  border-radius: 14px;
+  padding: 10px 14px;
+  border-radius: 10px;
   border: 1px solid rgba(20, 23, 31, 0.06);
   background: linear-gradient(145deg, rgba(243, 246, 255, 0.96), rgba(227, 235, 255, 0.9));
   flex-wrap: wrap;
-  gap: 12px;
+  gap: 8px;
 }
 
 .toolbar-left {
@@ -1990,9 +2175,9 @@ const exportData = async (format: ExportFormat) => {
 .level-bar {
   display: flex;
   align-items: center;
-  gap: 16px;
-  padding: 12px 16px;
-  border-radius: 12px;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 8px;
   border: 1px solid rgba(20, 23, 31, 0.06);
   background: #fff;
   flex-wrap: wrap;
@@ -2017,7 +2202,7 @@ const exportData = async (format: ExportFormat) => {
 .level-actions {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   flex-wrap: wrap;
 }
 
@@ -2025,7 +2210,7 @@ const exportData = async (format: ExportFormat) => {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 12px;
+  padding: 6px 10px;
   border-radius: 8px;
   background: #f5f7fa;
 }
@@ -2074,12 +2259,12 @@ const exportData = async (format: ExportFormat) => {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 80px 20px;
+  padding: 48px 20px;
   text-align: center;
 }
 .empty-icon {
-  font-size: 48px;
-  margin-bottom: 16px;
+  font-size: 36px;
+  margin-bottom: 10px;
 }
 .empty-title {
   margin: 0 0 8px;

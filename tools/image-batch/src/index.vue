@@ -213,93 +213,123 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="tool3">
-    <div class="form-row">
-      <label>{{ t('输入目录') }}</label>
-      <div class="inline">
-        <el-input v-model="inputDir" :placeholder="t('选择包含图片的文件夹')" />
-        <el-button :icon="FolderOpened" @click="pickFolder('input')">{{ t('浏览') }}</el-button>
-        <el-button :icon="UploadIcon" @click="pastePath">{{ t('粘贴') }}</el-button>
-      </div>
-    </div>
-    <div class="form-row">
-      <label>{{ t('输出目录') }}</label>
-      <div class="inline">
-        <el-input
-          v-model="outputDir"
-          :placeholder="t('留空默认：同级生成“输入文件夹名_合并.pdf”；填写自定义名自动补 .pdf')"
-        />
-        <el-button :icon="FolderOpened" @click="pickFolder('output')">{{ t('浏览') }}</el-button>
-      </div>
-    </div>
-    <!-- 输出格式选择 -->
-    <div class="form-row">
-      <label>{{ t('输出格式') }}</label>
-      <el-radio-group v-model="outputFormat" size="small">
-        <el-radio label="pdf">PDF</el-radio>
-        <el-radio label="epub">EPUB</el-radio>
-      </el-radio-group>
-    </div>
-
-    <!-- PDF 特有选项 -->
-    <template v-if="outputFormat === 'pdf'">
-      <div class="form-row">
-        <label>{{ t('批大小') }}</label>
-        <el-radio-group v-model="batchSize" size="small">
-          <el-radio :label="100">100</el-radio>
-          <el-radio :label="200">200</el-radio>
-          <el-radio :label="300">300</el-radio>
-          <el-radio :label="0">{{ t('全部合并') }}</el-radio>
-        </el-radio-group>
-      </div>
-      
-      <div class="form-row">
-        <label>{{ t('无损合并') }}</label>
-        <div class="inline">
-          <el-switch
-            v-model="losslessMerge"
-            :active-text="t('智能质量控制，控制文件大小在原图±5%以内')"
-            :inactive-text="t('普通质量合并')"
-          />
+    <div class="tool3-header">
+      <!-- 文件路径 -->
+      <div class="tb-section">
+        <div class="tb-section-title">
+          <el-icon><FolderOpened /></el-icon>
+          {{ t('文件路径') }}
+        </div>
+        <div class="form-row">
+          <label>{{ t('输入目录') }}</label>
+          <div class="inline">
+            <el-input v-model="inputDir" :placeholder="t('选择包含图片的文件夹')" />
+            <el-button :icon="FolderOpened" @click="pickFolder('input')">{{ t('浏览') }}</el-button>
+            <el-button :icon="UploadIcon" @click="pastePath">{{ t('粘贴') }}</el-button>
+          </div>
+        </div>
+        <div class="form-row">
+          <label>{{ t('输出目录') }}</label>
+          <div class="inline">
+            <el-input
+              v-model="outputDir"
+              :placeholder="t('留空默认：同级生成 输入文件夹名_合并.pdf；填写自定义名自动补 .pdf')"
+            />
+            <el-button :icon="FolderOpened" @click="pickFolder('output')">{{ t('浏览') }}</el-button>
+          </div>
         </div>
       </div>
-    </template>
 
-    <!-- EPUB 特有选项 -->
-    <template v-if="outputFormat === 'epub'">
-      <div class="form-row">
-        <label>{{ t('页面尺寸') }}</label>
-        <el-radio-group v-model="epubPageSize" size="small">
-          <el-radio
-            v-for="size in EPUB_PAGE_SIZES"
-            :key="size.value"
-            :label="size.value"
-          >
-            {{ size.label }} <span class="size-desc">({{ size.desc }})</span>
-          </el-radio>
-        </el-radio-group>
+      <div class="tb-section">
+        <div class="tb-section-title">
+          <el-icon><MagicStick /></el-icon>
+          输出设置
+        </div>
+        <div class="form-row">
+          <label>{{ t('输出格式') }}</label>
+          <el-radio-group v-model="outputFormat" size="small">
+            <el-radio label="pdf">PDF</el-radio>
+            <el-radio label="epub">EPUB</el-radio>
+          </el-radio-group>
+        </div>
+
+        <template v-if="outputFormat === 'pdf'">
+          <div class="form-row">
+            <label>{{ t('批大小') }}</label>
+            <el-radio-group v-model="batchSize" size="small">
+              <el-radio :label="100">100</el-radio>
+              <el-radio :label="200">200</el-radio>
+              <el-radio :label="300">300</el-radio>
+              <el-radio :label="0">{{ t('全部合并') }}</el-radio>
+            </el-radio-group>
+          </div>
+          <div class="form-row">
+            <label>{{ t('无损合并') }}</label>
+            <div class="inline">
+              <el-switch
+                v-model="losslessMerge"
+                :active-text="t('智能质量控制，控制文件大小在原图±5%以内')"
+                :inactive-text="t('普通质量合并')"
+              />
+            </div>
+          </div>
+        </template>
+
+        <template v-if="outputFormat === 'epub'">
+          <div class="form-row">
+            <label>{{ t('页面尺寸') }}</label>
+            <el-radio-group v-model="epubPageSize" size="small">
+              <el-radio
+                v-for="size in EPUB_PAGE_SIZES"
+                :key="size.value"
+                :label="size.value"
+              >
+                {{ size.label }} <span class="size-desc">({{ size.desc }})</span>
+              </el-radio>
+            </el-radio-group>
+          </div>
+        </template>
       </div>
-    </template>
 
-    <div class="buttons">
-      <el-button type="primary" :icon="MagicStick" :loading="listLoading" @click="importList">
-        {{ t('导入列表') }}
-      </el-button>
-      <el-button type="success" :loading="running" @click="runConvert">{{ t('开始转换') }}</el-button>
-      <el-button @click="clearList">{{ t('清空列表') }}</el-button>
+      <!-- 操作栏 -->
+      <div class="tb-action-bar">
+        <el-button type="primary" :icon="MagicStick" :loading="listLoading" @click="importList">
+          {{ t('导入列表') }}
+        </el-button>
+        <el-button type="success" :loading="running" @click="runConvert">{{ t('开始转换') }}</el-button>
+        <el-button @click="clearList">{{ t('清空列表') }}</el-button>
+        <span class="tb-action-hint">
+          <el-link type="info" :icon="Document" @click="openNote">{{ t('小工具说明') }}</el-link>
+        </span>
+      </div>
+
+      <ImageStatusCard :progress="progress" :result-info="resultInfo" :problem-log="problemLog" @openOutput="openOutput" />
     </div>
 
-    <ImageStatusCard :progress="progress" :result-info="resultInfo" :problem-log="problemLog" @openOutput="openOutput" />
+    <div class="tool3-body">
+      <div v-if="files.length > 0" class="tb-section file-list-section">
+        <div class="tb-section-title">
+          文件列表
+          <el-tag size="small" type="info" style="margin-left: 4px;">{{ files.length }}</el-tag>
+        </div>
+        <el-table :data="files" size="small" height="100%" v-loading="listLoading">
+          <el-table-column prop="name" :label="t('文件名')" />
+          <el-table-column prop="format" :label="t('格式')" width="80">
+            <template #default="{ row }">
+              <el-tag size="small" type="info">.{{ row.format }}</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column :label="t('大小')" width="120">
+            <template #default="{ row }">{{ formatBytes(row.size) }}</template>
+          </el-table-column>
+        </el-table>
+      </div>
 
-    <el-table :data="files" height="260" size="small" v-loading="listLoading">
-      <el-table-column prop="name" :label="t('文件名')" />
-      <el-table-column prop="format" :label="t('格式')" width="80" />
-      <el-table-column :label="t('大小')" width="120">
-        <template #default="{ row }">{{ formatBytes(row.size) }}</template>
-      </el-table-column>
-    </el-table>
-
-    <div class="note-link">
-      <el-link type="info" :icon="Document" @click="openNote">{{ t('小工具说明') }}</el-link>
+      <div v-else-if="!listLoading" class="tb-empty">
+        <div class="tb-empty-icon">&#128193;</div>
+        <div class="tb-empty-text">{{ t('暂无文件') }}</div>
+        <div class="tb-empty-hint">{{ t('点击上方导入列表开始') }}</div>
+      </div>
     </div>
 
     <el-dialog v-model="noteVisible" :title="t('工具 3 说明')" width="640px">
@@ -315,6 +345,33 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  height: 100%;
+  overflow: hidden;
+  min-height: 0;
+}
+.tool3-header {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  flex-shrink: 0;
+}
+.tool3-body {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.file-list-section {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.file-list-section :deep(.el-table) {
+  flex: 1;
+  min-height: 0;
 }
 .form-row {
   display: flex;
@@ -325,19 +382,9 @@ onBeforeUnmount(() => {
   display: flex;
   gap: 8px;
 }
-.buttons {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-}
-.note-link {
-  align-self: flex-start;
-  font-size: 12px;
-  color: #666;
-}
 .note-content {
   white-space: pre-wrap;
-  font-family: Consolas, 'SFMono-Regular', monospace;
+  font-family: var(--font-mono);
   line-height: 1.5;
   margin: 0;
 }

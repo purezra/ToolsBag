@@ -1,193 +1,410 @@
 <template>
-  <div class="image-to-pdf-tool">
-    <!-- 步骤1: 文件夹选择 -->
-    <div class="section folder-section">
-      <h3>📁 选择图片文件夹</h3>
-      <div class="folder-input">
-        <button class="btn btn-primary" @click="selectFolder" :disabled="loading">
-          {{ loading ? '分析中...' : '选择文件夹' }}
-        </button>
-        <span v-if="folderPath" class="folder-path">{{ folderPath }}</span>
-      </div>
-    </div>
+  <div class="img2pdf">
+    <!-- ============ LEFT: Settings panel ============ -->
+    <aside class="left-panel">
+      <!-- Folder / path input -->
+      <section class="card">
+        <header class="card-head">
+          <p class="eyebrow">Image PDF</p>
+          <h3>{{ t('选择图片文件夹') }}</h3>
+        </header>
 
-    <!-- 步骤2: 图片分析结果 -->
-    <div v-if="analysis" class="section analysis-section">
-      <h3>📊 图片分析结果</h3>
-      <div class="analysis-info">
-        <div class="stat">
-          <span class="label">总数量:</span>
-          <span class="value">{{ analysis.images.length }} 张</span>
-        </div>
-        <div class="stat">
-          <span class="label">竖图:</span>
-          <span class="value">{{ analysis.portrait_count }} 张</span>
-        </div>
-        <div class="stat">
-          <span class="label">横图:</span>
-          <span class="value">{{ analysis.landscape_count }} 张</span>
-        </div>
-        <div class="stat">
-          <span class="label">总大小:</span>
-          <span class="value">{{ formatFileSize(analysis.total_size) }}</span>
-        </div>
-        <div class="stat">
-          <span class="label">建议方向:</span>
-          <span class="value suggestion">{{ ORIENTATION_NAMES[analysis.suggested_orientation as PageOrientation] || analysis.suggested_orientation }}</span>
-        </div>
-      </div>
-    </div>
-
-    <!-- 步骤3: 页面设置 -->
-    <div v-if="analysis" class="section settings-section">
-      <h3>⚙️ 页面设置</h3>
-      
-      <div class="setting-group">
-        <label>页面尺寸</label>
-        <div class="radio-group">
-          <label v-for="(name, key) in PAGE_SIZE_NAMES" :key="key" class="radio-label">
-            <input type="radio" v-model="settings.pageSize" :value="key" @change="updatePreview">
-            {{ name }}
-          </label>
-        </div>
-      </div>
-
-      <div class="setting-group">
-        <label>页面方向</label>
-        <div class="radio-group">
-          <label v-for="(name, key) in ORIENTATION_NAMES" :key="key" class="radio-label">
-            <input type="radio" v-model="settings.orientation" :value="key" @change="updatePreview">
-            {{ name }}
-          </label>
-        </div>
-      </div>
-
-      <div class="setting-group">
-        <label>边距 (mm)</label>
-        <div class="margin-input">
-          <div class="preset-buttons">
-            <button 
-              v-for="m in MARGIN_PRESETS" 
-              :key="m" 
-              :class="['preset-btn', { active: settings.margin === m }]"
-              @click="setMargin(m)"
-            >
-              {{ m }}mm
-            </button>
-          </div>
-          <div class="custom-margin">
-            <input 
-              type="number" 
-              v-model.number="settings.margin" 
-              min="0" 
-              :max="maxMargin"
-              step="0.5"
-              @change="updatePreview"
-            >
-            <span>mm</span>
-          </div>
-        </div>
-        <p class="hint" v-if="marginError">⚠️ {{ marginError }}</p>
-      </div>
-
-      <div class="setting-group">
-        <label>压缩比例: {{ settings.compression }}%</label>
-        <input 
-          type="range" 
-          v-model.number="settings.compression" 
-          min="10" 
-          max="100" 
-          step="5"
-        >
-        <p class="hint">100% = 不压缩，保持原始质量</p>
-      </div>
-    </div>
-
-    <!-- 步骤4: 预览区域 -->
-    <div v-if="previewData" class="section preview-section">
-      <h3>👁️ 预览 <span class="preview-hint">(点击缩略图切换页面)</span></h3>
-      <div class="preview-container">
-        <div class="preview-sidebar">
-          <div 
-            v-for="(page, index) in previewData.pages.slice(0, 20)" 
-            :key="index"
-            :class="['thumbnail', { active: currentPreviewPage === index }]"
-            @click="selectPreviewPage(index)"
+        <div class="path-row">
+          <el-input
+            v-model="pathInput"
+            :placeholder="t('粘贴文件夹路径或图片路径，回车分析')"
+            clearable
+            :disabled="loading"
+            @keyup.enter="handlePathSubmit"
           >
-            <div 
-              class="page-frame"
-              :style="getPageFrameStyle(page)"
-            >
-              <div 
-                class="image-placeholder"
-                :style="getImagePlaceholderStyle(page)"
-              ></div>
+            <template #prepend>
+              <el-button :icon="FolderOpened" :loading="loading" @click="selectFolder">
+                {{ t('选择') }}
+              </el-button>
+            </template>
+            <template #append>
+              <el-button :loading="loading" :disabled="!pathInput.trim()" @click="handlePathSubmit">
+                {{ t('分析') }}
+              </el-button>
+            </template>
+          </el-input>
+        </div>
+
+        <div class="path-options">
+          <el-checkbox v-model="recursive" :disabled="loading" @change="onRecursiveChange">
+            {{ t('遍历所有子目录') }}
+          </el-checkbox>
+          <span class="opt-hint">{{ t('未勾选时只扫描当前目录') }}</span>
+        </div>
+
+        <div v-if="analysis" class="folder-path">
+          <span class="path-label">{{ t('实际扫描') }}：</span>{{ analysis.effective_path }}
+          <el-tag v-if="analysis.recursive" size="small" type="info" effect="plain">
+            {{ t('递归') }}
+          </el-tag>
+        </div>
+
+        <p v-if="analysis?.auto_switched_from_file" class="hint is-warn">
+          {{ t('检测到的是文件路径，已自动切换为其所在目录并按非递归扫描') }}
+        </p>
+
+        <p class="hint">
+          {{ t('支持 JPG/PNG/WebP/TIFF/BMP/GIF/TGA/DDS/PNM/QOI/HDR/ICO 等位图格式混合合并') }}
+        </p>
+      </section>
+
+      <!-- Skipped files -->
+      <section v-if="analysis?.skipped?.length" class="card">
+        <header class="card-head compact">
+          <h3>{{ t('跳过的文件') }}</h3>
+          <el-tag type="warning" effect="plain">{{ analysis.skipped.length }} {{ t('个') }}</el-tag>
+        </header>
+        <div class="skipped-list">
+          <div v-for="sf in analysis.skipped" :key="sf.path" class="skipped-row">
+            <span class="skipped-ext">.{{ sf.ext }}</span>
+            <span class="skipped-reason">{{ sf.reason }}</span>
+            <span class="skipped-name" :title="sf.path">{{ shortFileName(sf.path) }}</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Analysis report -->
+      <section v-if="analysis" class="card">
+        <header class="card-head compact">
+          <h3>{{ t('图片分析结果') }}</h3>
+          <el-tag type="success" effect="plain">{{ analysis.images.length }} {{ t('张') }}</el-tag>
+        </header>
+
+        <div class="stats-row">
+          <div class="stat">
+            <span class="label">{{ t('总数量') }}</span>
+            <span class="value">{{ analysis.images.length }}</span>
+          </div>
+          <div class="stat">
+            <span class="label">{{ t('总大小') }}</span>
+            <span class="value">{{ formatFileSize(analysis.total_size) }}</span>
+          </div>
+          <div class="stat">
+            <span class="label">{{ t('建议方向') }}</span>
+            <span class="value suggestion">
+              {{ FIXED_ORIENTATION_NAMES[analysis.suggested_orientation as FixedOrientation] || analysis.suggested_orientation }}
+            </span>
+          </div>
+        </div>
+
+        <!-- 元数据告警 (P1/P2) -->
+        <div v-if="metaWarnings.length" class="meta-warnings">
+          <p v-for="w in metaWarnings" :key="w" class="meta-warn">{{ w }}</p>
+        </div>
+
+        <DistCard :title="t('方向分布')" :rows="orientationRows" />
+        <DistCard :title="t('格式分布')" :rows="formatRows" />
+        <DistCard v-if="resolutionRows.length" :title="t('分辨率分布（按长边）')" :rows="resolutionRows" />
+      </section>
+
+      <!-- Page settings -->
+      <section v-if="analysis" class="card">
+        <header class="card-head compact"><h3>{{ t('页面设置') }}</h3></header>
+
+        <div class="setting-group">
+          <label>{{ t('页面模式') }}</label>
+          <el-radio-group v-model="settings.pageModeType" size="small" @change="onPageModeChange">
+            <el-radio-button label="original">{{ t('原图大小') }}</el-radio-button>
+            <el-radio-button label="fixed">{{ t('固定幅面') }}</el-radio-button>
+          </el-radio-group>
+          <p class="hint" v-if="settings.pageModeType === 'original'">
+            {{ t('每页尺寸 = 原图像素（72 DPI），横图横摆竖图竖摆，无边距') }}
+          </p>
+        </div>
+
+        <template v-if="settings.pageModeType === 'fixed'">
+          <div class="setting-group">
+            <label>{{ t('页面尺寸') }}</label>
+            <el-radio-group v-model="settings.pageSize" size="small" @change="updatePreview">
+              <el-radio-button v-for="(name, key) in PAGE_SIZE_NAMES" :key="key" :label="key">
+                {{ name }}
+              </el-radio-button>
+            </el-radio-group>
+          </div>
+
+          <div class="setting-group">
+            <label>{{ t('幅面方向') }}</label>
+            <el-radio-group v-model="settings.fixedOrientation" size="small" @change="updatePreview">
+              <el-radio-button v-for="(name, key) in FIXED_ORIENTATION_NAMES" :key="key" :label="key">
+                {{ name }}
+              </el-radio-button>
+            </el-radio-group>
+          </div>
+
+          <div class="setting-group">
+            <label>{{ t('边距 (mm)') }}</label>
+            <div class="margin-input">
+              <div class="preset-buttons">
+                <el-button
+                  v-for="m in MARGIN_PRESETS"
+                  :key="m"
+                  size="small"
+                  :type="settings.margin === m ? 'primary' : 'default'"
+                  :plain="settings.margin !== m"
+                  @click="setMargin(m)"
+                >{{ m }}mm</el-button>
+              </div>
+              <el-input-number
+                v-model="settings.margin"
+                size="small"
+                :min="0"
+                :max="maxMargin"
+                :step="0.5"
+                @change="updatePreview"
+              />
             </div>
-            <span class="page-num">{{ index + 1 }}</span>
+            <p class="hint is-danger" v-if="marginError">{{ marginError }}</p>
           </div>
-          <div v-if="previewData.pages.length > 20" class="more-pages">
-            +{{ previewData.pages.length - 20 }} 页
-          </div>
-        </div>
-        <div class="preview-main">
-          <canvas ref="previewCanvas" class="preview-canvas"></canvas>
-          <div class="preview-loading" v-if="loadingThumbnail">加载中...</div>
-          <div class="preview-info" v-if="previewData.pages[currentPreviewPage]">
-            <span>页面 {{ currentPreviewPage + 1 }} / {{ previewData.pages.length }}</span>
-            <span>{{ previewData.pages[currentPreviewPage]?.page_width.toFixed(1) }} × {{ previewData.pages[currentPreviewPage]?.page_height.toFixed(1) }} mm</span>
-          </div>
-        </div>
-      </div>
-    </div>
+        </template>
 
-    <!-- 步骤5: 生成PDF -->
-    <div v-if="analysis" class="section generate-section">
-      <h3>📄 生成 PDF</h3>
-      <div class="generate-controls">
-        <button 
-          class="btn btn-success btn-large" 
-          @click="generatePdf" 
+        <div class="setting-group">
+          <label>{{ t('合并模式') }}</label>
+          <el-radio-group v-model="settings.mergeMode" size="small">
+            <el-radio-button label="lossless">{{ t('无损模式') }}</el-radio-button>
+            <el-radio-button label="portable">{{ t('便携模式') }}</el-radio-button>
+          </el-radio-group>
+
+          <div v-if="settings.mergeMode === 'lossless'" class="mode-detail">
+            <p class="hint">
+              {{ t('原始 JPEG 直接嵌入（零重编码），其他格式以 q=95 编码。') }}
+              <br />
+              {{ t('结果体积超过原图总大小') }} <strong>{{ Math.round(settings.maxSizeRatio * 100) }}%</strong>
+              {{ t('时自动降级到 q=85 / q=75。') }}
+            </p>
+            <div class="ratio-row">
+              <span>{{ t('体积上限：原图的') }}</span>
+              <el-slider
+                v-model="settings.maxSizeRatio"
+                :min="1.05"
+                :max="2.00"
+                :step="0.05"
+                :format-tooltip="(v: number) => `${Math.round(v * 100)}%`"
+                style="flex:1; margin: 0 12px;"
+              />
+              <strong>{{ Math.round(settings.maxSizeRatio * 100) }}%</strong>
+            </div>
+          </div>
+
+          <div v-else class="mode-detail">
+            <p class="hint">{{ t('用滑块设置目标体积占比。100% 接近原图大小，10% 大幅压缩。') }}</p>
+            <div class="ratio-row">
+              <span>{{ t('目标占比：原图的') }}</span>
+              <el-slider
+                v-model="settings.portableTargetRatio"
+                :min="0.10"
+                :max="1.00"
+                :step="0.05"
+                :format-tooltip="(v: number) => `${Math.round(v * 100)}%`"
+                style="flex:1; margin: 0 12px;"
+              />
+              <strong>{{ Math.round(settings.portableTargetRatio * 100) }}%</strong>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Generate -->
+      <section v-if="analysis" class="card">
+        <header class="card-head compact"><h3>{{ t('生成 PDF') }}</h3></header>
+
+        <el-button
+          type="success"
+          size="large"
+          :icon="MagicStick"
+          @click="generatePdfAction"
           :disabled="generating || !canGenerate"
-        >
-          {{ generating ? '生成中...' : '合成 PDF' }}
-        </button>
-      </div>
+          :loading="generating"
+          style="width:100%;"
+        >{{ generating ? t('生成中') : t('合成 PDF') }}</el-button>
 
-      <!-- 进度显示 -->
-      <div v-if="progress" class="progress-container">
-        <div class="progress-bar">
-          <div class="progress-fill" :style="{ width: progressPercent + '%' }"></div>
-        </div>
-        <div class="progress-text">
-          {{ progress.phase }}: {{ progress.current }} / {{ progress.total }}
-        </div>
-      </div>
-
-      <!-- 生成结果 -->
-      <div v-if="result" class="result-container" :class="{ success: result.success, error: !result.success }">
-        <div v-if="result.success">
-          <p>✅ PDF 生成成功!</p>
-          <div class="result-stats">
-            <span>页数: {{ result.page_count }}</span>
-            <span>文件大小: {{ formatFileSize(result.file_size) }}</span>
-            <span>原始大小: {{ formatFileSize(result.original_total_size) }}</span>
-            <span>耗时: {{ (result.elapsed_ms / 1000).toFixed(2) }}s</span>
+        <div v-if="progress" class="progress-container">
+          <el-progress :percentage="progressPercent" :text-inside="true" :stroke-width="18" />
+          <div class="progress-text">
+            {{ progress.phase }}: {{ progress.current }} / {{ progress.total }}
+            <span v-if="progress.current_file" class="current-file">— {{ shortFileName(progress.current_file) }}</span>
           </div>
-          <p class="output-path">{{ result.output_path }}</p>
         </div>
-        <div v-else>
-          <p>❌ 生成失败: {{ result.error }}</p>
+
+        <div v-if="result" class="result-container" :class="{ success: result.success, error: !result.success, warn: result.success && result.exceeded_target }">
+          <div v-if="result.success">
+            <p class="result-title">
+              {{ result.exceeded_target ? t('PDF 已生成（超出体积上限）') : t('PDF 生成成功') }}
+            </p>
+            <div class="result-stats">
+              <span>{{ t('页数') }}: {{ result.page_count }}</span>
+              <span>{{ t('文件大小') }}: {{ formatFileSize(result.file_size) }}</span>
+              <span>{{ t('原始大小') }}: {{ formatFileSize(result.original_total_size) }}</span>
+              <span>{{ t('体积比') }}: {{ Math.round(result.size_ratio * 100) }}%</span>
+              <span>{{ t('耗时') }}: {{ (result.elapsed_ms / 1000).toFixed(2) }}s</span>
+            </div>
+            <p class="mode-used">{{ t('实际参数') }}: {{ result.mode_used }}</p>
+            <p v-if="result.exceeded_target" class="warn-note">
+              {{ t('已尝试最低质量档（q=75）但仍超过设定上限。可改用便携模式手动设置目标占比以获得更小体积。') }}
+            </p>
+            <p class="output-path">{{ result.output_path }}</p>
+          </div>
+          <div v-else>
+            <p class="result-title">{{ t('生成失败') }}: {{ result.error }}</p>
+          </div>
         </div>
+      </section>
+    </aside>
+
+    <!-- ============ RIGHT: Preview panel ============ -->
+    <main class="right-panel" v-if="previewData">
+      <header class="preview-toolbar">
+        <div class="tool-group">
+          <span class="tool-label">{{ t('网格') }}</span>
+          <el-radio-group v-model="previewGridSize" size="small">
+            <el-radio-button :label="4">2×2</el-radio-button>
+            <el-radio-button :label="9">3×3</el-radio-button>
+            <el-radio-button :label="16">4×4</el-radio-button>
+          </el-radio-group>
+        </div>
+
+        <div class="tool-group">
+          <span class="tool-label">{{ t('模式') }}</span>
+          <el-radio-group v-model="previewMode" size="small">
+            <el-radio-button label="page">{{ t('翻页') }}</el-radio-button>
+            <el-radio-button label="waterfall">{{ t('瀑布流') }}</el-radio-button>
+            <el-radio-button label="auto">{{ t('自动播放') }}</el-radio-button>
+            <el-radio-button label="list">{{ t('列表') }}</el-radio-button>
+          </el-radio-group>
+        </div>
+
+        <div v-if="previewMode === 'auto'" class="tool-group interval-group">
+          <span class="tool-label">{{ t('间隔') }}</span>
+          <el-slider
+            v-model="autoPlayInterval"
+            :min="0.1"
+            :max="5"
+            :step="0.1"
+            :format-tooltip="(v: number) => `${v.toFixed(1)}s`"
+            style="width: 140px;"
+            size="small"
+          />
+          <span class="interval-display">{{ autoPlayInterval.toFixed(1) }}s</span>
+        </div>
+
+        <div v-if="previewMode === 'page' || previewMode === 'auto'" class="tool-group page-nav">
+          <el-button size="small" :disabled="gridPageIndex === 0" @click="prevGridPage" circle>
+            ‹
+          </el-button>
+          <span class="page-counter">{{ gridPageIndex + 1 }} / {{ totalGridPages }}</span>
+          <el-button size="small" :disabled="gridPageIndex >= totalGridPages - 1" @click="nextGridPage" circle>
+            ›
+          </el-button>
+        </div>
+
+        <div class="tool-group spacer"></div>
+
+        <div class="tool-group">
+          <span class="page-info">
+            {{ t('共') }} {{ previewData.pages.length }} {{ t('页') }}
+          </span>
+        </div>
+      </header>
+
+      <div
+        ref="gridScroller"
+        class="grid-scroller"
+        :class="{ waterfall: previewMode === 'waterfall', list: previewMode === 'list' }"
+      >
+        <div v-if="previewMode === 'list'" class="file-list-view">
+          <el-table
+            :data="fileListRows"
+            height="100%"
+            stripe
+            size="small"
+            @row-click="(row: FileListRow) => onCellClick(row.index - 1)"
+          >
+            <el-table-column prop="index" label="#" width="58" align="right" />
+            <el-table-column prop="name" :label="t('文件名')" min-width="220" show-overflow-tooltip />
+            <el-table-column prop="resolution" :label="t('分辨率')" width="120" align="center" />
+            <el-table-column prop="orientation" :label="t('方向')" width="78" align="center" />
+            <el-table-column prop="format" :label="t('格式')" width="82" align="center" />
+            <el-table-column prop="size" :label="t('大小')" width="100" align="right" />
+            <el-table-column prop="bitDepth" :label="t('位深')" width="76" align="center" />
+            <el-table-column prop="flags" :label="t('提示')" min-width="160" show-overflow-tooltip />
+          </el-table>
+        </div>
+
+        <template v-else>
+          <div
+            class="grid-container"
+            :style="gridContainerStyle"
+          >
+            <div
+              v-for="item in visibleCells"
+              :key="`${item.pageIdx}-${item.page.image_path}`"
+              class="grid-cell"
+              :class="{ active: previewMode !== 'waterfall' && currentSelectedPage === item.pageIdx }"
+              @click="onCellClick(item.pageIdx)"
+            >
+              <div class="cell-frame-wrap">
+                <div
+                  class="cell-frame"
+                  :class="{ 'no-page-decor': isImageFillsPage(item.page) }"
+                  :style="cellFrameStyle(item.page)"
+                >
+                  <div
+                    v-if="item.page.margin > 0"
+                    class="cell-margin-box"
+                    :style="cellMarginStyle(item.page)"
+                  ></div>
+                  <img
+                    v-if="thumbnails.get(item.page.image_path)"
+                    :src="thumbnails.get(item.page.image_path)"
+                    class="cell-img"
+                    :style="cellImageBoxStyle(item.page)"
+                    loading="lazy"
+                  />
+                  <div
+                    v-else
+                    class="cell-placeholder"
+                    :style="cellImageBoxStyle(item.page)"
+                  >
+                    <span>{{ item.page.image.original_width }}×{{ item.page.image.original_height }}</span>
+                  </div>
+                </div>
+              </div>
+              <div class="cell-meta">
+                <span class="cell-num">{{ item.pageIdx + 1 }}</span>
+                <span class="cell-name">{{ shortFileName(item.page.image_path) }}</span>
+              </div>
+            </div>
+          </div>
+
+          <div v-if="previewMode === 'waterfall' && previewData.pages.length > waterfallLimit" class="waterfall-more">
+            <el-button size="small" @click="waterfallLimit += 60">
+              {{ t('再加载 60 项') }}（{{ previewData.pages.length - waterfallLimit }} {{ t('剩余') }}）
+            </el-button>
+          </div>
+        </template>
       </div>
-    </div>
+    </main>
+
+    <main v-else class="right-panel placeholder-panel">
+      <div class="placeholder-empty">
+        <p>{{ t('选择文件夹后将在此处预览') }}</p>
+      </div>
+    </main>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, nextTick, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, nextTick, onMounted, onBeforeUnmount, watch, h, defineComponent, type PropType, type StyleValue } from 'vue'
 import { ElMessage } from 'element-plus'
+import { FolderOpened, MagicStick } from '@element-plus/icons-vue'
 import { open, save } from '@tauri-apps/plugin-dialog'
 import { listen } from '@tauri-apps/api/event'
+import { hasTauriRuntime } from '@core/utils/tauri'
+import { useSettings } from '@core/hooks/useSettings'
 import {
   analyzeFolderForPdf,
   calculatePreviewLayout,
@@ -195,101 +412,324 @@ import {
   getImageThumbnail,
   formatFileSize,
   PAGE_SIZE_NAMES,
-  ORIENTATION_NAMES,
+  FIXED_ORIENTATION_NAMES,
   MARGIN_PRESETS,
+  DEFAULT_LOSSLESS_MAX_RATIO,
+  DEFAULT_PORTABLE_TARGET_RATIO,
   type PageSize,
-  type PageOrientation,
+  type FixedOrientation,
+  type PageMode,
+  type MergeMode,
   type FolderAnalysis,
   type PreviewData,
   type LayoutResult,
   type GenerationProgress,
-  type GenerationResult
+  type GenerationResult,
 } from './api/image-to-pdf'
 
-// 状态
-const folderPath = ref('')
+const { t } = useSettings()
+
+// ==================== Distribution row component (inline) ====================
+
+interface DistRow {
+  key: string
+  label: string
+  count: number
+  percent: number
+  color: string
+}
+
+const DistCard = defineComponent({
+  name: 'DistCard',
+  props: {
+    title: { type: String, required: true },
+    rows: { type: Array as PropType<DistRow[]>, required: true },
+  },
+  setup(props) {
+    return () =>
+      h('div', { class: 'dist-card' }, [
+        h('p', { class: 'dist-title' }, props.title),
+        h(
+          'div',
+          { class: 'dist-list' },
+          props.rows.map((row) =>
+            h('div', { class: 'dist-row', key: row.key }, [
+              h('span', { class: 'dist-label' }, row.label),
+              h('div', { class: 'dist-bar' }, [
+                h('div', {
+                  class: 'dist-bar-fill',
+                  style: { width: row.percent + '%', background: row.color },
+                }),
+              ]),
+              h('span', { class: 'dist-value' }, `${row.count} · ${row.percent}%`),
+            ]),
+          ),
+        ),
+      ])
+  },
+})
+
+// ==================== State ====================
+
+const pathInput = ref('')
+const recursive = ref(false)
 const analysis = ref<FolderAnalysis | null>(null)
 const previewData = ref<PreviewData | null>(null)
-const currentPreviewPage = ref(0)
 const loading = ref(false)
-const loadingThumbnail = ref(false)
 const generating = ref(false)
 const progress = ref<GenerationProgress | null>(null)
 const result = ref<GenerationResult | null>(null)
-const previewCanvas = ref<HTMLCanvasElement | null>(null)
-const thumbnailCache = ref<Map<string, string>>(new Map())
-const THUMBNAIL_CACHE_MAX = 50 // 限制缓存大小，避免内存占用过多
+
+// 缩略图缓存（path → data URL）
+const thumbnails = ref<Map<string, string>>(new Map())
+const THUMBNAIL_CACHE_MAX = 200
+const loadingThumbnails = ref<Set<string>>(new Set())
+
+// 预览控件状态
+const previewGridSize = ref<4 | 9 | 16>(9)
+const previewMode = ref<'page' | 'waterfall' | 'auto' | 'list'>('page')
+const autoPlayInterval = ref<number>(2.0)
+const gridPageIndex = ref(0)
+const currentSelectedPage = ref(0)
+const waterfallLimit = ref(60)
+const gridScroller = ref<HTMLDivElement | null>(null)
 
 // 设置
 const settings = ref({
+  pageModeType: 'original' as 'original' | 'fixed',
   pageSize: 'A4' as PageSize,
-  orientation: 'auto' as PageOrientation,
+  fixedOrientation: 'auto' as FixedOrientation,
   margin: 10,
-  compression: 100,
-  transparentMode: 'flatten_to_white' as 'flatten_to_white' | 'preserve',
-  jpegQuality: 90
+  mergeMode: 'lossless' as 'lossless' | 'portable',
+  maxSizeRatio: DEFAULT_LOSSLESS_MAX_RATIO,
+  portableTargetRatio: DEFAULT_PORTABLE_TARGET_RATIO,
 })
 
-// 计算属性
+// ==================== Computed ====================
+
 const maxMargin = computed(() => {
   const sizes: Record<PageSize, number> = {
-    A4: 210 * 0.4,
-    A3: 297 * 0.4,
-    B5: 176 * 0.4,
-    ipad_pro: 160.4 * 0.4
+    A4: 210 * 0.4, A3: 297 * 0.4, B5: 176 * 0.4, ipad_pro: 160.4 * 0.4,
   }
   return Math.floor(sizes[settings.value.pageSize])
 })
 
 const marginError = computed(() => {
-  if (settings.value.margin < 0) return '边距不能为负'
-  if (settings.value.margin > maxMargin.value) {
-    return `边距不能超过 ${maxMargin.value}mm`
-  }
+  if (settings.value.pageModeType === 'original') return ''
+  if (settings.value.margin < 0) return t('边距不能为负')
+  if (settings.value.margin > maxMargin.value) return `${t('边距不能超过')} ${maxMargin.value}mm`
   return ''
 })
 
-const canGenerate = computed(() => {
-  return analysis.value && analysis.value.images.length > 0 && !marginError.value
-})
+const canGenerate = computed(
+  () => analysis.value && analysis.value.images.length > 0 && !marginError.value,
+)
 
 const progressPercent = computed(() => {
-  if (!progress.value) return 0
+  if (!progress.value || progress.value.total === 0) return 0
   return Math.round((progress.value.current / progress.value.total) * 100)
 })
 
-// 方法
-async function selectFolder() {
-  const selected = await open({
-    directory: true,
-    multiple: false,
-    title: '选择包含图片的文件夹'
+const PALETTE = [
+  '#409EFF', '#67C23A', '#E6A23C', '#F56C6C', '#909399',
+  '#9B59B6', '#1ABC9C', '#E74C3C', '#3498DB', '#2ECC71',
+]
+
+const orientationRows = computed<DistRow[]>(() => {
+  if (!analysis.value) return []
+  const a = analysis.value
+  const total = a.images.length || 1
+  const rows: DistRow[] = []
+  const items: [string, string, number, string][] = [
+    ['portrait', t('竖图'), a.portrait_count, '#409EFF'],
+    ['landscape', t('横图'), a.landscape_count, '#67C23A'],
+  ]
+  if (a.square_count > 0) items.push(['square', t('方图'), a.square_count, '#E6A23C'])
+  for (const [key, label, count, color] of items) {
+    rows.push({ key, label, count, percent: Math.round((count / total) * 100), color })
+  }
+  return rows
+})
+
+const formatRows = computed<DistRow[]>(() => {
+  if (!analysis.value) return []
+  const counts: Record<string, number> = {}
+  for (const img of analysis.value.images) counts[img.format] = (counts[img.format] || 0) + 1
+  const total = analysis.value.images.length || 1
+  const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1])
+  return sorted.map(([fmt, count], i) => ({
+    key: fmt,
+    label: fmt.toUpperCase(),
+    count,
+    percent: Math.round((count / total) * 100),
+    color: PALETTE[i % PALETTE.length] ?? PALETTE[0]!,
+  }))
+})
+
+const resolutionRows = computed<DistRow[]>(() => {
+  if (!analysis.value) return []
+  const total = analysis.value.images.length || 1
+  return analysis.value.resolution_buckets
+    .slice()
+    .reverse()
+    .map((b, i) => ({
+      key: String(b.min_long_edge),
+      label: b.label,
+      count: b.count,
+      percent: Math.round((b.count / total) * 100),
+      color: PALETTE[i % PALETTE.length] ?? PALETTE[0]!,
+    }))
+})
+
+const metaWarnings = computed<string[]>(() => {
+  if (!analysis.value) return []
+  const warns: string[] = []
+  const a = analysis.value as any
+  if (a.apng_count > 0) {
+    warns.push(`${a.apng_count} ${t('张 APNG（动画 PNG），PDF 仅取首帧')}`)
+  }
+  if (a.bit16_count > 0) {
+    warns.push(`${a.bit16_count} ${t('张 16-bit PNG，已降级为 8-bit')}`)
+  }
+  if (a.gamma_count > 0) {
+    warns.push(`${a.gamma_count} ${t('张含非 sRGB gamma 信息，可能轻微偏色')}`)
+  }
+  return warns
+})
+
+interface FileListRow {
+  index: number
+  name: string
+  path: string
+  resolution: string
+  orientation: string
+  format: string
+  size: string
+  bitDepth: string
+  flags: string
+}
+
+const fileListRows = computed<FileListRow[]>(() => {
+  if (!analysis.value) return []
+  return analysis.value.images.map((img, idx) => {
+    const isSquare = Math.abs(img.width - img.height) <= Math.max(img.width, img.height) * 0.05
+    const orientation = isSquare ? t('方图') : img.height > img.width ? t('竖图') : t('横图')
+    const flags: string[] = []
+    if (img.has_alpha) flags.push('Alpha')
+    if (img.is_apng) flags.push('APNG首帧')
+    if (img.bit_depth && img.bit_depth > 8) flags.push(`${img.bit_depth}-bit→8-bit`)
+    if (img.has_gamma) flags.push('Gamma')
+    if (img.is_grayscale) flags.push('灰度')
+    return {
+      index: idx + 1,
+      name: shortFileName(img.path),
+      path: img.path,
+      resolution: `${img.width}×${img.height}`,
+      orientation,
+      format: img.format.toUpperCase(),
+      size: formatFileSize(img.file_size || 0),
+      bitDepth: img.bit_depth ? `${img.bit_depth}` : '-',
+      flags: flags.join(' · ') || '-',
+    }
   })
-  
+})
+
+const totalGridPages = computed(() => {
+  if (!previewData.value) return 0
+  return Math.max(1, Math.ceil(previewData.value.pages.length / previewGridSize.value))
+})
+
+interface GridCell {
+  pageIdx: number
+  page: LayoutResult
+}
+
+const visibleCells = computed<GridCell[]>(() => {
+  if (!previewData.value) return []
+  const pages = previewData.value.pages
+  if (previewMode.value === 'waterfall') {
+    return pages.slice(0, waterfallLimit.value).map((page, i) => ({ pageIdx: i, page }))
+  }
+  // page / auto: paginate by gridSize
+  const start = gridPageIndex.value * previewGridSize.value
+  const end = Math.min(start + previewGridSize.value, pages.length)
+  const cells: GridCell[] = []
+  for (let i = start; i < end; i++) {
+    const page = pages[i]
+    if (page) cells.push({ pageIdx: i, page })
+  }
+  return cells
+})
+
+const gridContainerStyle = computed<StyleValue>(() => {
+  const grid = previewGridSize.value
+  const cols = grid === 4 ? 2 : grid === 9 ? 3 : 4
+  return { '--grid-cols': cols }
+})
+
+// ==================== Methods ====================
+
+function shortFileName(p: string): string {
+  if (!p) return ''
+  const segs = p.split(/[\\/]/)
+  return segs[segs.length - 1] || p
+}
+
+function buildPageMode(): PageMode {
+  if (settings.value.pageModeType === 'original') return 'original'
+  return { fixed: { orientation: settings.value.fixedOrientation } }
+}
+
+function buildMergeMode(): MergeMode {
+  if (settings.value.mergeMode === 'lossless') {
+    return { lossless: { max_size_ratio: settings.value.maxSizeRatio } }
+  }
+  return { portable: { target_ratio: settings.value.portableTargetRatio } }
+}
+
+async function selectFolder() {
+  const selected = await open({ directory: true, multiple: false, title: t('选择包含图片的文件夹') })
   if (selected && typeof selected === 'string') {
-    folderPath.value = selected
-    await analyzeFolder()
+    pathInput.value = selected
+    await analyzeFolderAction()
   }
 }
 
-async function analyzeFolder() {
-  if (!folderPath.value) return
-  
+function handlePathSubmit() {
+  if (pathInput.value.trim()) analyzeFolderAction()
+}
+
+function onRecursiveChange() {
+  if (analysis.value) analyzeFolderAction()
+}
+
+function onPageModeChange() {
+  updatePreview()
+}
+
+async function analyzeFolderAction() {
+  const p = pathInput.value.trim()
+  if (!p) return
+
   loading.value = true
   result.value = null
-  thumbnailCache.value.clear()
-  
+  thumbnails.value.clear()
+  loadingThumbnails.value.clear()
+  gridPageIndex.value = 0
+  waterfallLimit.value = 60
+
   try {
-    analysis.value = await analyzeFolderForPdf(folderPath.value)
-    
-    // 根据建议设置方向
-    if (analysis.value.suggested_orientation) {
-      settings.value.orientation = analysis.value.suggested_orientation as PageOrientation
+    analysis.value = await analyzeFolderForPdf(p, recursive.value)
+    if (analysis.value.auto_switched_from_file) {
+      pathInput.value = analysis.value.effective_path
+      recursive.value = false
     }
-    
+    if (analysis.value.suggested_orientation) {
+      settings.value.fixedOrientation = analysis.value.suggested_orientation as FixedOrientation
+    }
     await updatePreview()
   } catch (e: any) {
-    ElMessage.error('分析失败: ' + e)
+    ElMessage.error(t('分析失败') + ': ' + (e?.message || e))
     analysis.value = null
   } finally {
     loading.value = false
@@ -298,21 +738,20 @@ async function analyzeFolder() {
 
 async function updatePreview() {
   if (!analysis.value) return
-  
   try {
     previewData.value = await calculatePreviewLayout(
       analysis.value.images,
       settings.value.pageSize,
-      settings.value.orientation,
-      settings.value.margin
+      buildPageMode(),
+      settings.value.margin,
     )
-    
-    currentPreviewPage.value = 0
+    gridPageIndex.value = 0
+    currentSelectedPage.value = 0
     await nextTick()
-    // 首次只绘制框架，不加载缩略图
-    drawPreviewFrame()
+    schedulePreloadVisible()
   } catch (e: any) {
     console.error('预览失败:', e)
+    ElMessage.error(t('预览更新失败') + ': ' + (e?.message || e))
   }
 }
 
@@ -321,168 +760,191 @@ function setMargin(m: number) {
   updatePreview()
 }
 
-// 缩略图样式计算
-function getPageFrameStyle(page: LayoutResult) {
-  const scale = 50 / Math.max(page.page_width, page.page_height)
+// ---- Cell layout (相对单元格的百分比定位) ----
+
+/// 图片是否完全填充页面（无边距、无留白）
+/// 在这种情况下隐藏页面装饰（边框、阴影、白底），让预览更贴近实际 PDF 渲染
+function isImageFillsPage(page: LayoutResult): boolean {
+  if (page.margin > 0) return false
+  // 浮点容差：scaled = page 即视为铺满
+  const tol = 0.5  // mm
+  const widthFills = Math.abs(page.image.scaled_width - page.page_width) < tol
+  const heightFills = Math.abs(page.image.scaled_height - page.page_height) < tol
+  return widthFills && heightFills
+}
+
+function cellFrameStyle(page: LayoutResult) {
+  // 页框保持原始高宽比，由父容器决定大小
+  return { aspectRatio: `${page.page_width} / ${page.page_height}` }
+}
+
+function cellImageBoxStyle(page: LayoutResult) {
+  // 图片相对于页面的百分比定位，contain 缩放后的位置
+  const left = (page.image.x / page.page_width) * 100
+  const top = (page.image.y / page.page_height) * 100
+  const width = (page.image.scaled_width / page.page_width) * 100
+  const height = (page.image.scaled_height / page.page_height) * 100
   return {
-    width: `${page.page_width * scale}px`,
-    height: `${page.page_height * scale}px`
+    left: `${left}%`,
+    top: `${top}%`,
+    width: `${width}%`,
+    height: `${height}%`,
   }
 }
 
-function getImagePlaceholderStyle(page: LayoutResult) {
-  const scale = 50 / Math.max(page.page_width, page.page_height)
+function cellMarginStyle(page: LayoutResult) {
+  if (page.margin <= 0) return { display: 'none' }
+  const m = page.margin
+  const left = (m / page.page_width) * 100
+  const top = (m / page.page_height) * 100
   return {
-    left: `${page.image.x * scale}px`,
-    top: `${page.image.y * scale}px`,
-    width: `${page.image.scaled_width * scale}px`,
-    height: `${page.image.scaled_height * scale}px`
+    left: `${left}%`,
+    top: `${top}%`,
+    right: `${left}%`,
+    bottom: `${top}%`,
   }
 }
 
-// 绘制预览框架（不含图片）
-function drawPreviewFrame() {
-  if (!previewCanvas.value || !previewData.value) return
-  
-  const canvas = previewCanvas.value
-  const ctx = canvas.getContext('2d')
-  if (!ctx) return
-  
-  const page = previewData.value.pages[currentPreviewPage.value]
-  if (!page) return
-  
-  // 计算缩放比例，使预览适应容器
-  const maxWidth = 400
-  const maxHeight = 500
-  const scale = Math.min(maxWidth / page.page_width, maxHeight / page.page_height)
-  
-  canvas.width = page.page_width * scale
-  canvas.height = page.page_height * scale
-  
-  // 绘制页面背景
-  ctx.fillStyle = '#ffffff'
-  ctx.fillRect(0, 0, canvas.width, canvas.height)
-  
-  // 绘制边距区域（虚线）
-  const margin = page.margin * scale
-  ctx.strokeStyle = '#cccccc'
-  ctx.setLineDash([4, 4])
-  ctx.strokeRect(margin, margin, canvas.width - 2 * margin, canvas.height - 2 * margin)
-  ctx.setLineDash([])
-  
-  // 绘制图片占位区域
-  const imgX = page.image.x * scale
-  const imgY = page.image.y * scale
-  const imgW = page.image.scaled_width * scale
-  const imgH = page.image.scaled_height * scale
-  
-  ctx.fillStyle = '#f0f0f0'
-  ctx.fillRect(imgX, imgY, imgW, imgH)
-  ctx.strokeStyle = '#ddd'
-  ctx.strokeRect(imgX, imgY, imgW, imgH)
-  
-  // 显示尺寸信息
-  ctx.fillStyle = '#999'
-  ctx.font = '12px sans-serif'
-  ctx.textAlign = 'center'
-  ctx.textBaseline = 'middle'
-  ctx.fillText(`${page.image.original_width} × ${page.image.original_height}`, imgX + imgW / 2, imgY + imgH / 2)
-}
+// ---- Thumbnail loading ----
 
-// 选择预览页面并加载缩略图
-async function selectPreviewPage(index: number) {
-  currentPreviewPage.value = index
-  drawPreviewFrame()
-  await loadAndDrawThumbnail()
-}
-
-// 加载并绘制缩略图
-async function loadAndDrawThumbnail() {
-  if (!previewCanvas.value || !previewData.value || !analysis.value) return
-  
-  const canvas = previewCanvas.value
-  const ctx = canvas.getContext('2d')
-  if (!ctx) return
-  
-  const page = previewData.value.pages[currentPreviewPage.value]
-  if (!page) return
-  
-  const imgInfo = analysis.value.images[currentPreviewPage.value]
-  if (!imgInfo) return
-  
-  // 检查缓存
-  let thumbnail = thumbnailCache.value.get(imgInfo.path)
-  
-  if (!thumbnail) {
-    loadingThumbnail.value = true
-    try {
-      thumbnail = await getImageThumbnail(imgInfo.path, 512)
-      // 缓存大小限制：超出时删除最早的条目
-      if (thumbnailCache.value.size >= THUMBNAIL_CACHE_MAX) {
-        const firstKey = thumbnailCache.value.keys().next().value
-        if (firstKey) thumbnailCache.value.delete(firstKey)
-      }
-      thumbnailCache.value.set(imgInfo.path, thumbnail)
-    } catch (e) {
-      console.error('加载缩略图失败:', e)
-      loadingThumbnail.value = false
-      return
+async function loadThumbnail(path: string): Promise<void> {
+  if (thumbnails.value.has(path) || loadingThumbnails.value.has(path)) return
+  loadingThumbnails.value.add(path)
+  try {
+    const data = await getImageThumbnail(path, 384)
+    // LRU eviction
+    if (thumbnails.value.size >= THUMBNAIL_CACHE_MAX) {
+      const firstKey = thumbnails.value.keys().next().value
+      if (firstKey) thumbnails.value.delete(firstKey)
     }
-    loadingThumbnail.value = false
+    thumbnails.value.set(path, data)
+  } catch (e) {
+    console.warn('缩略图加载失败:', path, e)
+  } finally {
+    loadingThumbnails.value.delete(path)
   }
-  
-  // 绘制缩略图
-  const maxWidth = 400
-  const maxHeight = 500
-  const scale = Math.min(maxWidth / page.page_width, maxHeight / page.page_height)
-  
-  const imgX = page.image.x * scale
-  const imgY = page.image.y * scale
-  const imgW = page.image.scaled_width * scale
-  const imgH = page.image.scaled_height * scale
-  
-  const img = new Image()
-  img.onload = () => {
-    ctx.drawImage(img, imgX, imgY, imgW, imgH)
-  }
-  img.src = thumbnail
 }
 
-async function generatePdf() {
+// 并行预加载当前可见单元的缩略图（最多 8 个并发）
+function schedulePreloadVisible() {
+  const cells = visibleCells.value
+  const tasks = cells
+    .map((c) => c.page.image_path)
+    .filter((p) => !thumbnails.value.has(p) && !loadingThumbnails.value.has(p))
+
+  // 简单并发控制：每次最多启动 8 个
+  const MAX_CONCURRENT = 8
+  let running = 0
+  const queue = [...tasks]
+  function next() {
+    while (running < MAX_CONCURRENT && queue.length) {
+      const path = queue.shift()!
+      running++
+      loadThumbnail(path).finally(() => {
+        running--
+        next()
+      })
+    }
+  }
+  next()
+}
+
+// ---- Page navigation ----
+
+function prevGridPage() {
+  if (gridPageIndex.value > 0) {
+    gridPageIndex.value--
+    schedulePreloadVisible()
+  }
+}
+
+function nextGridPage() {
+  if (gridPageIndex.value < totalGridPages.value - 1) {
+    gridPageIndex.value++
+    schedulePreloadVisible()
+  }
+}
+
+function onCellClick(pageIdx: number) {
+  currentSelectedPage.value = pageIdx
+}
+
+// ---- Auto-play ----
+
+let autoTimer: ReturnType<typeof setInterval> | null = null
+
+function startAutoPlay() {
+  stopAutoPlay()
+  if (previewMode.value !== 'auto') return
+  const ms = Math.max(100, Math.round(autoPlayInterval.value * 1000))
+  autoTimer = setInterval(() => {
+    if (totalGridPages.value <= 1) return
+    gridPageIndex.value = (gridPageIndex.value + 1) % totalGridPages.value
+    schedulePreloadVisible()
+  }, ms)
+}
+
+function stopAutoPlay() {
+  if (autoTimer) {
+    clearInterval(autoTimer)
+    autoTimer = null
+  }
+}
+
+watch([previewMode, autoPlayInterval], () => {
+  startAutoPlay()
+})
+
+watch(previewGridSize, () => {
+  // 切换网格大小时回到第一页
+  gridPageIndex.value = 0
+  nextTick(() => schedulePreloadVisible())
+})
+
+watch(previewMode, () => {
+  // 切换模式时重置位置
+  if (previewMode.value === 'waterfall') {
+    waterfallLimit.value = 60
+  }
+  nextTick(() => schedulePreloadVisible())
+})
+
+watch(visibleCells, () => {
+  schedulePreloadVisible()
+})
+
+watch(waterfallLimit, () => {
+  if (previewMode.value === 'waterfall') schedulePreloadVisible()
+})
+
+// ---- Generate ----
+
+async function generatePdfAction() {
   if (!analysis.value || !canGenerate.value) return
-  
-  // 选择保存路径
   const savePath = await save({
-    title: '保存 PDF',
+    title: t('保存 PDF'),
     defaultPath: 'output.pdf',
-    filters: [{ name: 'PDF', extensions: ['pdf'] }]
+    filters: [{ name: 'PDF', extensions: ['pdf'] }],
   })
-  
   if (!savePath) return
-  
+
   generating.value = true
   progress.value = null
   result.value = null
-  
+
   try {
     result.value = await apiGeneratePdf(analysis.value.images, {
       page_size: settings.value.pageSize,
-      orientation: settings.value.orientation,
+      page_mode: buildPageMode(),
       margin: settings.value.margin,
-      compression: settings.value.compression,
       output_path: savePath,
-      transparent_mode: settings.value.transparentMode,
-      jpeg_quality: settings.value.jpegQuality
+      merge_mode: buildMergeMode(),
     })
   } catch (e: any) {
     result.value = {
-      success: false,
-      output_path: '',
-      file_size: 0,
-      original_total_size: 0,
-      page_count: 0,
-      elapsed_ms: 0,
-      error: String(e)
+      success: false, output_path: '', file_size: 0, original_total_size: 0,
+      page_count: 0, elapsed_ms: 0, mode_used: '', size_ratio: 0,
+      exceeded_target: false, error: String(e?.message || e),
     }
   } finally {
     generating.value = false
@@ -490,336 +952,447 @@ async function generatePdf() {
   }
 }
 
-// 监听进度事件
+// ---- Lifecycle ----
+
 let unlistenProgress: (() => void) | null = null
 
 onMounted(async () => {
-  unlistenProgress = await listen<GenerationProgress>('pdf_progress', (event) => {
-    progress.value = event.payload
+  if (!hasTauriRuntime()) return
+  unlistenProgress = await listen<GenerationProgress>('pdf_progress', (e) => {
+    progress.value = e.payload
   })
 })
 
 onBeforeUnmount(() => {
   unlistenProgress?.()
-  thumbnailCache.value.clear()
+  stopAutoPlay()
+  thumbnails.value.clear()
 })
 </script>
 
 <style scoped>
-.image-to-pdf-tool {
-  padding: 20px;
-  max-width: 900px;
-  margin: 0 auto;
+/* ============================ Layout ============================ */
+
+.img2pdf {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  gap: 10px;
 }
 
-.section {
-  background: #f8f9fa;
-  border-radius: 8px;
-  padding: 16px;
-  margin-bottom: 16px;
+.left-panel {
+  flex: 0 0 380px;
+  min-width: 340px;
+  max-width: 480px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 4px;
 }
 
-.section h3 {
-  margin: 0 0 12px 0;
-  font-size: 16px;
-  color: #333;
+.right-panel {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--border-secondary);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary, #fafafa);
 }
 
-.preview-hint {
-  font-size: 12px;
-  color: #888;
-  font-weight: normal;
+.placeholder-panel {
+  align-items: center;
+  justify-content: center;
 }
 
-/* 文件夹选择 */
-.folder-input {
+.placeholder-empty {
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+/* 中等宽度：缩窄左栏 */
+@media (max-width: 1100px) {
+  .left-panel {
+    flex: 0 0 340px;
+    min-width: 320px;
+  }
+}
+
+/* 窄屏：纵向堆叠 */
+@media (max-width: 820px) {
+  .img2pdf {
+    flex-direction: column;
+    overflow-y: auto;
+  }
+  .left-panel {
+    flex: 0 0 auto;
+    max-width: none;
+    overflow-y: visible;
+  }
+  .right-panel {
+    flex: 1 1 auto;
+    min-height: 360px;
+  }
+}
+
+/* ============================ Cards ============================ */
+
+.card {
+  padding: 10px 12px;
+  border: 1px solid var(--border-secondary);
+  border-radius: var(--radius-md);
+  background: var(--bg-primary, #fff);
+}
+
+.card-head {
+  margin-bottom: 10px;
+}
+.card-head.compact { margin-bottom: 8px; }
+
+.card-head {
   display: flex;
   align-items: center;
-  gap: 12px;
-}
-
-.folder-path {
-  color: #666;
-  font-size: 13px;
-  word-break: break-all;
-}
-
-/* 分析结果 */
-.analysis-info {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 16px;
-}
-
-.stat {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.stat .label {
-  color: #666;
-}
-
-.stat .value {
-  font-weight: 500;
-  color: #333;
-}
-
-.stat .suggestion {
-  color: #2196f3;
-}
-
-/* 设置 */
-.setting-group {
-  margin-bottom: 16px;
-}
-
-.setting-group > label {
-  display: block;
-  margin-bottom: 8px;
-  font-weight: 500;
-  color: #333;
-}
-
-.radio-group {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-}
-
-.radio-label {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  cursor: pointer;
-}
-
-.margin-input {
-  display: flex;
-  gap: 16px;
-  align-items: center;
-}
-
-.preset-buttons {
-  display: flex;
+  justify-content: space-between;
   gap: 8px;
 }
 
-.preset-btn {
-  padding: 4px 12px;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  background: white;
-  cursor: pointer;
-  transition: background 0.2s, color 0.2s, border-color 0.2s;
+.card h3 { margin: 0; font-size: 14px; color: var(--text-primary); }
+.eyebrow {
+  margin: 0 0 2px; font-size: 11px; font-weight: 700; color: var(--accent);
 }
 
-.preset-btn.active {
-  background: #2196f3;
-  color: white;
-  border-color: #2196f3;
+/* ============================ Folder section ============================ */
+
+.path-row { margin-bottom: 8px; }
+.path-options { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; flex-wrap: wrap; }
+.opt-hint { font-size: 11px; color: var(--text-muted); }
+
+.folder-path {
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  word-break: break-all;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-tertiary);
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  margin-top: 6px;
+}
+.path-label { color: var(--text-muted); font-family: inherit; }
+
+.hint { font-size: 11px; color: var(--text-muted); margin: 4px 0 0; line-height: 1.5; }
+.hint.is-danger { color: var(--danger); }
+.hint.is-warn { color: var(--warning, #d46b08); }
+
+/* ============================ Skipped ============================ */
+
+.skipped-list { display: flex; flex-direction: column; gap: 4px; max-height: 160px; overflow-y: auto; }
+.skipped-row {
+  display: flex; align-items: center; gap: 8px; padding: 4px 8px;
+  border-radius: var(--radius-xs); background: var(--bg-tertiary); font-size: 11px;
+}
+.skipped-ext {
+  flex-shrink: 0;
+  min-width: 44px; padding: 1px 6px; border-radius: 3px;
+  background: var(--warning, #faad14); color: #fff;
+  font-weight: 600; font-size: 10px; text-align: center;
+}
+.skipped-reason { color: var(--text-secondary); flex: 1; }
+.skipped-name {
+  flex-shrink: 0;
+  color: var(--text-muted); font-family: var(--font-mono); font-size: 10px;
+  max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
-.custom-margin {
+/* ============================ Stats ============================ */
+
+.stats-row {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px;
+  margin-bottom: 8px;
+}
+
+.stat {
+  display: flex; flex-direction: column; gap: 2px;
+  padding: 6px 8px; border-radius: var(--radius-sm); background: var(--bg-tertiary);
+}
+.stat .label { color: var(--text-secondary); font-size: 11px; }
+.stat .value { font-weight: 600; color: var(--text-primary); font-size: 13px; }
+.stat .suggestion { color: var(--accent); }
+
+.meta-warnings { margin: 4px 0 8px; }
+.meta-warn {
+  margin: 2px 0; padding: 4px 8px; font-size: 11px;
+  background: var(--warning-light, #fff7e6); color: var(--warning, #d46b08);
+  border-radius: var(--radius-xs); line-height: 1.5;
+}
+
+/* ============================ Distribution ============================ */
+
+:deep(.dist-card) {
+  padding: 8px 10px; border-radius: var(--radius-sm); background: var(--bg-tertiary); margin-bottom: 6px;
+}
+:deep(.dist-title) { margin: 0 0 6px; font-size: 11px; font-weight: 600; color: var(--text-secondary); }
+:deep(.dist-list) { display: flex; flex-direction: column; gap: 4px; }
+:deep(.dist-row) { display: flex; align-items: center; gap: 8px; font-size: 11px; }
+:deep(.dist-label) { min-width: 80px; color: var(--text-primary); font-weight: 500; }
+:deep(.dist-bar) {
+  flex: 1; height: 7px; border-radius: 4px;
+  background: var(--bg-secondary, #e9ecef); overflow: hidden;
+}
+:deep(.dist-bar-fill) {
+  height: 100%; border-radius: 4px;
+  transition: width 0.3s ease; min-width: 2px;
+}
+:deep(.dist-value) {
+  min-width: 88px; text-align: right; color: var(--text-muted); font-size: 10px;
+}
+
+/* ============================ Settings ============================ */
+
+.setting-group { margin-bottom: 10px; }
+.setting-group > label {
+  display: block; margin-bottom: 6px; font-weight: 500; color: var(--text-secondary); font-size: 12px;
+}
+.margin-input { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.preset-buttons { display: flex; gap: 4px; flex-wrap: wrap; }
+
+.mode-detail {
+  margin-top: 6px; padding: 6px 8px; border-radius: var(--radius-sm); background: var(--bg-tertiary);
+}
+.ratio-row {
+  display: flex; align-items: center; margin-top: 6px; font-size: 11px; color: var(--text-secondary);
+}
+.ratio-row strong { min-width: 44px; text-align: right; color: var(--text-primary); }
+
+/* ============================ Generate ============================ */
+
+.progress-container { margin-top: 10px; }
+.progress-text { margin-top: 6px; font-size: 11px; color: var(--text-secondary); }
+.current-file {
+  color: var(--text-muted); font-family: var(--font-mono); font-size: 10px;
+}
+
+.result-container {
+  margin-top: 10px; padding: 8px 10px; border-radius: var(--radius-md);
+  border: 1px solid var(--border-secondary);
+}
+.result-container.success { background: var(--success-light); }
+.result-container.error { background: var(--danger-light); }
+.result-container.warn {
+  background: var(--warning-light, #fff7e6); border-color: var(--warning, #faad14);
+}
+.result-title { margin: 0 0 6px; font-weight: 600; color: var(--text-primary); font-size: 12px; }
+.result-stats {
+  display: flex; flex-wrap: wrap; gap: 8px; margin: 6px 0;
+  font-size: 11px; color: var(--text-secondary);
+}
+.mode-used { font-size: 10px; color: var(--text-muted); margin: 2px 0; }
+.warn-note { font-size: 10px; color: var(--warning, #d46b08); margin: 2px 0; }
+.output-path { font-size: 10px; color: var(--text-muted); word-break: break-all; margin: 4px 0 0; }
+
+/* ============================ Preview toolbar ============================ */
+
+.preview-toolbar {
+  flex: 0 0 auto;
   display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  background: var(--bg-primary, #fff);
+  border-bottom: 1px solid var(--border-secondary);
+  flex-wrap: wrap;
+}
+
+.tool-group {
+  display: flex; align-items: center; gap: 6px;
+}
+
+.tool-group.spacer { flex: 1; }
+
+.tool-label {
+  font-size: 11px; color: var(--text-muted); font-weight: 500;
+}
+
+.interval-group { gap: 8px; }
+.interval-display {
+  font-size: 11px; color: var(--text-secondary);
+  font-family: var(--font-mono);
+  min-width: 32px; text-align: right;
+}
+
+.page-nav {
+  align-items: center;
+}
+.page-counter {
+  font-size: 12px; color: var(--text-secondary);
+  min-width: 60px; text-align: center;
+  font-family: var(--font-mono);
+}
+
+.page-info {
+  font-size: 11px; color: var(--text-muted);
+}
+
+/* ============================ Grid scroller ============================ */
+
+.grid-scroller {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 12px;
+  scrollbar-gutter: stable;
+}
+
+.grid-scroller.waterfall {
+  /* 瀑布流模式：滚轮平滑滚动 */
+  scroll-behavior: smooth;
+}
+
+.grid-scroller.list {
+  padding: 0;
+  background: var(--bg-primary, #fff);
+}
+
+.file-list-view {
+  height: 100%;
+  min-height: 0;
+}
+
+:deep(.file-list-view .el-table) {
+  height: 100%;
+}
+
+:deep(.file-list-view .el-table__row) {
+  cursor: pointer;
+}
+
+:deep(.file-list-view .el-table__row:hover > td) {
+  background: var(--accent-light, rgba(64, 158, 255, 0.08)) !important;
+}
+
+.grid-container {
+  display: grid;
+  grid-template-columns: repeat(var(--grid-cols, 3), 1fr);
+  gap: 12px;
+}
+
+/* ============================ Grid cell ============================ */
+
+.grid-cell {
+  display: flex;
+  flex-direction: column;
   align-items: center;
   gap: 4px;
-}
-
-.custom-margin input {
-  width: 60px;
-  padding: 4px 8px;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-}
-
-.hint {
-  font-size: 12px;
-  color: #888;
-  margin-top: 4px;
-}
-
-/* 预览 */
-.preview-container {
-  display: flex;
-  gap: 16px;
-}
-
-.preview-sidebar {
-  width: 70px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  max-height: 500px;
-  overflow-y: auto;
-}
-
-.thumbnail {
-  cursor: pointer;
-  text-align: center;
-  padding: 4px;
-  border-radius: 4px;
-  transition: background 0.2s;
-}
-
-.thumbnail:hover {
-  background: #e0e0e0;
-}
-
-.thumbnail.active {
-  background: #bbdefb;
-}
-
-.page-frame {
-  background: white;
-  border: 1px solid #ccc;
-  position: relative;
-  margin: 0 auto;
-}
-
-.image-placeholder {
-  position: absolute;
-  background: #e8e8e8;
-}
-
-.page-num {
-  font-size: 10px;
-  color: #666;
-}
-
-.more-pages {
-  text-align: center;
-  font-size: 11px;
-  color: #888;
   padding: 6px;
-}
-
-.preview-main {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  position: relative;
-}
-
-.preview-canvas {
-  border: 1px solid #ddd;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-}
-
-.preview-loading {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  background: rgba(0,0,0,0.7);
-  color: white;
-  padding: 8px 16px;
-  border-radius: 4px;
-  font-size: 12px;
-}
-
-.preview-info {
-  margin-top: 8px;
-  display: flex;
-  gap: 16px;
-  font-size: 13px;
-  color: #666;
-}
-
-/* 生成 */
-.generate-controls {
-  margin-bottom: 16px;
-}
-
-.btn {
-  padding: 8px 16px;
-  border: none;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   cursor: pointer;
-  font-size: 14px;
-  transition: opacity 0.2s;
+  transition: background 0.15s ease, transform 0.15s ease;
+  user-select: none;
 }
 
-.btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+.grid-cell:hover {
+  background: var(--bg-tertiary);
 }
 
-.btn-primary {
-  background: #2196f3;
-  color: white;
+.grid-cell.active {
+  background: var(--accent-light, rgba(64, 158, 255, 0.12));
+  outline: 1.5px solid var(--accent, #409EFF);
 }
 
-.btn-primary:hover:not(:disabled) {
-  background: #1976d2;
+.cell-frame-wrap {
+  width: 100%;
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
 }
 
-.btn-success {
-  background: #4caf50;
-  color: white;
+.cell-frame {
+  position: relative;
+  background: #fff;
+  border: 1px solid var(--border-primary, #ddd);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+  /* aspect-ratio set via inline style */
+  max-width: 100%;
+  max-height: 100%;
+  width: 100%;
+  height: auto;
 }
 
-.btn-success:hover:not(:disabled) {
-  background: #388e3c;
+/* 原图大小模式（图像完全填充页面）：
+   去掉页面装饰，避免给用户"图被嵌入到白页面里"的视觉错觉。
+   实际 PDF 中页面尺寸 = 图像尺寸，没有任何边距 / 边框 / 留白。 */
+.cell-frame.no-page-decor {
+  background: transparent;
+  border: none;
+  box-shadow: none;
 }
 
-.btn-large {
-  padding: 12px 32px;
-  font-size: 16px;
+.cell-margin-box {
+  position: absolute;
+  border: 1px dashed #ccc;
+  pointer-events: none;
 }
 
-/* 进度 */
-.progress-container {
-  margin-bottom: 16px;
+.cell-img,
+.cell-placeholder {
+  position: absolute;
+  object-fit: contain;
+  image-rendering: -webkit-optimize-contrast;
 }
 
-.progress-bar {
-  height: 8px;
-  background: #e0e0e0;
-  border-radius: 4px;
+.cell-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f0f0f0;
+  border: 1px solid #ddd;
+  color: #999;
+  font-size: 10px;
+  text-align: center;
   overflow: hidden;
 }
 
-.progress-fill {
-  height: 100%;
-  background: #4caf50;
-  transition: width 0.3s;
-}
-
-.progress-text {
-  margin-top: 8px;
-  font-size: 13px;
-  color: #666;
-}
-
-/* 结果 */
-.result-container {
-  padding: 16px;
-  border-radius: 8px;
-}
-
-.result-container.success {
-  background: #e8f5e9;
-}
-
-.result-container.error {
-  background: #ffebee;
-}
-
-.result-stats {
+.cell-meta {
+  flex: 0 0 auto;
   display: flex;
-  flex-wrap: wrap;
-  gap: 16px;
-  margin: 8px 0;
-  font-size: 13px;
-  color: #666;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  font-size: 10px;
+  color: var(--text-muted);
 }
 
-.output-path {
-  font-size: 12px;
-  color: #888;
-  word-break: break-all;
+.cell-num {
+  flex-shrink: 0;
+  background: var(--accent, #409EFF);
+  color: #fff;
+  border-radius: 8px;
+  padding: 0 6px;
+  min-width: 18px;
+  text-align: center;
+  font-weight: 600;
+  font-size: 9px;
+  line-height: 14px;
+}
+
+.cell-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.waterfall-more {
+  display: flex;
+  justify-content: center;
+  margin: 16px 0 8px;
 }
 </style>

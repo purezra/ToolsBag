@@ -546,7 +546,7 @@ fn probe_video_ffprobe(path: &Path) -> VideoProbeResult {
         "-show_entries",
         "stream=width,height,bit_rate,codec_name,r_frame_rate",
         "-show_entries",
-        "format=duration",
+        "format=duration,bit_rate,format_name",
         "-of",
         "json",
         path.to_string_lossy().as_ref(),
@@ -589,6 +589,7 @@ fn probe_video_ffprobe(path: &Path) -> VideoProbeResult {
     #[derive(serde::Deserialize)]
     struct FfFormat {
         duration: Option<String>,
+        bit_rate: Option<String>,
     }
     #[derive(serde::Deserialize)]
     struct FfStream {
@@ -614,9 +615,17 @@ fn probe_video_ffprobe(path: &Path) -> VideoProbeResult {
     let stream = parsed.streams.as_ref().and_then(|s| s.first());
     let width = stream.and_then(|s| s.width);
     let height = stream.and_then(|s| s.height);
+    // 优先使用流级别码率，若不可用则回退到 format 级别码率（MKV 等容器常见）
     let bitrate = stream
         .and_then(|s| s.bit_rate.as_ref())
         .and_then(|s| s.parse::<f64>().ok())
+        .or_else(|| {
+            parsed
+                .format
+                .as_ref()
+                .and_then(|f| f.bit_rate.as_ref())
+                .and_then(|s| s.parse::<f64>().ok())
+        })
         .map(|b| b / 1_000_000.0);
     let codec = stream.and_then(|s| s.codec_name.clone());
     let frame_rate = stream.and_then(|s| s.r_frame_rate.clone()).and_then(|fr| {
@@ -889,6 +898,48 @@ pub async fn get_video_raw_xml(path: String) -> Result<Option<String>, String> {
             return Err("文件不存在".to_string());
         }
         Ok(mediainfo::get_video_xml(p))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// 获取视频文件的 MediaInfo 完整信息文本（Complete 模式）
+#[tauri::command]
+pub async fn get_video_complete_info(path: String) -> Result<Option<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let p = std::path::Path::new(&path);
+        if !p.exists() {
+            return Err("文件不存在".to_string());
+        }
+        Ok(mediainfo::get_complete_info(p))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// 获取视频 XML 输出并转为结构化 JSON
+#[tauri::command]
+pub async fn get_video_xml_json(path: String) -> Result<Option<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let p = std::path::Path::new(&path);
+        if !p.exists() {
+            return Err("文件不存在".to_string());
+        }
+        Ok(mediainfo::get_xml_as_json(p))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// 获取视频 XML 输出并转为 Markdown 表格
+#[tauri::command]
+pub async fn get_video_xml_markdown(path: String) -> Result<Option<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let p = std::path::Path::new(&path);
+        if !p.exists() {
+            return Err("文件不存在".to_string());
+        }
+        Ok(mediainfo::get_xml_as_markdown(p))
     })
     .await
     .map_err(|e| e.to_string())?

@@ -2,7 +2,7 @@
 //! 用于获取视频、音频、图片的详细元数据
 
 use crate::models::{AudioMeta, ImageMeta, VideoMeta};
-use libloading::{Library, Symbol};
+use libloading::Library;
 use once_cell::sync::OnceCell;
 use std::ffi::OsStr;
 use std::iter::once;
@@ -11,15 +11,30 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 // MediaInfo 函数类型定义 - 使用 system 调用约定 (Windows stdcall)
-type MediaInfoNew = unsafe extern "system" fn() -> *mut std::ffi::c_void;
-type MediaInfoDelete = unsafe extern "system" fn(*mut std::ffi::c_void);
-type MediaInfoOpenW = unsafe extern "system" fn(*mut std::ffi::c_void, *const u16) -> usize;
-type MediaInfoClose = unsafe extern "system" fn(*mut std::ffi::c_void);
-type MediaInfoInform = unsafe extern "system" fn(*mut std::ffi::c_void, usize) -> *const u16;
-type MediaInfoOption =
-    unsafe extern "system" fn(*mut std::ffi::c_void, *const u16, *const u16) -> *const u16;
+type FnNew = unsafe extern "system" fn() -> *mut std::ffi::c_void;
+type FnDelete = unsafe extern "system" fn(*mut std::ffi::c_void);
+type FnOpenW = unsafe extern "system" fn(*mut std::ffi::c_void, *const u16) -> usize;
+type FnClose = unsafe extern "system" fn(*mut std::ffi::c_void);
+type FnInform = unsafe extern "system" fn(*mut std::ffi::c_void, usize) -> *const u16;
+type FnOption = unsafe extern "system" fn(*mut std::ffi::c_void, *const u16, *const u16) -> *const u16;
+
+/// 缓存的 MediaInfo 函数指针，避免每次调用重复查找符号
+struct MediaInfoSymbols {
+    new_fn: FnNew,
+    delete_fn: FnDelete,
+    open_fn: FnOpenW,
+    close_fn: FnClose,
+    inform_fn: FnInform,
+    option_fn: FnOption,
+}
+
+// Safety: 函数指针来自已加载的 DLL，只要 DLL 不卸载就有效，
+// 而 Library 存储在 static OnceCell 中永远不会卸载。
+unsafe impl Send for MediaInfoSymbols {}
+unsafe impl Sync for MediaInfoSymbols {}
 
 static MEDIAINFO_LIB: OnceCell<Option<Library>> = OnceCell::new();
+static MEDIAINFO_SYMS: OnceCell<Option<MediaInfoSymbols>> = OnceCell::new();
 static MEDIAINFO_PATH: OnceCell<Mutex<Option<String>>> = OnceCell::new();
 static RESOURCE_DIR: OnceCell<PathBuf> = OnceCell::new();
 
@@ -39,13 +54,18 @@ const EMBEDDED_MEDIAINFO_DLL: &[u8] = include_bytes!("../../MediaInfo.dll");
 fn mediainfo_library_candidates() -> Vec<PathBuf> {
     let mut candidates = Vec::new();
 
-    // 从内嵌资源释放到临时目录
+    // 从内嵌资源释放到临时目录（原子写入，避免多进程竞态）
     let temp_dll = std::env::temp_dir().join("toolsbag_mediainfo.dll");
     if !temp_dll.exists() {
-        if std::fs::write(&temp_dll, EMBEDDED_MEDIAINFO_DLL).is_ok() {
-            candidates.push(temp_dll.clone());
+        let temp_part = std::env::temp_dir().join(format!("toolsbag_mediainfo_{}.dll", std::process::id()));
+        if std::fs::write(&temp_part, EMBEDDED_MEDIAINFO_DLL).is_ok() {
+            // rename 是原子操作，如果目标已存在则忽略错误
+            let _ = std::fs::rename(&temp_part, &temp_dll);
         }
-    } else {
+        // 清理可能残留的临时文件
+        let _ = std::fs::remove_file(&temp_part);
+    }
+    if temp_dll.exists() {
         candidates.push(temp_dll.clone());
     }
 
@@ -105,7 +125,7 @@ pub fn init_mediainfo() -> bool {
                         }
                     }
                     unsafe {
-                        if lib.get::<MediaInfoNew>(b"MediaInfo_New\0").is_ok() {
+                        if lib.get::<FnNew>(b"MediaInfo_New\0").is_ok() {
                             println!("[MediaInfo] Found MediaInfo_New");
                             return Some(lib);
                         }
@@ -121,95 +141,99 @@ pub fn init_mediainfo() -> bool {
         None
     });
 
+    // 缓存所有函数指针，避免后续每次调用重复查找符号
+    MEDIAINFO_SYMS.get_or_init(|| {
+        let lib = MEDIAINFO_LIB.get()?.as_ref()?;
+        unsafe {
+            let new_fn: FnNew = *lib.get::<FnNew>(b"MediaInfo_New\0").ok()?;
+            let delete_fn: FnDelete = *lib.get::<FnDelete>(b"MediaInfo_Delete\0").ok()?;
+            let open_fn: FnOpenW = *lib.get::<FnOpenW>(b"MediaInfo_Open\0").ok()?;
+            let close_fn: FnClose = *lib.get::<FnClose>(b"MediaInfo_Close\0").ok()?;
+            let inform_fn: FnInform = *lib.get::<FnInform>(b"MediaInfo_Inform\0").ok()?;
+            let option_fn: FnOption = *lib.get::<FnOption>(b"MediaInfo_Option\0").ok()?;
+            println!("[MediaInfo] All 6 FFI symbols cached");
+            Some(MediaInfoSymbols { new_fn, delete_fn, open_fn, close_fn, inform_fn, option_fn })
+        }
+    });
+
     is_mediainfo_available()
 }
 
 /// MediaInfo 句柄包装器（RAII）
 struct MediaInfoHandle {
     handle: *mut std::ffi::c_void,
-    mi_delete: Symbol<'static, MediaInfoDelete>,
-    mi_close: Symbol<'static, MediaInfoClose>,
 }
 
 impl MediaInfoHandle {
-    /// 打开文件，返回句柄
+    /// 打开文件，返回句柄（使用缓存的函数指针）
     fn open(path: &Path) -> Option<Self> {
-        let lib = MEDIAINFO_LIB.get()?.as_ref()?;
+        let syms = MEDIAINFO_SYMS.get()?.as_ref()?;
         unsafe {
-            let mi_new: Symbol<MediaInfoNew> = lib.get(b"MediaInfo_New\0").ok()?;
-            let mi_delete: Symbol<MediaInfoDelete> = lib.get(b"MediaInfo_Delete\0").ok()?;
-            let mi_open_fn: Symbol<MediaInfoOpenW> = lib.get(b"MediaInfo_Open\0").ok()?;
-            let mi_close: Symbol<MediaInfoClose> = lib.get(b"MediaInfo_Close\0").ok()?;
-
-            let handle = mi_new();
+            let handle = (syms.new_fn)();
             if handle.is_null() {
                 return None;
             }
 
             let path_wide = to_wide_string(&path.to_string_lossy());
-            if mi_open_fn(handle, path_wide.as_ptr()) == 0 {
-                mi_delete(handle);
+            if (syms.open_fn)(handle, path_wide.as_ptr()) == 0 {
+                (syms.delete_fn)(handle);
                 return None;
             }
 
-            // 需要 'static 生命周期来存储 Symbol，但 lib 的生命周期由 OnceCell 保证
-            let mi_delete: Symbol<'static, MediaInfoDelete> = std::mem::transmute(mi_delete);
-            let mi_close: Symbol<'static, MediaInfoClose> = std::mem::transmute(mi_close);
-
-            Some(MediaInfoHandle {
-                handle,
-                mi_delete,
-                mi_close,
-            })
+            Some(MediaInfoHandle { handle })
         }
     }
 
     /// 获取 Inform 文本输出
     fn get_inform(&self) -> String {
-        let lib = match MEDIAINFO_LIB.get() {
-            Some(Some(l)) => l,
+        let syms = match MEDIAINFO_SYMS.get() {
+            Some(Some(s)) => s,
             _ => return String::new(),
         };
         unsafe {
-            let mi_option: Symbol<MediaInfoOption> = match lib.get(b"MediaInfo_Option\0") {
-                Ok(s) => s,
-                Err(_) => return String::new(),
-            };
-            let mi_inform: Symbol<MediaInfoInform> = match lib.get(b"MediaInfo_Inform\0") {
-                Ok(s) => s,
-                Err(_) => return String::new(),
-            };
-
             let opt_key = to_wide_string("Inform");
             let opt_val = to_wide_string("");
-            mi_option(self.handle, opt_key.as_ptr(), opt_val.as_ptr());
+            (syms.option_fn)(self.handle, opt_key.as_ptr(), opt_val.as_ptr());
 
-            let info_ptr = mi_inform(self.handle, 0);
+            let info_ptr = (syms.inform_fn)(self.handle, 0);
+            from_wide_ptr(info_ptr)
+        }
+    }
+
+    /// 获取完整信息输出（Complete 模式，包含所有字段）
+    fn get_complete(&self) -> String {
+        let syms = match MEDIAINFO_SYMS.get() {
+            Some(Some(s)) => s,
+            _ => return String::new(),
+        };
+        unsafe {
+            // 先清除 Inform 模板，避免残留的自定义模板覆盖 Complete 输出
+            let clear_key = to_wide_string("Inform");
+            let clear_val = to_wide_string("");
+            (syms.option_fn)(self.handle, clear_key.as_ptr(), clear_val.as_ptr());
+
+            // 启用 Complete 模式（等同于 CLI 的 --Full）
+            let opt_key = to_wide_string("Complete");
+            let opt_val = to_wide_string("1");
+            (syms.option_fn)(self.handle, opt_key.as_ptr(), opt_val.as_ptr());
+
+            let info_ptr = (syms.inform_fn)(self.handle, 0);
             from_wide_ptr(info_ptr)
         }
     }
 
     /// 获取 XML 输出
     fn get_xml(&self) -> String {
-        let lib = match MEDIAINFO_LIB.get() {
-            Some(Some(l)) => l,
+        let syms = match MEDIAINFO_SYMS.get() {
+            Some(Some(s)) => s,
             _ => return String::new(),
         };
         unsafe {
-            let mi_option: Symbol<MediaInfoOption> = match lib.get(b"MediaInfo_Option\0") {
-                Ok(s) => s,
-                Err(_) => return String::new(),
-            };
-            let mi_inform: Symbol<MediaInfoInform> = match lib.get(b"MediaInfo_Inform\0") {
-                Ok(s) => s,
-                Err(_) => return String::new(),
-            };
-
             let opt_key = to_wide_string("Inform");
             let opt_val = to_wide_string("XML");
-            mi_option(self.handle, opt_key.as_ptr(), opt_val.as_ptr());
+            (syms.option_fn)(self.handle, opt_key.as_ptr(), opt_val.as_ptr());
 
-            let info_ptr = mi_inform(self.handle, 0);
+            let info_ptr = (syms.inform_fn)(self.handle, 0);
             from_wide_ptr(info_ptr)
         }
     }
@@ -217,9 +241,11 @@ impl MediaInfoHandle {
 
 impl Drop for MediaInfoHandle {
     fn drop(&mut self) {
-        unsafe {
-            (self.mi_close)(self.handle);
-            (self.mi_delete)(self.handle);
+        if let Some(Some(syms)) = MEDIAINFO_SYMS.get() {
+            unsafe {
+                (syms.close_fn)(self.handle);
+                (syms.delete_fn)(self.handle);
+            }
         }
     }
 }
@@ -329,6 +355,7 @@ pub fn get_video_meta(path: &Path) -> Option<VideoMeta> {
     let mut duration_ms: u64 = 0;
 
     let mut in_video_section = false;
+    let mut in_general_section = false;
 
     for line in full_info.lines() {
         let line = line.trim();
@@ -336,12 +363,29 @@ pub fn get_video_meta(path: &Path) -> Option<VideoMeta> {
             continue;
         }
 
-        // 检测段落
-        if line == "Video" {
+        // 检测段落标题（支持 "Video"、"Video #1" 格式）
+        let section_base = if line.contains(':') {
+            let prefix = line.split(':').next().unwrap_or("").trim();
+            prefix.split('#').next().unwrap_or("").trim()
+        } else {
+            line.split('#').next().unwrap_or("").trim()
+        };
+
+        if section_base == "Video" {
             in_video_section = true;
+            in_general_section = false;
             continue;
-        } else if line == "Audio" || line == "Text" || line == "Menu" {
+        } else if section_base == "General" {
             in_video_section = false;
+            in_general_section = true;
+            continue;
+        } else if section_base == "Audio"
+            || section_base == "Text"
+            || section_base == "Menu"
+            || section_base == "Image"
+        {
+            in_video_section = false;
+            in_general_section = false;
             continue;
         }
 
@@ -394,7 +438,7 @@ pub fn get_video_meta(path: &Path) -> Option<VideoMeta> {
                     }
                     _ => {}
                 }
-            } else {
+            } else if in_general_section {
                 // General section
                 match key {
                     "Overall bit rate" => {
@@ -477,38 +521,111 @@ fn parse_bitrate(s: &str) -> u64 {
 }
 
 /// 解析时长到毫秒（防溢出）
+/// 支持格式：
+/// - MediaInfo 标准格式："2 h 30 min 45 s 123 ms"（空格分隔）
+/// - MediaInfo 连写格式："2h 30min 45s 123ms"（数字和单位连写）
+/// - 纯毫秒："1502456"
+/// - HH:MM:SS 或 HH:MM:SS.mmm
 fn parse_duration_to_ms(s: &str) -> u64 {
+    let s = s.trim();
+    if s.is_empty() {
+        return 0;
+    }
+
+    // 尝试 HH:MM:SS 或 HH:MM:SS.mmm 格式
+    if let Some(ms) = try_parse_hhmmss(s) {
+        return ms;
+    }
+
     let mut total_ms: u64 = 0;
     let parts: Vec<&str> = s.split_whitespace().collect();
 
     let mut i = 0;
     while i < parts.len() {
-        if let Ok(num) = parts[i].parse::<u64>() {
+        let part = parts[i];
+
+        // 尝试解析纯数字
+        if let Ok(num) = part.parse::<u64>() {
             if i + 1 < parts.len() {
                 let unit = parts[i + 1].to_lowercase();
-                let ms = if unit.starts_with("h") {
-                    num.saturating_mul(3600).saturating_mul(1000)
-                } else if unit.starts_with("min") || unit == "mn" {
-                    num.saturating_mul(60).saturating_mul(1000)
-                } else if unit.starts_with("s") && !unit.starts_with("ms") {
-                    num.saturating_mul(1000)
-                } else if unit.starts_with("ms") {
-                    num
-                } else {
-                    0
-                };
+                let ms = parse_time_unit(num, &unit);
                 total_ms = total_ms.saturating_add(ms);
                 i += 2;
             } else {
-                total_ms = num;
+                // 最后一个 token 是纯数字，视为毫秒
+                total_ms = total_ms.saturating_add(num);
                 i += 1;
             }
+        } else if let Some((num, unit)) = split_number_and_unit(part) {
+            // 连写格式："2h"、"30min"、"45s"、"123ms"
+            let ms = parse_time_unit(num, &unit);
+            total_ms = total_ms.saturating_add(ms);
+            i += 1;
         } else {
             i += 1;
         }
     }
 
     total_ms
+}
+
+/// 尝试从 "2h"、"30min"、"45s"、"123ms" 中拆分数字和单位
+fn split_number_and_unit(s: &str) -> Option<(u64, String)> {
+    let num_end = s.find(|c: char| !c.is_ascii_digit()).unwrap_or(s.len());
+    if num_end == 0 {
+        return None;
+    }
+    let num_str = &s[..num_end];
+    let unit = &s[num_end..];
+    if num_str.is_empty() || unit.is_empty() {
+        return None;
+    }
+    let num = num_str.parse::<u64>().ok()?;
+    Some((num, unit.to_lowercase()))
+}
+
+/// 解析单个时间单位
+fn parse_time_unit(num: u64, unit: &str) -> u64 {
+    if unit.starts_with("h") {
+        num.saturating_mul(3600).saturating_mul(1000)
+    } else if unit.starts_with("min") || unit == "mn" {
+        num.saturating_mul(60).saturating_mul(1000)
+    } else if unit.starts_with("s") && !unit.starts_with("ms") {
+        num.saturating_mul(1000)
+    } else if unit.starts_with("ms") {
+        num
+    } else {
+        0
+    }
+}
+
+/// 尝试解析 HH:MM:SS 或 HH:MM:SS.mmm 格式
+fn try_parse_hhmmss(s: &str) -> Option<u64> {
+    let parts: Vec<&str> = s.split(':').collect();
+    if parts.len() == 3 {
+        let h: u64 = parts[0].trim().parse().ok()?;
+        let m: u64 = parts[1].trim().parse().ok()?;
+        let s_part = parts[2].trim();
+        // 处理可能的小数秒 "SS.mmm"
+        if let Some(dot_pos) = s_part.find('.') {
+            let sec: u64 = s_part[..dot_pos].parse().unwrap_or(0);
+            let frac_str = &s_part[dot_pos + 1..];
+            // 补齐到3位毫秒
+            let frac_ms: u64 = match frac_str.len() {
+                1 => frac_str.parse::<u64>().unwrap_or(0) * 100,
+                2 => frac_str.parse::<u64>().unwrap_or(0) * 10,
+                3 => frac_str.parse::<u64>().unwrap_or(0),
+                _ => frac_str.parse::<u64>().unwrap_or(0) / 10_u64.pow(frac_str.len() as u32 - 3),
+            };
+            let total_ms = h * 3600_000 + m * 60_000 + sec * 1000 + frac_ms;
+            Some(total_ms)
+        } else {
+            let sec: u64 = s_part.parse().unwrap_or(0);
+            Some(h * 3600_000 + m * 60_000 + sec * 1000)
+        }
+    } else {
+        None
+    }
 }
 
 /// 获取音频元数据
@@ -525,6 +642,7 @@ pub fn get_audio_meta(path: &Path) -> Option<AudioMeta> {
     let mut duration_ms: u64 = 0;
 
     let mut in_audio_section = false;
+    let mut in_general_section = false;
 
     for line in full_info.lines() {
         let line = line.trim();
@@ -532,11 +650,29 @@ pub fn get_audio_meta(path: &Path) -> Option<AudioMeta> {
             continue;
         }
 
-        if line == "Audio" {
+        // 检测段落标题（支持 "Audio"、"Audio #1" 格式）
+        let section_base = if line.contains(':') {
+            let prefix = line.split(':').next().unwrap_or("").trim();
+            prefix.split('#').next().unwrap_or("").trim()
+        } else {
+            line.split('#').next().unwrap_or("").trim()
+        };
+
+        if section_base == "Audio" {
             in_audio_section = true;
+            in_general_section = false;
             continue;
-        } else if line == "Video" || line == "Text" || line == "Menu" {
+        } else if section_base == "General" {
             in_audio_section = false;
+            in_general_section = true;
+            continue;
+        } else if section_base == "Video"
+            || section_base == "Text"
+            || section_base == "Menu"
+            || section_base == "Image"
+        {
+            in_audio_section = false;
+            in_general_section = false;
             continue;
         }
 
@@ -562,7 +698,7 @@ pub fn get_audio_meta(path: &Path) -> Option<AudioMeta> {
                     }
                     _ => {}
                 }
-            } else {
+            } else if in_general_section {
                 // General section
                 match key {
                     "Overall bit rate" => {
@@ -610,10 +746,12 @@ pub fn get_image_meta(path: &Path) -> Option<ImageMeta> {
             continue;
         }
 
-        if line == "Image" {
+        // 支持 "Image #1" 格式
+        let base = line.split('#').next().unwrap_or("").trim();
+        if base == "Image" {
             in_image_section = true;
             continue;
-        } else if line == "Video" || line == "Audio" || line == "Text" {
+        } else if base == "Video" || base == "Audio" || base == "Text" {
             in_image_section = false;
             continue;
         }
@@ -683,18 +821,20 @@ fn parse_mediainfo_text(text: &str) -> Vec<ParsedStream> {
         }
 
         // 检测是否是新的段落标题
-        // MediaInfo 输出格式可能是 "General"、"Video"、"Text" 或 "Video #1"、"Text #2" 等
-        let is_section_header = if !trimmed.contains(':') {
-            matches!(
-                trimmed,
-                "General" | "Video" | "Audio" | "Text" | "Other" | "Menu" | "Image"
-            )
-        } else {
-            // 处理 "Text #1"、"Video #2" 等带编号的格式
+        // MediaInfo 输出格式可能是 "General"、"Video"、"Text" 或 "Video #1"、"Audio #2" 等
+        let section_base = trimmed.split('#').next().unwrap_or("").trim();
+        let is_section_header = if trimmed.contains(':') {
+            // 带冒号的行：可能是 "Text #1: Chinese" 这种格式
             let prefix = trimmed.split(':').next().unwrap_or("").trim();
             let base = prefix.split('#').next().unwrap_or("").trim();
             matches!(
                 base,
+                "General" | "Video" | "Audio" | "Text" | "Other" | "Menu" | "Image"
+            )
+        } else {
+            // 不带冒号：可能是 "Audio #1" 或纯 "Audio"
+            matches!(
+                section_base,
                 "General" | "Video" | "Audio" | "Text" | "Other" | "Menu" | "Image"
             )
         };
@@ -707,13 +847,13 @@ fn parse_mediainfo_text(text: &str) -> Vec<ParsedStream> {
                     fields: current_fields.clone(),
                 });
             }
-            // 提取基础段名（去掉编号）
-            let section_base = if trimmed.contains(':') {
+            // 提取基础段名（去掉编号和冒号后缀）
+            let base_name = if trimmed.contains(':') {
                 trimmed.split(':').next().unwrap_or("").trim()
             } else {
                 trimmed
             };
-            current_section = section_base
+            current_section = base_name
                 .split('#')
                 .next()
                 .unwrap_or("")
@@ -908,25 +1048,6 @@ fn parse_detailed_audio_streams(streams: &[ParsedStream]) -> Vec<DetailedAudioSt
 }
 
 /// 从 Text 段解析详细字幕流
-fn parse_detailed_text_streams(streams: &[ParsedStream]) -> Vec<DetailedTextStream> {
-    streams
-        .iter()
-        .filter(|s| s.section == "Text")
-        .enumerate()
-        .map(|(idx, stream)| {
-            let f = &stream.fields;
-            DetailedTextStream {
-                index: idx as u32,
-                format: find_field(f, "Format"),
-                codec_id: find_field(f, "Codec ID"),
-                language: find_field(f, "Language"),
-                title: find_field(f, "Title"),
-                is_default: find_field(f, "Default").eq_ignore_ascii_case("yes"),
-            }
-        })
-        .collect()
-}
-
 /// 获取完整的视频详细元数据（用于视频体检）
 pub fn get_detailed_video_meta(path: &Path) -> Option<DetailedVideoMeta> {
     let mi = MediaInfoHandle::open(path)?;
@@ -943,13 +1064,10 @@ pub fn get_detailed_video_meta(path: &Path) -> Option<DetailedVideoMeta> {
     let general = parse_general_info(&streams);
     let video_streams = parse_detailed_video_streams(&streams);
     let audio_streams = parse_detailed_audio_streams(&streams);
-    let mut text_streams = parse_detailed_text_streams(&streams);
 
-    // 如果文本解析未找到字幕流，用 XML 输出解析
-    if text_streams.is_empty() {
-        let xml = mi.get_xml();
-        text_streams = parse_text_streams_from_xml(&xml);
-    }
+    // 始终使用 XML 解析字幕流（更可靠，且避免重复读取文件）
+    let xml = mi.get_xml();
+    let text_streams = parse_text_streams_from_xml(&xml);
 
     Some(DetailedVideoMeta {
         general,
@@ -964,6 +1082,255 @@ pub fn get_video_xml(path: &Path) -> Option<String> {
     let mi = MediaInfoHandle::open(path)?;
     let xml = mi.get_xml();
     if xml.is_empty() { None } else { Some(xml) }
+}
+
+/// 获取视频的 MediaInfo 完整信息文本（Complete 模式）
+pub fn get_complete_info(path: &Path) -> Option<String> {
+    let mi = MediaInfoHandle::open(path)?;
+    let info = mi.get_complete();
+    if info.is_empty() { None } else { Some(info) }
+}
+
+/// 获取视频 XML 输出并转为结构化 JSON（对齐 Python 工具格式）
+pub fn get_xml_as_json(path: &Path) -> Option<String> {
+    let mi = MediaInfoHandle::open(path)?;
+    let xml = mi.get_xml();
+    if xml.is_empty() {
+        return None;
+    }
+    Some(xml_to_json_str(&xml, path))
+}
+
+/// 获取视频 XML 输出并转为 Markdown 表格（对齐 Python 工具格式）
+pub fn get_xml_as_markdown(path: &Path) -> Option<String> {
+    let mi = MediaInfoHandle::open(path)?;
+    let xml = mi.get_xml();
+    if xml.is_empty() {
+        return None;
+    }
+    Some(xml_to_markdown_str(&xml, path))
+}
+
+// ==================== XML 转换工具函数 ====================
+
+/// 从 XML 中提取所有 track 块
+fn extract_tracks(xml: &str) -> Vec<(String, Vec<(String, String)>)> {
+    let mut tracks = Vec::new();
+    let mut pos = 0;
+
+    while let Some(start) = xml[pos..].find("<track") {
+        let abs_start = pos + start;
+        // 找到 type 属性
+        let track_tag_end = xml[abs_start..].find('>').map(|e| abs_start + e);
+        let Some(tag_end) = track_tag_end else { break };
+        let tag_block = &xml[abs_start..tag_end];
+
+        let track_type = tag_block
+            .find("type=\"")
+            .and_then(|i| {
+                let val_start = abs_start + i + 6;
+                xml[val_start..].find('"').map(|e| &xml[val_start..val_start + e])
+            })
+            .unwrap_or("General")
+            .to_string();
+
+        let end = xml[abs_start..].find("</track>").map(|e| abs_start + e);
+        let Some(end) = end else { break };
+        let block = &xml[tag_end + 1..end];
+
+        let mut fields = Vec::new();
+        let mut fpos = 0;
+        while let Some(f_start) = block[fpos..].find('<') {
+            let abs_f = fpos + f_start;
+            if block.as_bytes().get(abs_f + 1) == Some(&b'/') {
+                // closing tag, skip
+                if let Some(gt) = block[abs_f..].find('>') {
+                    fpos = abs_f + gt + 1;
+                    continue;
+                }
+                break;
+            }
+            let tag_end_pos = block[abs_f..].find('>').map(|e| abs_f + e);
+            let Some(tag_end_pos) = tag_end_pos else { break };
+            let tag_name = &block[abs_f + 1..tag_end_pos];
+            if tag_name.is_empty() || tag_name.contains(' ') {
+                fpos = tag_end_pos + 1;
+                continue;
+            }
+            let close_tag = format!("</{}>", tag_name);
+            if let Some(c_start) = block[tag_end_pos + 1..].find(&close_tag) {
+                let val = &block[tag_end_pos + 1..tag_end_pos + 1 + c_start];
+                let val_trimmed = val.trim();
+                if !val_trimmed.is_empty() {
+                    fields.push((tag_name.to_string(), val_trimmed.to_string()));
+                }
+                fpos = tag_end_pos + 1 + c_start + close_tag.len();
+            } else {
+                fpos = tag_end_pos + 1;
+            }
+        }
+
+        tracks.push((track_type, fields));
+        pos = end + 8;
+    }
+
+    tracks
+}
+
+/// XML 转 JSON 字符串（对齐 Python format_xml2json_export）
+fn xml_to_json_str(xml: &str, path: &Path) -> String {
+    let tracks = extract_tracks(xml);
+    let filename = path
+        .file_name()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_default();
+
+    let mut out = serde_json::Map::new();
+    out.insert("文件名".to_string(), serde_json::Value::String(filename));
+
+    for (track_type, fields) in &tracks {
+        let fields_map: serde_json::Map<String, serde_json::Value> = fields
+            .iter()
+            .map(|(k, v)| (k.clone(), serde_json::Value::String(v.clone())))
+            .collect();
+        let val = serde_json::Value::Object(fields_map);
+
+        match track_type.as_str() {
+            "General" => {
+                out.insert("基本信息".to_string(), val);
+            }
+            "Video" => {
+                let arr = out
+                    .entry("视频流".to_string())
+                    .or_insert_with(|| serde_json::Value::Array(Vec::new()));
+                if let serde_json::Value::Array(a) = arr {
+                    a.push(val);
+                }
+            }
+            "Audio" => {
+                let arr = out
+                    .entry("音频流".to_string())
+                    .or_insert_with(|| serde_json::Value::Array(Vec::new()));
+                if let serde_json::Value::Array(a) = arr {
+                    a.push(val);
+                }
+            }
+            "Text" => {
+                let arr = out
+                    .entry("字幕流".to_string())
+                    .or_insert_with(|| serde_json::Value::Array(Vec::new()));
+                if let serde_json::Value::Array(a) = arr {
+                    a.push(val);
+                }
+            }
+            other => {
+                let key = format!("其他流_{}", other);
+                let arr = out
+                    .entry(key)
+                    .or_insert_with(|| serde_json::Value::Array(Vec::new()));
+                if let serde_json::Value::Array(a) = arr {
+                    a.push(val);
+                }
+            }
+        }
+    }
+
+    serde_json::to_string_pretty(&serde_json::Value::Object(out)).unwrap_or_default()
+}
+
+/// XML 转 Markdown 字符串（对齐 Python format_xml2md_export）
+fn xml_to_markdown_str(xml: &str, path: &Path) -> String {
+    let tracks = extract_tracks(xml);
+    let filename = path
+        .file_name()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_default();
+    let filepath = path.to_string_lossy();
+
+    let mut lines: Vec<String> = vec![
+        format!("## {}", filename),
+        String::new(),
+        format!("**路径:** `{}`", filepath),
+        String::new(),
+    ];
+
+    // 基本信息
+    if let Some((_, fields)) = tracks.iter().find(|(t, _)| t == "General") {
+        lines.push("### 基本信息".to_string());
+        lines.push(String::new());
+        lines.push("| 属性 | 值 |".to_string());
+        lines.push("|------|-----|".to_string());
+        for (k, v) in fields {
+            lines.push(format!("| {} | {} |", k, v));
+        }
+        lines.push(String::new());
+    }
+
+    // 视频流
+    let mut vi = 0;
+    for (track_type, fields) in &tracks {
+        if track_type != "Video" {
+            continue;
+        }
+        vi += 1;
+        lines.push(format!("### 视频流 #{}", vi));
+        lines.push(String::new());
+        lines.push("| 属性 | 值 |".to_string());
+        lines.push("|------|-----|".to_string());
+        for (k, v) in fields {
+            lines.push(format!("| {} | {} |", k, v));
+        }
+        lines.push(String::new());
+    }
+
+    // 音频流
+    let mut ai = 0;
+    for (track_type, fields) in &tracks {
+        if track_type != "Audio" {
+            continue;
+        }
+        ai += 1;
+        lines.push(format!("### 音频流 #{}", ai));
+        lines.push(String::new());
+        lines.push("| 属性 | 值 |".to_string());
+        lines.push("|------|-----|".to_string());
+        for (k, v) in fields {
+            lines.push(format!("| {} | {} |", k, v));
+        }
+        lines.push(String::new());
+    }
+
+    // 字幕流
+    let text_tracks: Vec<_> = tracks.iter().filter(|(t, _)| t == "Text").collect();
+    if !text_tracks.is_empty() {
+        for (si, (_, fields)) in text_tracks.iter().enumerate() {
+            lines.push(format!("### 字幕流 #{}", si + 1));
+            lines.push(String::new());
+            lines.push("| 属性 | 值 |".to_string());
+            lines.push("|------|-----|".to_string());
+            for (k, v) in fields {
+                lines.push(format!("| {} | {} |", k, v));
+            }
+            lines.push(String::new());
+        }
+    }
+
+    // 其他流
+    for (track_type, fields) in &tracks {
+        if matches!(track_type.as_str(), "General" | "Video" | "Audio" | "Text") {
+            continue;
+        }
+        lines.push(format!("### {}", track_type));
+        lines.push(String::new());
+        lines.push("| 属性 | 值 |".to_string());
+        lines.push("|------|-----|".to_string());
+        for (k, v) in fields {
+            lines.push(format!("| {} | {} |", k, v));
+        }
+        lines.push(String::new());
+    }
+
+    lines.join("\n")
 }
 
 /// 从 MediaInfo XML 输出中解析 Text 流

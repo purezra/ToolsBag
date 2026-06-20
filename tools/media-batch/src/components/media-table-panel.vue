@@ -1,7 +1,7 @@
 ﻿<script setup lang="ts">
 import type { ImageRow, VideoRow } from '@media-batch/types/media'
 import { useSettings } from '@core/hooks/useSettings'
-import { Delete } from '@element-plus/icons-vue'
+import { Delete, Upload } from '@element-plus/icons-vue'
 
 type MediaKind = 'video' | 'image'
 
@@ -28,58 +28,48 @@ const emit = defineEmits<{
   (e: 'update:fileTypeTab', value: MediaKind): void
 }>()
 
-const TABLE_MAX_ROWS = 48
-const TABLE_ROW_HEIGHT = 42
-const tableMaxHeight = TABLE_MAX_ROWS * TABLE_ROW_HEIGHT
-
 const { t } = useSettings()
+
+const hasData = (kind: MediaKind) =>
+  kind === 'video' ? props.tableVideos.length > 0 : props.tableImages.length > 0
 </script>
 
 <template>
-  <div class="panel-container">
-    <div class="panel-header">
-      <div>
-        <p class="eyebrow">{{ t('信息提取') }}</p>
-        <h3>{{ t('视频与图片列表') }}</h3>
+  <div class="table-wrap">
+    <div class="table-header-bar">
+      <div class="tab-switch">
+        <el-segmented
+          :model-value="props.fileTypeTab"
+          :options="[
+            { label: `${t('视频')} (${props.tableVideos.length})`, value: 'video' },
+            { label: `${t('图片')} (${props.tableImages.length})`, value: 'image' },
+          ]"
+          size="small"
+          @change="(val: any) => emit('update:fileTypeTab', val as MediaKind)"
+        />
       </div>
-      <el-tabs
-        :model-value="props.fileTypeTab"
-        type="card"
-        class="type-tabs"
-        @update:modelValue="(val: any) => emit('update:fileTypeTab', val as MediaKind)"
-      >
-        <el-tab-pane :label="t('视频')" name="video" />
-        <el-tab-pane :label="t('图片')" name="image" />
-      </el-tabs>
+      <div class="table-header-actions">
+        <span class="hint">{{ t('文件名Hover查看路径') }}</span>
+        <el-button size="small" text type="primary" @click="emit('clear', props.fileTypeTab)">{{ t('清空') }}</el-button>
+      </div>
     </div>
 
-    <div v-if="props.fileTypeTab === 'video'" class="table-block">
-      <div class="table-top">
-        <div class="hint">{{ t('支持排序、全选、Hover 查看完整路径') }}</div>
-        <div class="actions">
-          <el-button size="small" text type="primary" @click="emit('clear', 'video')">{{ t('清空') }}</el-button>
-        </div>
-      </div>
+    <!-- Video Table -->
+    <div v-if="props.fileTypeTab === 'video'" class="table-block" :class="{ 'is-empty': !hasData('video') }">
       <el-table
+        v-if="hasData('video')"
         :data="props.tableVideos"
         size="small"
         class="table-shell"
-        :max-height="tableMaxHeight"
+        height="100%"
         row-key="id"
         @sort-change="(payload: any) => emit('sortChange', 'video', { prop: payload?.prop || null, order: payload?.order || null })"
       >
-        <el-table-column width="82" align="center">
-          <template #header>
-            <span>{{ t('序号') }}</span>
-          </template>
+        <el-table-column width="72" align="center">
+          <template #header><span>{{ t('序号') }}</span></template>
           <template #default="{ row, $index }">
             <div class="index-with-delete">
-              <el-button
-                type="danger"
-                link
-                :icon="Delete"
-                @click="emit('remove', 'video', row.id)"
-              />
+              <el-button type="danger" link :icon="Delete" @click="emit('remove', 'video', row.id)" />
               <span>{{ $index + 1 }}</span>
             </div>
           </template>
@@ -102,32 +92,21 @@ const { t } = useSettings()
         </el-table-column>
         <el-table-column
           v-if="props.visibleVideoColumns.duration"
-          :label="t('时长')"
-          prop="durationSec"
-          width="110"
-          align="center"
-          sortable
+          :label="t('时长')" prop="durationSec" width="100" align="center" sortable
           :sort-method="(a: any, b: any) => (a.durationSec || 0) - (b.durationSec || 0)"
         >
           <template #default="{ row }">{{ props.formatDuration(row.durationSec) }}</template>
         </el-table-column>
         <el-table-column
           v-if="props.visibleVideoColumns.resolution"
-          prop="resolution"
-          :label="t('分辨率')"
-          width="120"
-          align="center"
-          sortable
+          prop="resolution" :label="t('分辨率')" width="110" align="center" sortable
           :sort-method="(a: any, b: any) => (a.width || 0) * (a.height || 0) - (b.width || 0) * (b.height || 0)"
         >
           <template #default="{ row }">{{ (row.width ?? '-') }}×{{ (row.height ?? '-') }}</template>
         </el-table-column>
         <el-table-column
           v-if="props.visibleVideoColumns.bitrate"
-          :label="t('码率')"
-          width="110"
-          align="center"
-          sortable
+          :label="t('码率')" width="100" align="center" sortable
           :sort-method="(a: any, b: any) => (a.bitrateMbps || 0) - (b.bitrateMbps || 0)"
         >
           <template #default="{ row }">
@@ -137,61 +116,47 @@ const { t } = useSettings()
         </el-table-column>
         <el-table-column
           v-if="props.visibleVideoColumns.frameRate"
-          :label="t('帧率')"
-          prop="frameRate"
-          width="110"
-          align="center"
+          :label="t('帧率')" prop="frameRate" width="90" align="center"
         >
           <template #default="{ row }">{{ row.frameRate || '-' }}</template>
         </el-table-column>
         <el-table-column
           v-if="props.visibleVideoColumns.size"
-          :label="t('文件大小')"
-          width="130"
-          align="center"
-          sortable
+          :label="t('文件大小')" width="110" align="center" sortable
           :sort-method="(a: any, b: any) => a.size - b.size"
         >
           <template #default="{ row }">{{ props.formatBytes(row.size) }}</template>
         </el-table-column>
         <el-table-column
           v-if="props.showPreview && props.visibleVideoColumns.preview"
-          :label="t('预览名称')"
-          min-width="180"
-          show-overflow-tooltip
+          :label="t('预览名称')" min-width="160" show-overflow-tooltip
         >
           <template #default="{ row }">{{ row.previewName }}</template>
         </el-table-column>
       </el-table>
+      <div v-else class="dropzone">
+        <el-icon :size="40" class="dropzone-icon"><Upload /></el-icon>
+        <p class="dropzone-title">{{ t('暂无数据') }}</p>
+        <p class="dropzone-hint">{{ t('点击上方「添加」或「文件夹」，或粘贴路径导入') }}</p>
+      </div>
     </div>
 
-    <div v-if="props.fileTypeTab === 'image'" class="table-block">
-      <div class="table-top">
-        <div class="hint">{{ t('支持提示') }}</div>
-        <div class="actions">
-          <el-button size="small" text type="primary" @click="emit('clear', 'image')">{{ t('清空') }}</el-button>
-        </div>
-      </div>
+    <!-- Image Table -->
+    <div v-if="props.fileTypeTab === 'image'" class="table-block" :class="{ 'is-empty': !hasData('image') }">
       <el-table
+        v-if="hasData('image')"
         :data="props.tableImages"
         size="small"
         class="table-shell"
-        :max-height="tableMaxHeight"
+        height="100%"
         row-key="id"
         @sort-change="(payload: any) => emit('sortChange', 'image', { prop: payload?.prop || null, order: payload?.order || null })"
       >
-        <el-table-column width="82" align="center">
-          <template #header>
-            <span>{{ t('序号') }}</span>
-          </template>
+        <el-table-column width="72" align="center">
+          <template #header><span>{{ t('序号') }}</span></template>
           <template #default="{ row, $index }">
             <div class="index-with-delete">
-              <el-button
-                type="danger"
-                link
-                :icon="Delete"
-                @click="emit('remove', 'image', row.id)"
-              />
+              <el-button type="danger" link :icon="Delete" @click="emit('remove', 'image', row.id)" />
               <span>{{ $index + 1 }}</span>
             </div>
           </template>
@@ -214,103 +179,108 @@ const { t } = useSettings()
         </el-table-column>
         <el-table-column
           v-if="props.visibleImageColumns.resolution"
-          prop="resolution"
-          :label="t('分辨率')"
-          width="120"
-          align="center"
-          sortable
+          prop="resolution" :label="t('分辨率')" width="110" align="center" sortable
           :sort-method="(a: any, b: any) => (a.width || 0) * (a.height || 0) - (b.width || 0) * (b.height || 0)"
         >
           <template #default="{ row }">{{ row.width ? `${row.width}×${row.height ?? ''}` : '' }}</template>
         </el-table-column>
-        <el-table-column
-          v-if="props.visibleImageColumns.device"
-          prop="device"
-          :label="t('拍摄设备')"
-          min-width="140"
-          show-overflow-tooltip
-        />
-        <el-table-column
-          v-if="props.visibleImageColumns.takenAt"
-          prop="takenAt"
-          :label="t('拍摄时间')"
-          width="160"
-          sortable
-        />
-        <el-table-column
-          v-if="props.visibleImageColumns.focalLength"
-          prop="focalLength"
-          :label="t('焦距')"
-          width="110"
-          align="center"
-        />
+        <el-table-column v-if="props.visibleImageColumns.device" prop="device" :label="t('拍摄设备')" min-width="130" show-overflow-tooltip />
+        <el-table-column v-if="props.visibleImageColumns.takenAt" prop="takenAt" :label="t('拍摄时间')" width="150" sortable />
+        <el-table-column v-if="props.visibleImageColumns.focalLength" prop="focalLength" :label="t('焦距')" width="90" align="center" />
         <el-table-column
           v-if="props.visibleImageColumns.size"
-          :label="t('文件大小')"
-          width="120"
-          align="center"
-          sortable
+          :label="t('文件大小')" width="110" align="center" sortable
           :sort-method="(a: any, b: any) => a.size - b.size"
         >
           <template #default="{ row }">{{ props.formatBytes(row.size) }}</template>
         </el-table-column>
         <el-table-column
           v-if="props.showPreview && props.visibleImageColumns.preview"
-          :label="t('预览名称')"
-          min-width="160"
-          show-overflow-tooltip
+          :label="t('预览名称')" min-width="160" show-overflow-tooltip
         >
           <template #default="{ row }">{{ row.previewName }}</template>
         </el-table-column>
       </el-table>
+      <div v-else class="dropzone">
+        <el-icon :size="40" class="dropzone-icon"><Upload /></el-icon>
+        <p class="dropzone-title">{{ t('暂无数据') }}</p>
+        <p class="dropzone-hint">{{ t('点击上方「添加」或「文件夹」，或粘贴路径导入') }}</p>
+      </div>
     </div>
   </div>
 </template>
 
 <style scoped>
-.panel-container {
-  height: 100%;
+.table-wrap {
+  flex: 1;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
+  padding: 0 10px 10px;
 }
-.panel-header {
+.table-header-bar {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  margin-bottom: 12px;
+  justify-content: space-between;
+  padding: 6px 0;
   flex-shrink: 0;
 }
+.tab-switch :deep(.el-segmented) {
+  --el-segmented-item-selected-color: var(--text-inverse);
+}
+.table-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.hint {
+  color: var(--text-muted);
+  font-size: 11px;
+}
 .table-block {
-  margin-top: 12px;
-  border: 1px solid rgba(20, 23, 31, 0.04);
-  border-radius: 12px;
+  border: 1px solid var(--border-secondary);
+  border-radius: var(--radius-md);
   overflow: hidden;
-  background: #fff;
+  background: var(--bg-primary);
   display: flex;
   flex-direction: column;
   flex: 1;
+  min-height: 0;
 }
-.table-top {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 10px 12px;
-  background: #f7f8fd;
-  border-bottom: 1px solid rgba(20, 23, 31, 0.05);
-  flex-shrink: 0;
-}
-.hint {
-  color: #6d7387;
-  font-size: 12px;
-}
-.actions {
-  display: flex;
-  gap: 8px;
+.table-block.is-empty {
+  border-style: dashed;
+  border-color: var(--border-primary);
 }
 .table-shell {
   flex: 1;
-  min-height: 260px;
+  min-height: 0;
   height: 100%;
+  overflow-x: auto;
+}
+.dropzone {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 32px 16px;
+  cursor: default;
+}
+.dropzone-icon {
+  color: var(--text-muted);
+  opacity: 0.5;
+}
+.dropzone-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.dropzone-hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-muted);
 }
 .name-popover {
   display: flex;
@@ -327,7 +297,7 @@ const { t } = useSettings()
   gap: 8px;
 }
 .link-like {
-  color: #2f73ff;
+  color: var(--accent);
   cursor: pointer;
 }
 .name-cell {
@@ -337,7 +307,6 @@ const { t } = useSettings()
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-
 .index-with-delete {
   display: inline-flex;
   align-items: center;

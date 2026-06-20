@@ -3,6 +3,8 @@ import './assets/styles/variables.css'
 import './assets/styles/overrides.css'
 import './assets/styles/style.css'
 import './assets/styles/theme-dark.css'
+import './assets/styles/catppuccin-mocha-vars.css'
+import 'element-plus/theme-chalk/dark/css-vars.css'
 import App from './App.vue'
 
 // Element Plus 由 unplugin 自动按需引入，无需手动 import

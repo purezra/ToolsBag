@@ -23,7 +23,7 @@ tauri-plugin-sql = { version = "2", features = ["sqlite"] }
 # Keep existing dependencies
 rayon = "1.10"
 walkdir = "2.5"
-image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "bmp", "ico", "tiff", "webp"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "bmp", "ico", "tiff", "webp", "tga", "dds", "pnm", "ff", "hdr", "qoi", "avif"] }
 tiff = "0.9"
 exif = { package = "kamadak-exif", version = "0.6.1" }
 flate2 = "1.0"
@@ -35,7 +35,15 @@ uuid = { version = "1.10", features = ["v4", "serde"] }
 infer = "0.13"
 lopdf = "0.27"
 printpdf = "0.7"
+# JPEG XL 编码：纯 Rust，VarDCT(有损)+Modular(无损) 双模。许可证 AGPL-3.0 OR 商业（项目开源，AGPL 可接受）。
+# 启用 parallel feature 以支持单图内多线程编码（与外层 rayon 池协作）。
+jxl-encoder = { version = "0.3.1", features = ["parallel"] }
 jpeg-decoder = "0.3"
+# AVIF 编码：直接使用 ravif 以支持独立色彩/Alpha 质量（image::AvifEncoder 不支持分离 alpha quality）。
+# 关闭默认 asm feature 以避免对 NASM 汇编器的依赖（保持纯 Rust 构建）。
+ravif = { version = "0.12", default-features = false, features = ["threading"] }
+imgref = "1.12"
+rgb = "0.8"
 argon2 = "0.5"
 aes-gcm = "0.10"
 hkdf = "0.12"
@@ -56,6 +64,6 @@ log = "0.4"
 [profile.release]
 strip = true
 lto = true
-codegen-units = 1
-opt-level = "z"
+# 速度优先：编码热路径对优化级别敏感，opt-level=3 比 "z" 显著提速，代价是二进制变大。
+opt-level = 3
 panic = "abort"
