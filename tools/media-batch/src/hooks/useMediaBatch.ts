@@ -1,4 +1,4 @@
-﻿import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+﻿import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { writeText } from '@tauri-apps/plugin-clipboard-manager'
 import { listen } from '@tauri-apps/api/event'
@@ -497,21 +497,27 @@ export const useMediaBatch = () => {
     return Array.from(map.values()).map((item, idx) => ({ ...item, id: idx + 1 } as T))
   }
 
-  const handleImport = async (kind: ImportKind) => {
+  // 导入完成后的收尾定时器句柄；新一轮导入前清除，避免上一轮残留回调
+  // 提前隐藏进度条或清空实时清单。
+  const importFinishTimers: number[] = []
+  const clearImportTimers = () => {
+    importFinishTimers.forEach((t) => window.clearTimeout(t))
+    importFinishTimers.length = 0
+  }
+  const scheduleImportFinish = (fn: () => void, delay: number) => {
+    importFinishTimers.push(window.setTimeout(fn, delay))
+  }
+
+  // 核心导入逻辑：接收已确定的路径列表，供 handleImport 与跨视图联动复用
+  const importPaths = async (paths: string[], kind: ImportKind = 'file') => {
     if (importing.value) return
-    // 先拿到路径，再开启 loading，避免选择/剪贴板为空导致一直转圈
-    const picked = await pick(kind)
-    const paths = (picked || []).filter((p: string) => !/[\*\?\[\]]/.test(p))
-    if (picked && paths.length !== picked.length) {
-      ElMessage.warning(t('已忽略包含通配符的路径'))
-    }
+    clearImportTimers()
     if (!paths || paths.length === 0) {
       liveImports.value = []
       finishProgress()
       importing.value = false
       return
     }
-
     setLiveImportSnapshot(paths, kind)
     importing.value = true
     lastRenameBatch.value = []
@@ -558,7 +564,7 @@ export const useMediaBatch = () => {
       const successPaths = new Set(resp.items.filter((item) => item.status === 'success').map((item) => item.path))
       const failedPaths = new Set(resp.items.filter((item) => item.status !== 'success').map((item) => item.path))
       syncLiveImportStatus(successPaths, failedPaths)
-      window.setTimeout(() => finishProgress(), 1200)
+      scheduleImportFinish(() => finishProgress(), 1200)
       if (resp.stats.failed > 0) {
         ElMessage.warning(`${t('导入完成')}：${importSummary.value}`)
       } else {
@@ -567,12 +573,24 @@ export const useMediaBatch = () => {
     } catch (error: any) {
       syncLiveImportStatus(new Set(), new Set(paths))
       clearPendingPlaceholders()
-      window.setTimeout(() => finishProgress(), 1600)
+      scheduleImportFinish(() => finishProgress(), 1600)
       ElMessage.error(error?.toString() || t('导入失败'))
     } finally {
       importing.value = false
-      window.setTimeout(() => { liveImports.value = [] }, 1300)
+      scheduleImportFinish(() => { liveImports.value = [] }, 1300)
     }
+  }
+
+  const handleImport = async (kind: ImportKind) => {
+    if (importing.value) return
+    clearImportTimers()
+    // 先拿到路径，再开启 loading，避免选择/剪贴板为空导致一直转圈
+    const picked = await pick(kind)
+    const paths = (picked || []).filter((p: string) => !/[\*\?\[\]]/.test(p))
+    if (picked && paths.length !== picked.length) {
+      ElMessage.warning(t('已忽略包含通配符的路径'))
+    }
+    return importPaths(paths, kind)
   }
 
   const handleRemove = async (kind: MediaKind, id: number) => {
@@ -916,52 +934,71 @@ export const useMediaBatch = () => {
   }
 
   const applyOrganizePreset = (preset: OrganizePresetKey) => {
+    // 先切换 tab（会触发 watch(fileTypeTab) 重置列与 showPreview）。
+    // 列与 showPreview 的赋值推迟到 nextTick，确保在 watch 回调之后执行，
+    // 避免预设设置被 watch 的默认值覆盖；若 tab 未变化则 watch 不触发，直接应用。
+    const applyColumns = () => {
+      if (preset === 'short-video') {
+        setRenameEnabled(renameFieldsVideo, ['seq', 'custom', 'duration', 'resolution'])
+        Object.assign(visibleVideoColumns, {
+          duration: true,
+          resolution: true,
+          bitrate: true,
+          frameRate: true,
+          size: true,
+          preview: true
+        })
+      } else if (preset === 'archive-video') {
+        setRenameEnabled(renameFieldsVideo, ['seq', 'custom', 'filename', 'duration', 'size'])
+        Object.assign(visibleVideoColumns, {
+          duration: true,
+          resolution: true,
+          bitrate: true,
+          frameRate: false,
+          size: true,
+          preview: true
+        })
+      } else {
+        setRenameEnabled(renameFieldsImage, ['seq', 'custom', 'takenAt', 'device', 'resolution'])
+        Object.assign(visibleImageColumns, {
+          resolution: true,
+          device: true,
+          takenAt: true,
+          focalLength: true,
+          size: true,
+          preview: true
+        })
+      }
+      showPreview.value = true
+    }
+
+    const targetTab: 'video' | 'image' = preset === 'photo-exif' ? 'image' : 'video'
+    const tabChanged = fileTypeTab.value !== targetTab
+
     if (preset === 'short-video') {
       fileTypeTab.value = 'video'
       customText.value = 'clip'
       separator.value = '_'
       leadingZeros.value = 3
       durationFormat.value = 'clock'
-      setRenameEnabled(renameFieldsVideo, ['seq', 'custom', 'duration', 'resolution'])
-      Object.assign(visibleVideoColumns, {
-        duration: true,
-        resolution: true,
-        bitrate: true,
-        frameRate: true,
-        size: true,
-        preview: true
-      })
     } else if (preset === 'archive-video') {
       fileTypeTab.value = 'video'
       customText.value = 'archive'
       separator.value = '_'
       leadingZeros.value = 4
       durationFormat.value = 'hms'
-      setRenameEnabled(renameFieldsVideo, ['seq', 'custom', 'filename', 'duration', 'size'])
-      Object.assign(visibleVideoColumns, {
-        duration: true,
-        resolution: true,
-        bitrate: true,
-        frameRate: false,
-        size: true,
-        preview: true
-      })
     } else {
       fileTypeTab.value = 'image'
       customText.value = 'photo'
       separator.value = '_'
       leadingZeros.value = 3
-      setRenameEnabled(renameFieldsImage, ['seq', 'custom', 'takenAt', 'device', 'resolution'])
-      Object.assign(visibleImageColumns, {
-        resolution: true,
-        device: true,
-        takenAt: true,
-        focalLength: true,
-        size: true,
-        preview: true
-      })
     }
-    showPreview.value = true
+    if (tabChanged) {
+      // tab 变化时 watch 会重置，需在 nextTick 之后重新应用列设置。
+      nextTick(applyColumns)
+    } else {
+      applyColumns()
+    }
     ElMessage.success(t('已应用整理模板'))
   }
 
@@ -985,11 +1022,13 @@ export const useMediaBatch = () => {
   })
 
   const retryFailedImports = async () => {
+    if (importing.value) return
     const retryPaths = failedItems.value.map((item) => item.path).filter(Boolean)
     if (!retryPaths.length) {
       ElMessage.info(t('没有可重试的失败项'))
       return
     }
+    clearImportTimers()
     importing.value = true
     startProgress(retryPaths.length)
     try {
@@ -1038,6 +1077,7 @@ export const useMediaBatch = () => {
     formatBytes,
     formatDuration,
     handleImport,
+    importPaths,
     handleRemove,
     handleClear,
     moveField,
@@ -1057,6 +1097,7 @@ export const useMediaBatch = () => {
     showFailedDialog,
     retryFailedImports,
     importSummary,
-    liveImports
+    liveImports,
+    mergeByPath
   }
 }

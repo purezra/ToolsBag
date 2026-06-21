@@ -141,6 +141,19 @@ pub struct VideoInfoItem {
     pub status: String,
     pub reason: Option<String>,
     pub detail: Option<DetailedVideoMeta>,
+    // 从 detail 派生的扁平字段，供媒体整理视图直接使用
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub duration_sec: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub width: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub height: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub bitrate_mbps: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub codec: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub frame_rate: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

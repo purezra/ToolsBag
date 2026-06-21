@@ -178,6 +178,13 @@ export type VideoInfoItem = {
   status: string
   reason?: string
   detail?: DetailedVideoMeta
+  // 从 detail 派生的扁平字段，供媒体整理视图直接使用
+  durationSec?: number
+  width?: number
+  height?: number
+  bitrateMbps?: number
+  codec?: string
+  frameRate?: string
 }
 
 export type VideoInfoImportResponse = {

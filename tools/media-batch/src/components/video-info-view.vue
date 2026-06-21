@@ -66,6 +66,10 @@ const { pick } = useFileSelect()
 const { t } = useSettings()
 const videoInfoCache = new Map<string, VideoInfoImportResponse>()
 
+const emit = defineEmits<{
+  (e: 'addToRename', items: VideoInfoItem[]): void
+}>()
+
 const level = ref<DisplayLevel>('beginner')
 const recursive = ref(false)
 const importing = ref(false)
@@ -875,9 +879,7 @@ const collapseAll = () => {
 const makeCacheKey = (paths: string[], isRecursive: boolean) =>
   JSON.stringify({ recursive: isRecursive, paths: [...paths].sort() })
 
-const handleImport = async (kind: 'folder' | 'clipboard') => {
-  const picked = await pick(kind)
-  const paths = (picked || []).filter((p: string) => !/[\*\?\[\]]/.test(p))
+const importByPaths = async (paths: string[]) => {
   if (!paths || paths.length === 0) return
   const cacheKey = makeCacheKey(paths, recursive.value)
   const cached = videoInfoCache.get(cacheKey)
@@ -911,6 +913,27 @@ const handleImport = async (kind: 'folder' | 'clipboard') => {
     importProgress.active = false
     importProgress.percent = 0
   }
+}
+
+const handleImport = async (kind: 'folder' | 'clipboard') => {
+  const picked = await pick(kind)
+  const paths = (picked || []).filter((p: string) => !/[\*\?\[\]]/.test(p))
+  return importByPaths(paths)
+}
+
+// 供父组件跨视图调用：导入单个视频并展示其详情
+defineExpose({
+  inspectPath: (path: string) => importByPaths([path])
+})
+
+// 把当前成功导入的视频发给父组件，加入媒体整理重命名队列（携带扁平字段，无需二次扫描）
+const handleAddToRename = () => {
+  const successItems = items.value.filter((i) => i.status === 'success')
+  if (!successItems.length) {
+    ElMessage.info(t('没有可加入的视频'))
+    return
+  }
+  emit('addToRename', successItems)
 }
 
 const handleClear = () => {
@@ -1043,19 +1066,24 @@ onMounted(() => {
 
   if (!hasTauriRuntime()) return
 
-  // 监听后端进度事件
-  listen<{ done: number; total: number; phase: string }>('video_info_import', (event) => {
-    const { done, total, phase } = event.payload
-    if (phase === 'start') {
+  // 监听后端进度事件：后端通过 emit_progress 统一发送到 progress-update 通道，
+  // payload 形状为 { id, stage, current, total, message }，需按 stage 过滤本工具。
+  listen<{ stage: string; current: number; total: number; message: string }>('progress-update', (event) => {
+    const payload = event.payload
+    if (!payload || payload.stage !== 'video_info_import') return
+    const total = Math.max(1, Number(payload.total || 1))
+    const current = Math.min(total, Number(payload.current || 0))
+    const message = String(payload.message || '')
+    if (message === 'start') {
       importProgress.active = true
       importProgress.percent = 0
-    } else if (phase === 'done') {
+    } else if (message === 'done') {
       importProgress.percent = 100
       setTimeout(() => {
         importProgress.active = false
       }, 500)
-    } else if (total > 0) {
-      importProgress.percent = Math.round((done / total) * 100)
+    } else {
+      importProgress.percent = Math.max(0, Math.min(100, Math.round((current / total) * 100)))
     }
   }).then(unlisten => {
     if (isMounted) {
@@ -1391,6 +1419,9 @@ const exportData = async (format: ExportFormat) => {
           <span class="switch-label">{{ t('递归遍历') }}</span>
           <el-switch v-model="recursive" size="small" />
         </label>
+        <el-button v-if="items.length" type="primary" plain round @click="handleAddToRename">
+          {{ t('加入媒体整理') }}
+        </el-button>
         <el-button v-if="items.length" type="success" :icon="Coin" round :loading="saving" @click="handleSaveToDb">
           {{ t('入库') }}
         </el-button>

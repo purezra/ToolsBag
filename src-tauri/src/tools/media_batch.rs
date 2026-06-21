@@ -29,6 +29,35 @@ const CREATE_NO_WINDOW: u32 = 0x08000000;
 const MAX_SCAN_FILES: usize = 50_000;
 const MAX_SCAN_DEPTH: usize = 32;
 
+/// 解析 MediaInfo 输出的码率字符串（如 "10.0 Mbps"、"320 kb/s"）为 Mbps 数值
+fn parse_bitrate_to_mbps(s: &str) -> Option<f64> {
+    let s = s.trim();
+    if s.is_empty() || s == "-" {
+        return None;
+    }
+    // "10.0 Mbps"
+    if let Some(rest) = s.strip_suffix("Mbps") {
+        return rest.trim().parse::<f64>().ok();
+    }
+    // "320 kb/s" or "320 Kbps"
+    let (kb_suffix, kb_len) = if s.ends_with("kb/s") {
+        (true, 4)
+    } else if s.ends_with("Kbps") {
+        (true, 4)
+    } else {
+        (false, 0)
+    };
+    if kb_suffix {
+        let rest = &s[..s.len() - kb_len];
+        return rest.trim().parse::<f64>().ok().map(|v| v / 1000.0);
+    }
+    // "2000000 bps"
+    if let Some(rest) = s.strip_suffix("bps") {
+        return rest.trim().parse::<f64>().ok().map(|v| v / 1_000_000.0);
+    }
+    None
+}
+
 type VideoProbeResult = (
     Option<f64>,
     Option<u32>,
@@ -846,6 +875,27 @@ fn import_detailed_video_info_inner(
 
             let detail = mediainfo::get_detailed_video_meta(path);
 
+            // 从 detail 派生扁平字段
+            let (duration_sec, width, height, bitrate_mbps, codec, frame_rate) =
+                if let Some(ref d) = detail {
+                    let dur = if d.general.duration_ms > 0 {
+                        Some(d.general.duration_ms as f64 / 1000.0)
+                    } else {
+                        d.video_streams.first().and_then(|s| {
+                            if s.duration_ms > 0 { Some(s.duration_ms as f64 / 1000.0) } else { None }
+                        })
+                    };
+                    let vs = d.video_streams.first();
+                    let br = parse_bitrate_to_mbps(&d.general.overall_bit_rate)
+                        .or_else(|| vs.and_then(|s| parse_bitrate_to_mbps(&s.bit_rate)));
+                    let fr = vs.and_then(|s| {
+                        if s.frame_rate.is_empty() || s.frame_rate == "-" { None } else { Some(s.frame_rate.clone()) }
+                    });
+                    (dur, vs.map(|s| s.width), vs.map(|s| s.height), br, vs.map(|s| s.codec.clone()), fr)
+                } else {
+                    (None, None, None, None, None, None)
+                };
+
             let item = VideoInfoItem {
                 id: idx as u64,
                 name,
@@ -858,6 +908,12 @@ fn import_detailed_video_info_inner(
                     None
                 },
                 detail,
+                duration_sec,
+                width,
+                height,
+                bitrate_mbps,
+                codec,
+                frame_rate,
             };
 
             let done = progress.fetch_add(1, Ordering::Relaxed) + 1;

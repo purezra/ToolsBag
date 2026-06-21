@@ -1,5 +1,6 @@
 ﻿<script setup lang="ts">
-import { computed, reactive, ref, defineAsyncComponent } from 'vue'
+import { computed, nextTick, reactive, ref, defineAsyncComponent } from 'vue'
+import { ElMessage } from 'element-plus'
 const MediaStatsPanel = defineAsyncComponent(() => import('./components/media-stats-panel.vue'))
 import MediaTablePanel from './components/media-table-panel.vue'
 import MediaTopBar from './components/media-top-bar.vue'
@@ -7,11 +8,13 @@ import MediaSettingsPanel from './components/media-settings-panel.vue'
 import VideoInfoView from './components/video-info-view.vue'
 import { useMediaBatch } from './hooks/useMediaBatch'
 import { useSettings } from '@core/hooks/useSettings'
+import type { VideoInfoItem, VideoRow } from './types/media'
 
 const batch = reactive(useMediaBatch())
 const { t } = useSettings()
 
 const viewMode = ref<'batch' | 'exhibition'>('batch')
+const videoInfoRef = ref<InstanceType<typeof VideoInfoView> | null>(null)
 
 const statsCardData = computed(() => ({
   basic: batch.basicStats,
@@ -23,6 +26,34 @@ const tickerText = computed(() => {
   if (!batch.liveImports.length) return ''
   return batch.liveImports.map((item) => item.name).join(' · ')
 })
+
+// 视频体检 → 媒体整理：直接注入扁平字段，无需二次后端扫描
+const handleAddToRename = (videoItems: VideoInfoItem[]) => {
+  if (!videoItems.length) return
+  const rows: VideoRow[] = videoItems.map((item) => ({
+    id: 0, // mergeByPath 会重排
+    name: item.name,
+    path: item.path,
+    size: item.size,
+    mediaType: 'video' as const,
+    status: 'success' as const,
+    durationSec: item.durationSec,
+    width: item.width,
+    height: item.height,
+    bitrateMbps: item.bitrateMbps,
+    codec: item.codec,
+    frameRate: item.frameRate,
+  }))
+  batch.videoRows = batch.mergeByPath(batch.videoRows, rows)
+  ElMessage.success(t('已加入媒体整理：{n} 个', { n: rows.length }))
+}
+
+// 媒体整理 → 视频体检：切到体检视图并导入该视频的完整详情
+const handleInspect = async (path: string) => {
+  viewMode.value = 'exhibition'
+  await nextTick()
+  videoInfoRef.value?.inspectPath(path)
+}
 </script>
 
 <template>
@@ -39,7 +70,7 @@ const tickerText = computed(() => {
     </div>
 
     <KeepAlive>
-      <VideoInfoView v-if="viewMode === 'exhibition'" />
+      <VideoInfoView ref="videoInfoRef" v-if="viewMode === 'exhibition'" @add-to-rename="handleAddToRename" />
     </KeepAlive>
 
     <template v-if="viewMode === 'batch'">
@@ -116,6 +147,7 @@ const tickerText = computed(() => {
               @copy="batch.copyName"
               @open="batch.openFolder"
               @sortChange="batch.handleTableSortChange"
+              @inspect="handleInspect"
             />
           </div>
         </el-col>
@@ -302,7 +334,7 @@ const tickerText = computed(() => {
   margin-bottom: 4px;
 }
 .flow-progress__bar :deep(.el-progress-bar__inner) {
-  background: linear-gradient(90deg, #6f8cff, #9cb8ff, #6f8cff);
+  background: linear-gradient(90deg, #818CF8, #6366F1, #818CF8);
   background-size: 200% 100%;
   animation: flow 1.6s linear infinite;
 }
