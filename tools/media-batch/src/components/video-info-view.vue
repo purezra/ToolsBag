@@ -926,7 +926,7 @@ defineExpose({
   inspectPath: (path: string) => importByPaths([path])
 })
 
-// 把当前成功导入的视频发给父组件，加入媒体整理重命名队列（携带扁平字段，无需二次扫描）
+// 把当前成功导入的视频发给父组件，加入重命名队列（携带扁平字段，无需二次扫描）
 const handleAddToRename = () => {
   const successItems = items.value.filter((i) => i.status === 'success')
   if (!successItems.length) {
@@ -1138,7 +1138,7 @@ const escapeHtml = (value: string | number) =>
 
 const buildMarkdownReport = () => {
   const lines = [
-    '# 视频体检报告',
+    '# 视频元数据报告',
     '',
     `生成时间：${new Date().toLocaleString()}`,
     '',
@@ -1173,7 +1173,7 @@ const buildHtmlReport = () => {
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
-  <title>视频体检报告</title>
+  <title>视频元数据报告</title>
   <style>
     body{font-family:Arial,"Microsoft YaHei",sans-serif;margin:28px;color:#1f2430}
     h1{margin-bottom:8px}
@@ -1186,7 +1186,7 @@ const buildHtmlReport = () => {
   </style>
 </head>
 <body>
-  <h1>视频体检报告</h1>
+  <h1>视频元数据报告</h1>
   <div class="meta">生成时间：${escapeHtml(new Date().toLocaleString())}</div>
   <div class="summary">
     <span class="pill">文件数：${items.value.length}</span>
@@ -1405,7 +1405,7 @@ const exportData = async (format: ExportFormat) => {
     <!-- 顶部工具栏 -->
     <div class="info-toolbar">
       <div class="toolbar-left">
-        <h3 class="toolbar-title">{{ t('视频体检') }}</h3>
+        <h3 class="toolbar-title">{{ t('视频元数据导出') }}</h3>
         <span class="toolbar-sub">{{ t('导入视频文件，检测 MediaInfo 元数据与潜在质量异常') }}</span>
       </div>
       <div class="toolbar-right">
@@ -1420,7 +1420,7 @@ const exportData = async (format: ExportFormat) => {
           <el-switch v-model="recursive" size="small" />
         </label>
         <el-button v-if="items.length" type="primary" plain round @click="handleAddToRename">
-          {{ t('加入媒体整理') }}
+          {{ t('加入重命名') }}
         </el-button>
         <el-button v-if="items.length" type="success" :icon="Coin" round :loading="saving" @click="handleSaveToDb">
           {{ t('入库') }}

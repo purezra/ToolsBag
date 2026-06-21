@@ -27,7 +27,7 @@ const tickerText = computed(() => {
   return batch.liveImports.map((item) => item.name).join(' · ')
 })
 
-// 视频体检 → 媒体整理：直接注入扁平字段，无需二次后端扫描
+// 视频元数据导出 → 视频图片重命名：直接注入扁平字段，无需二次后端扫描
 const handleAddToRename = (videoItems: VideoInfoItem[]) => {
   if (!videoItems.length) return
   const rows: VideoRow[] = videoItems.map((item) => ({
@@ -45,10 +45,10 @@ const handleAddToRename = (videoItems: VideoInfoItem[]) => {
     frameRate: item.frameRate,
   }))
   batch.videoRows = batch.mergeByPath(batch.videoRows, rows)
-  ElMessage.success(t('已加入媒体整理：{n} 个', { n: rows.length }))
+  ElMessage.success(t('已加入重命名：{n} 个', { n: rows.length }))
 }
 
-// 媒体整理 → 视频体检：切到体检视图并导入该视频的完整详情
+// 视频图片重命名 → 视频元数据导出：切到导出视图并导入该视频的完整详情
 const handleInspect = async (path: string) => {
   viewMode.value = 'exhibition'
   await nextTick()
@@ -62,8 +62,8 @@ const handleInspect = async (path: string) => {
       <el-segmented
         v-model="viewMode"
         :options="[
-          { label: t('媒体整理'), value: 'batch' },
-          { label: t('视频体检'), value: 'exhibition' },
+          { label: t('视频图片重命名'), value: 'batch' },
+          { label: t('视频元数据导出'), value: 'exhibition' },
         ]"
         size="default"
       />

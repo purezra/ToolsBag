@@ -78,7 +78,7 @@ export type ExternalToolStatus = {
   path?: string
 }
 
-// ==================== 视频体检 - 详细元数据类型 ====================
+// ==================== 视频元数据导出 - 详细元数据类型 ====================
 
 export type DisplayLevel = 'public' | 'beginner' | 'advanced' | 'professional'
 
@@ -178,7 +178,7 @@ export type VideoInfoItem = {
   status: string
   reason?: string
   detail?: DetailedVideoMeta
-  // 从 detail 派生的扁平字段，供媒体整理视图直接使用
+  // 从 detail 派生的扁平字段，供重命名视图直接使用
   durationSec?: number
   width?: number
   height?: number
