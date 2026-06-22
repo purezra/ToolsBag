@@ -1,13 +1,11 @@
 ﻿<script setup lang="ts">
-import { onMounted, ref } from 'vue'
-import type { MediaKind, RenameField, ExternalToolStatus, MediaInfoStatus, RenameSafetySummary } from '@media-batch/types/media'
+import { ref } from 'vue'
+import type { MediaKind, RenameField, MediaInfoStatus, RenameSafetySummary } from '@media-batch/types/media'
 import type { DurationFormat } from '@core/utils/format'
 import { useSettings } from '@core/hooks/useSettings'
-import { hasTauriRuntime } from '@core/utils/tauri'
-import { checkFfprobeStatus, checkExiftoolStatus } from '../api/media-batch'
 import { Rank } from '@element-plus/icons-vue'
 
-type ColumnsState = { duration?: boolean; resolution?: boolean; bitrate?: boolean; frameRate?: boolean; size?: boolean; preview?: boolean; device?: boolean; takenAt?: boolean; focalLength?: boolean }
+type ColumnsState = { duration?: boolean; resolution?: boolean; bitrate?: boolean; size?: boolean; preview?: boolean; device?: boolean; takenAt?: boolean; focalLength?: boolean }
 
 const props = defineProps<{
   fileTypeTab: MediaKind
@@ -23,6 +21,7 @@ const props = defineProps<{
   showPreview: boolean
   renameSafetySummary: RenameSafetySummary
   canUndoRename: boolean
+  undoStackDepth: number
 }>()
 
 const emit = defineEmits<{
@@ -41,29 +40,7 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useSettings()
-
-const ffprobeStatus = ref<ExternalToolStatus>({ name: 'ffprobe', available: false })
-const exiftoolStatus = ref<ExternalToolStatus>({ name: 'exiftool', available: false })
-const checkingTools = ref(false)
 const activeSection = ref('tools')
-
-const checkToolsStatus = async () => {
-  if (!hasTauriRuntime()) return
-  checkingTools.value = true
-  try {
-    const [ff, ex] = await Promise.all([checkFfprobeStatus(), checkExiftoolStatus()])
-    ffprobeStatus.value = ff
-    exiftoolStatus.value = ex
-  } catch (e) {
-    console.error('检测工具状态失败:', e)
-  } finally {
-    checkingTools.value = false
-  }
-}
-
-onMounted(() => {
-  checkToolsStatus()
-})
 
 let dragIndex = ref<number | null>(null)
 
@@ -99,7 +76,7 @@ const onDrop = (kind: 'video' | 'image', targetIndex: number) => {
         <div class="tools-status">
           <div class="tool-item">
             <span :class="['status-dot', props.mediaInfoStatus.available ? 'is-ok' : 'is-err']" />
-            <span class="tool-name">MediaInfo.dll</span>
+            <span class="tool-name">MediaInfo</span>
             <span :class="['tool-status', props.mediaInfoStatus.available ? 'text-ok' : 'text-err']">
               {{ props.mediaInfoStatus.available ? t('可用') : t('未找到') }}
             </span>
@@ -107,29 +84,6 @@ const onDrop = (kind: 'video' | 'image', targetIndex: number) => {
               {{ props.mediaInfoStatus.path }}
             </span>
           </div>
-          <div class="tool-item">
-            <span :class="['status-dot', ffprobeStatus.available ? 'is-ok' : 'is-warn']" />
-            <span class="tool-name">ffprobe</span>
-            <span :class="['tool-status', ffprobeStatus.available ? 'text-ok' : 'text-warn']">
-              {{ ffprobeStatus.available ? (ffprobeStatus.version || t('可用')) : t('未安装') }}
-            </span>
-            <span v-if="ffprobeStatus.path" class="tool-path" :title="ffprobeStatus.path">
-              {{ ffprobeStatus.path }}
-            </span>
-          </div>
-          <div class="tool-item">
-            <span :class="['status-dot', exiftoolStatus.available ? 'is-ok' : 'is-warn']" />
-            <span class="tool-name">exiftool</span>
-            <span :class="['tool-status', exiftoolStatus.available ? 'text-ok' : 'text-warn']">
-              {{ exiftoolStatus.available ? (exiftoolStatus.version || t('可用')) : t('未安装') }}
-            </span>
-            <span v-if="exiftoolStatus.path" class="tool-path" :title="exiftoolStatus.path">
-              {{ exiftoolStatus.path }}
-            </span>
-          </div>
-          <el-button size="small" text :loading="checkingTools" @click="checkToolsStatus">
-            {{ t('刷新状态') }}
-          </el-button>
         </div>
       </el-collapse-item>
 
@@ -166,7 +120,6 @@ const onDrop = (kind: 'video' | 'image', targetIndex: number) => {
                 <el-checkbox :model-value="props.visibleVideoColumns.duration" @update:model-value="(v: any) => emit('toggleColumns', 'video', 'duration', !!v)">{{ t('时长') }}</el-checkbox>
                 <el-checkbox :model-value="props.visibleVideoColumns.resolution" @update:model-value="(v: any) => emit('toggleColumns', 'video', 'resolution', !!v)">{{ t('分辨率') }}</el-checkbox>
                 <el-checkbox :model-value="props.visibleVideoColumns.bitrate" @update:model-value="(v: any) => emit('toggleColumns', 'video', 'bitrate', !!v)">{{ t('码率') }}</el-checkbox>
-                <el-checkbox :model-value="props.visibleVideoColumns.frameRate" @update:model-value="(v: any) => emit('toggleColumns', 'video', 'frameRate', !!v)">{{ t('帧率') }}</el-checkbox>
                 <el-checkbox :model-value="props.visibleVideoColumns.size" @update:model-value="(v: any) => emit('toggleColumns', 'video', 'size', !!v)">{{ t('文件大小') }}</el-checkbox>
                 <el-checkbox :model-value="props.visibleVideoColumns.preview" @update:model-value="(v: any) => emit('toggleColumns', 'video', 'preview', !!v)">{{ t('预览名称') }}</el-checkbox>
               </div>
@@ -261,7 +214,7 @@ const onDrop = (kind: 'video' | 'image', targetIndex: number) => {
           <div class="rename-buttons">
             <el-button plain type="primary" class="large-btn" @click="emit('previewRename')">{{ t('预览') }}</el-button>
             <el-button plain type="success" class="large-btn" @click="emit('applyRename')">{{ t('应用') }}</el-button>
-            <el-button plain type="warning" class="large-btn" :disabled="!props.canUndoRename" @click="emit('undoRename')">{{ t('撤销') }}</el-button>
+            <el-button plain type="warning" class="large-btn" :disabled="!props.canUndoRename" @click="emit('undoRename')">{{ props.undoStackDepth > 1 ? t('撤销') + `(${props.undoStackDepth})` : t('撤销') }}</el-button>
           </div>
         </div>
       </el-collapse-item>

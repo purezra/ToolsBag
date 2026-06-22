@@ -59,6 +59,7 @@ reqwest = { version = "0.12", features = ["json", "blocking"] }
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "macros"] }
 parking_lot = "0.12"
 libloading = "0.8"
+rusqlite = { version = "0.31", features = ["bundled"] }
 log = "0.4"
 
 [profile.release]

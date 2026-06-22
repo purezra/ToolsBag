@@ -1,17 +1,15 @@
 use crate::error::{AppError, AppResult};
 use crate::models::{VideoInfoImportResponse, VideoInfoItem};
-use crate::tools::{detect_media_type_from_path, mediainfo, MediaType};
+use crate::tools::{detect_media_type_from_path, media_cache, mediainfo, MediaType};
 use crate::utils::emit_progress;
 use exif;
 use rayon::prelude::*;
-use serde::Serialize;
-use serde_json::Value;
+use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
     fs::File,
     io::BufReader,
     path::{Path, PathBuf},
-    process::Command,
     sync::atomic::{AtomicUsize, Ordering},
 };
 use tauri::AppHandle;
@@ -35,11 +33,9 @@ fn parse_bitrate_to_mbps(s: &str) -> Option<f64> {
     if s.is_empty() || s == "-" {
         return None;
     }
-    // "10.0 Mbps"
     if let Some(rest) = s.strip_suffix("Mbps") {
         return rest.trim().parse::<f64>().ok();
     }
-    // "320 kb/s" or "320 Kbps"
     let (kb_suffix, kb_len) = if s.ends_with("kb/s") {
         (true, 4)
     } else if s.ends_with("Kbps") {
@@ -51,7 +47,6 @@ fn parse_bitrate_to_mbps(s: &str) -> Option<f64> {
         let rest = &s[..s.len() - kb_len];
         return rest.trim().parse::<f64>().ok().map(|v| v / 1000.0);
     }
-    // "2000000 bps"
     if let Some(rest) = s.strip_suffix("bps") {
         return rest.trim().parse::<f64>().ok().map(|v| v / 1_000_000.0);
     }
@@ -64,8 +59,6 @@ type VideoProbeResult = (
     Option<u32>,
     Option<f64>,
     Option<String>,
-    Option<String>,
-    Option<String>,
 );
 type ImageProbeResult = (
     Option<u32>,
@@ -76,7 +69,7 @@ type ImageProbeResult = (
     Option<String>,
 );
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MediaItem {
     pub id: u64,
@@ -88,8 +81,6 @@ pub struct MediaItem {
     pub width: Option<u32>,
     pub height: Option<u32>,
     pub bitrate_mbps: Option<f64>,
-    pub codec: Option<String>,
-    pub frame_rate: Option<String>,
     pub device: Option<String>,
     pub taken_at: Option<String>,
     pub focal_length: Option<String>,
@@ -146,122 +137,6 @@ pub fn get_mediainfo_status() -> MediaInfoStatus {
         None
     };
     MediaInfoStatus { available, path }
-}
-
-/// 检测 ffprobe 是否可用及版本
-#[tauri::command]
-pub fn check_ffprobe_status() -> ExternalToolStatus {
-    let mut cmd = Command::new("ffprobe");
-    cmd.args(["-version"]);
-
-    #[cfg(target_os = "windows")]
-    {
-        cmd.creation_flags(CREATE_NO_WINDOW);
-    }
-
-    match cmd.output() {
-        Ok(output) if output.status.success() => {
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            // 解析版本号，格式如 "ffprobe version 6.0-full_build-www.gyan.dev ..."
-            let version = stdout.lines().next().and_then(|line| {
-                if line.contains("version") {
-                    line.split_whitespace()
-                        .skip_while(|s| *s != "version")
-                        .nth(1)
-                        .map(|v| v.to_string())
-                } else {
-                    None
-                }
-            });
-
-            // 尝试获取路径
-            let path = get_command_path("ffprobe");
-
-            ExternalToolStatus {
-                name: "ffprobe".into(),
-                available: true,
-                version,
-                path,
-            }
-        }
-        _ => ExternalToolStatus {
-            name: "ffprobe".into(),
-            available: false,
-            version: None,
-            path: None,
-        },
-    }
-}
-
-/// 检测 exiftool 是否可用及版本
-#[tauri::command]
-pub fn check_exiftool_status() -> ExternalToolStatus {
-    let mut cmd = Command::new("exiftool");
-    cmd.args(["-ver"]);
-
-    #[cfg(target_os = "windows")]
-    {
-        cmd.creation_flags(CREATE_NO_WINDOW);
-    }
-
-    match cmd.output() {
-        Ok(output) if output.status.success() => {
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            let version = stdout.trim().to_string();
-            let path = get_command_path("exiftool");
-
-            ExternalToolStatus {
-                name: "exiftool".into(),
-                available: true,
-                version: if version.is_empty() {
-                    None
-                } else {
-                    Some(version)
-                },
-                path,
-            }
-        }
-        _ => ExternalToolStatus {
-            name: "exiftool".into(),
-            available: false,
-            version: None,
-            path: None,
-        },
-    }
-}
-
-/// 获取命令的完整路径
-fn get_command_path(cmd_name: &str) -> Option<String> {
-    #[cfg(target_os = "windows")]
-    {
-        let mut cmd = Command::new("where");
-        cmd.arg(cmd_name);
-        cmd.creation_flags(CREATE_NO_WINDOW);
-
-        if let Ok(output) = cmd.output() {
-            if output.status.success() {
-                return String::from_utf8_lossy(&output.stdout)
-                    .lines()
-                    .next()
-                    .map(|s| s.to_string());
-            }
-        }
-    }
-
-    #[cfg(not(target_os = "windows"))]
-    {
-        let cmd = Command::new("which").arg(cmd_name).output();
-        if let Ok(output) = cmd {
-            if output.status.success() {
-                return String::from_utf8_lossy(&output.stdout)
-                    .trim()
-                    .to_string()
-                    .into();
-            }
-        }
-    }
-
-    None
 }
 
 #[tauri::command]
@@ -360,8 +235,6 @@ fn import_media_inner(
                     width: None,
                     height: None,
                     bitrate_mbps: None,
-                    codec: None,
-                    frame_rate: None,
                     device: None,
                     taken_at: None,
                     focal_length: None,
@@ -478,299 +351,128 @@ fn build_format_counts(paths: &[PathBuf]) -> Vec<FormatCount> {
 }
 
 fn build_media_item(idx: u64, path: &Path) -> AppResult<MediaItem> {
+    let path_str = path.to_string_lossy().to_string();
+    let md = std::fs::metadata(path)?;
+    let mtime_ms = md
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_millis() as u64);
+
+    // 缓存命中则直接返回
+    if let Some(mtime) = mtime_ms {
+        if let Some(cached) = media_cache::get_cached_item(&path_str, mtime) {
+            if let Ok(item) = serde_json::from_value::<MediaItem>(cached) {
+                return Ok(item);
+            }
+        }
+    }
+
     let media_type = detect_media_type_from_path(path)
         .ok_or_else(|| AppError::UnsupportedFormat(path.to_string_lossy().to_string()))?;
-    let md = std::fs::metadata(path)?;
     let size = md.len();
     let name = path
         .file_name()
         .map(|s| s.to_string_lossy().to_string())
         .unwrap_or_else(|| "unknown".into());
 
-    if media_type == MediaType::Video {
-        let (duration, width, height, bitrate, codec, frame_rate, err) = probe_video(path);
-        return Ok(MediaItem {
+    let item = if media_type == MediaType::Video {
+        // 轻量提取：只取重命名需要的扁平字段
+        let (duration, width, height, bitrate, err) = probe_video(path);
+        MediaItem {
             id: idx,
             name,
-            path: path.to_string_lossy().to_string(),
+            path: path_str.clone(),
             size,
             media_type: media_type.as_str().to_string(),
             duration_sec: duration,
             width,
             height,
             bitrate_mbps: bitrate,
-            codec,
-            frame_rate,
             device: None,
             taken_at: None,
             focal_length: None,
             status: "success".to_string(),
             reason: err,
-        });
+        }
+    } else {
+        // 图片：MediaInfo 轻量提取 + kamadak-exif 补充
+        let (width, height, device, taken_at, focal_length, err) = probe_image(path);
+        MediaItem {
+            id: idx,
+            name,
+            path: path_str.clone(),
+            size,
+            media_type: media_type.as_str().to_string(),
+            duration_sec: None,
+            width,
+            height,
+            bitrate_mbps: None,
+            device,
+            taken_at,
+            focal_length,
+            status: "success".to_string(),
+            reason: err,
+        }
+    };
+
+    // 写入缓存
+    if let Some(mtime) = mtime_ms {
+        serde_json::to_value(&item)
+            .ok()
+            .map(|v| media_cache::set_cached_item(&path_str, mtime, &v));
     }
 
-    let (width, height, device, taken_at, focal_length, err) = probe_image(path);
-    Ok(MediaItem {
-        id: idx,
-        name,
-        path: path.to_string_lossy().to_string(),
-        size,
-        media_type: media_type.as_str().to_string(),
-        duration_sec: None,
-        width,
-        height,
-        bitrate_mbps: None,
-        codec: None,
-        frame_rate: None,
-        device,
-        taken_at,
-        focal_length,
-        status: "success".to_string(),
-        reason: err,
-    })
+    Ok(item)
 }
 
+/// 视频轻量提取：只用 MediaInfo get_video_meta，不走深度提取
 fn probe_video(path: &Path) -> VideoProbeResult {
-    // 优先使用 MediaInfo
+    if !mediainfo::is_mediainfo_available() {
+        return (None, None, None, None, Some("MediaInfo 不可用".to_string()));
+    }
+    let meta = match mediainfo::get_video_meta(path) {
+        Some(m) => m,
+        None => return (None, None, None, None, Some("MediaInfo 提取失败".to_string())),
+    };
+    let duration = if meta.duration_ms > 0 {
+        Some(meta.duration_ms as f64 / 1000.0)
+    } else {
+        None
+    };
+    let bitrate = if meta.bitrate_raw > 0 {
+        Some(meta.bitrate_raw as f64 / 1_000_000.0)
+    } else {
+        None
+    };
+    (
+        duration,
+        Some(meta.width),
+        Some(meta.height),
+        bitrate,
+        None,
+    )
+}
+
+/// 图片轻量提取：MediaInfo get_image_meta + kamadak-exif 补充 device/takenAt/focalLength
+fn probe_image(path: &Path) -> ImageProbeResult {
+    // 优先用 MediaInfo 获取 width/height
     if mediainfo::is_mediainfo_available() {
-        if let Some(meta) = mediainfo::get_video_meta(path) {
-            let duration = if meta.duration_ms > 0 {
-                Some(meta.duration_ms as f64 / 1000.0)
-            } else {
-                None
-            };
-            let bitrate = if meta.bitrate_raw > 0 {
-                Some(meta.bitrate_raw as f64 / 1_000_000.0)
-            } else {
-                None
-            };
-            let frame_rate = if meta.frame_rate.is_empty() || meta.frame_rate == "-" {
-                None
-            } else {
-                Some(meta.frame_rate)
-            };
+        if let Some(img_meta) = mediainfo::get_image_meta(path) {
+            // 用 kamadak-exif 补充 EXIF 字段
+            let (device, taken_at, focal_length) = read_exif(path);
             return (
-                duration,
-                Some(meta.width),
-                Some(meta.height),
-                bitrate,
-                Some(meta.codec),
-                frame_rate,
+                Some(img_meta.width),
+                Some(img_meta.height),
+                device,
+                taken_at,
+                focal_length,
                 None,
             );
         }
     }
-
-    // 回退到 ffprobe
-    probe_video_ffprobe(path)
-}
-
-fn probe_video_ffprobe(path: &Path) -> VideoProbeResult {
-    let mut cmd = Command::new("ffprobe");
-    cmd.args([
-        "-v",
-        "error",
-        "-select_streams",
-        "v:0",
-        "-show_entries",
-        "stream=width,height,bit_rate,codec_name,r_frame_rate",
-        "-show_entries",
-        "format=duration,bit_rate,format_name",
-        "-of",
-        "json",
-        path.to_string_lossy().as_ref(),
-    ]);
-
-    #[cfg(target_os = "windows")]
-    {
-        cmd.creation_flags(CREATE_NO_WINDOW);
-    }
-
-    let output = cmd.output();
-
-    let output = match output {
-        Ok(o) => o,
-        Err(e) => {
-            return (
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                Some(format!("ffprobe 不可用: {}", e)),
-            )
-        }
-    };
-
-    if !output.status.success() {
-        return (
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            Some(String::from_utf8_lossy(&output.stderr).to_string()),
-        );
-    }
-
-    #[derive(serde::Deserialize)]
-    struct FfFormat {
-        duration: Option<String>,
-        bit_rate: Option<String>,
-    }
-    #[derive(serde::Deserialize)]
-    struct FfStream {
-        width: Option<u32>,
-        height: Option<u32>,
-        bit_rate: Option<String>,
-        codec_name: Option<String>,
-        r_frame_rate: Option<String>,
-    }
-    #[derive(serde::Deserialize)]
-    struct Ffprobe {
-        streams: Option<Vec<FfStream>>,
-        format: Option<FfFormat>,
-    }
-
-    let parsed: Ffprobe = serde_json::from_slice(&output.stdout)
-        .map_err(|e| e.to_string())
-        .unwrap_or(Ffprobe {
-            streams: None,
-            format: None,
-        });
-
-    let stream = parsed.streams.as_ref().and_then(|s| s.first());
-    let width = stream.and_then(|s| s.width);
-    let height = stream.and_then(|s| s.height);
-    // 优先使用流级别码率，若不可用则回退到 format 级别码率（MKV 等容器常见）
-    let bitrate = stream
-        .and_then(|s| s.bit_rate.as_ref())
-        .and_then(|s| s.parse::<f64>().ok())
-        .or_else(|| {
-            parsed
-                .format
-                .as_ref()
-                .and_then(|f| f.bit_rate.as_ref())
-                .and_then(|s| s.parse::<f64>().ok())
-        })
-        .map(|b| b / 1_000_000.0);
-    let codec = stream.and_then(|s| s.codec_name.clone());
-    let frame_rate = stream.and_then(|s| s.r_frame_rate.clone()).and_then(|fr| {
-        // 解析 "30/1" 或 "30000/1001" 格式
-        let parts: Vec<&str> = fr.split('/').collect();
-        if parts.len() == 2 {
-            let num: f64 = parts[0].parse().ok()?;
-            let den: f64 = parts[1].parse().ok()?;
-            if den > 0.0 {
-                let fps = num / den;
-                // 格式化：整数不显示小数，否则保留2位
-                if fps == fps.floor() {
-                    Some(format!("{}", fps as u32))
-                } else {
-                    let formatted = format!("{:.2}", fps);
-                    let trimmed = formatted.trim_end_matches('0').trim_end_matches('.');
-                    Some(trimmed.to_string())
-                }
-            } else {
-                None
-            }
-        } else {
-            None
-        }
-    });
-    let duration = parsed
-        .format
-        .and_then(|f| f.duration)
-        .and_then(|d| d.parse::<f64>().ok());
-
-    (duration, width, height, bitrate, codec, frame_rate, None)
-}
-
-fn probe_image(path: &Path) -> ImageProbeResult {
-    let mut cmd = Command::new("exiftool");
-    cmd.args([
-        "-json",
-        "-n",
-        "-ImageWidth",
-        "-ImageHeight",
-        "-Make",
-        "-Model",
-        "-DateTimeOriginal",
-        "-FocalLength",
-        "-FileSize#",
-        path.to_string_lossy().as_ref(),
-    ]);
-
-    #[cfg(target_os = "windows")]
-    {
-        cmd.creation_flags(CREATE_NO_WINDOW);
-    }
-
-    match cmd.output() {
-        Ok(output) if output.status.success() => {
-            let parsed: Vec<Value> = serde_json::from_slice(&output.stdout).unwrap_or_default();
-            if let Some(first) = parsed.first() {
-                let width = first
-                    .get("ImageWidth")
-                    .and_then(|v| v.as_u64())
-                    .map(|v| v as u32);
-                let height = first
-                    .get("ImageHeight")
-                    .and_then(|v| v.as_u64())
-                    .map(|v| v as u32);
-                let make = first
-                    .get("Make")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .trim();
-                let model = first
-                    .get("Model")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("")
-                    .trim();
-                let device = match (make.is_empty(), model.is_empty()) {
-                    (false, false) => Some(format!("{} {}", make, model)),
-                    (false, true) => Some(make.to_string()),
-                    (true, false) => Some(model.to_string()),
-                    _ => None,
-                };
-                let taken_at = first
-                    .get("DateTimeOriginal")
-                    .and_then(|v| v.as_str())
-                    .map(|s| s.to_string());
-                let focal = first
-                    .get("FocalLength")
-                    .and_then(|v| v.as_str())
-                    .map(|s| s.to_string());
-                (width, height, device, taken_at, focal, None)
-            } else {
-                probe_image_fallback(path)
-            }
-        }
-        Ok(output) => {
-            let fallback_err = String::from_utf8_lossy(&output.stderr).to_string();
-            let (w, h, device, taken_at, focal, inner_err) = probe_image_fallback(path);
-            (
-                w,
-                h,
-                device,
-                taken_at,
-                focal,
-                inner_err.or(Some(fallback_err)),
-            )
-        }
-        Err(e) => {
-            let (w, h, device, taken_at, focal, inner_err) = probe_image_fallback(path);
-            let reason = if inner_err.is_some() {
-                inner_err
-            } else {
-                Some(format!("exiftool 不可用: {}", e))
-            };
-            (w, h, device, taken_at, focal, reason)
-        }
-    }
+    // MediaInfo 不可用或提取失败：fallback 到 image crate + kamadak-exif
+    probe_image_fallback(path)
 }
 
 fn probe_image_fallback(path: &Path) -> ImageProbeResult {

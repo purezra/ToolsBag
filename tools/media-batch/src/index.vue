@@ -41,8 +41,6 @@ const handleAddToRename = (videoItems: VideoInfoItem[]) => {
     width: item.width,
     height: item.height,
     bitrateMbps: item.bitrateMbps,
-    codec: item.codec,
-    frameRate: item.frameRate,
   }))
   batch.videoRows = batch.mergeByPath(batch.videoRows, rows)
   ElMessage.success(t('已加入重命名：{n} 个', { n: rows.length }))
@@ -168,6 +166,7 @@ const handleInspect = async (path: string) => {
               :show-preview="batch.showPreview"
               :rename-safety-summary="batch.renameSafetySummary"
               :can-undo-rename="batch.canUndoRename"
+              :undo-stack-depth="batch.undoStackDepth"
               @update:durationFormat="(val) => (batch.durationFormat = val)"
               @update:customText="(val) => (batch.customText = val)"
               @update:separator="(val) => (batch.separator = val)"

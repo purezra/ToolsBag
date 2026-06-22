@@ -85,7 +85,6 @@ export const useMediaBatch = () => {
     { key: 'custom', label: '自定义文本', enabled: true },
     { key: 'resolution', label: '分辨率', enabled: false },
     { key: 'bitrate', label: '码率', enabled: false },
-    { key: 'frameRate', label: '帧率', enabled: false },
     { key: 'filename', label: '原始文件名', enabled: false },
     { key: 'size', label: '文件大小', enabled: false }
   ])
@@ -112,7 +111,6 @@ export const useMediaBatch = () => {
     duration: true,
     resolution: true,
     bitrate: true,
-    frameRate: false,
     size: true,
     preview: false
   })
@@ -129,7 +127,7 @@ export const useMediaBatch = () => {
   const showPreview = ref(false)
   const liveImports = ref<LiveImportItem[]>([])
   const lastImportKind = ref<ImportKind>('file')
-  const lastRenameBatch = ref<UndoRenameItem[]>([])
+  const lastRenameBatch = ref<UndoRenameItem[][]>([])
   let unlistenProgress: (() => void) | null = null
   const videoSort = ref<{ prop: string | null; order: 'ascending' | 'descending' | null }>({ prop: null, order: null })
   const imageSort = ref<{ prop: string | null; order: 'ascending' | 'descending' | null }>({ prop: null, order: null })
@@ -275,6 +273,7 @@ export const useMediaBatch = () => {
   )
 
   const canUndoRename = computed(() => lastRenameBatch.value.length > 0)
+  const undoStackDepth = computed(() => lastRenameBatch.value.length)
 
   const basicStats = computed(() => {
     const successVideos = videoRows.value.filter((item) => item.status === 'success')
@@ -431,8 +430,6 @@ export const useMediaBatch = () => {
           height: 0,
           durationSec: 0,
           bitrateMbps: 0,
-          codec: '',
-          frameRate: ''
         })
       } else {
         pendingImages.push({
@@ -812,28 +809,37 @@ export const useMediaBatch = () => {
 
     try {
       const undoItems: UndoRenameItem[] = []
-      for (const item of plan) {
-        if (item.unchanged) {
-          success++
-          continue
-        }
-
-        try {
-          await renamePath(item.sourcePath, item.targetPath)
-          updateRowAfterRename(kind, item.sourcePath, item.targetPath, item.targetName)
-          undoItems.push({
-            originalPath: item.sourcePath,
-            originalName: item.sourceName,
-            currentPath: item.targetPath,
-            currentName: item.targetName,
-            kind
+      const BATCH_SIZE = 10
+      for (let i = 0; i < plan.length; i += BATCH_SIZE) {
+        const batch = plan.slice(i, i + BATCH_SIZE)
+        const results = await Promise.allSettled(
+          batch.map(async (item) => {
+            if (item.unchanged) return { type: 'unchanged' as const, item }
+            await renamePath(item.sourcePath, item.targetPath)
+            return { type: 'renamed' as const, item }
           })
-          success++
-        } catch (e: any) {
-          failed.push({ name: item.sourceName, reason: e?.toString() || t('重命名失败') })
+        )
+        for (let j = 0; j < results.length; j++) {
+          const result = results[j]!
+          const item = batch[j]!
+          if (result.status === 'fulfilled') {
+            if (result.value.type === 'renamed') {
+              updateRowAfterRename(kind, item.sourcePath, item.targetPath, item.targetName)
+              undoItems.push({
+                originalPath: item.sourcePath,
+                originalName: item.sourceName,
+                currentPath: item.targetPath,
+                currentName: item.targetName,
+                kind
+              })
+            }
+            success++
+          } else {
+            failed.push({ name: item.sourceName, reason: result.reason?.toString() || t('重命名失败') })
+          }
         }
       }
-      lastRenameBatch.value = undoItems
+      lastRenameBatch.value.push(undoItems)
 
       if (failed.length) {
         ElMessage.warning(
@@ -852,8 +858,9 @@ export const useMediaBatch = () => {
       ElMessage.info(t('没有可撤销的重命名记录'))
       return
     }
+    const batch = lastRenameBatch.value[lastRenameBatch.value.length - 1]!
     const confirmed = await ElMessageBox.confirm(
-      t('将撤销上一次重命名，共 {count} 个文件。是否继续？', { count: lastRenameBatch.value.length }),
+      t('将撤销上一次重命名，共 {count} 个文件。是否继续？', { count: batch.length }),
       t('撤销重命名'),
       {
         confirmButtonText: t('撤销'),
@@ -866,7 +873,6 @@ export const useMediaBatch = () => {
     let success = 0
     const failed: { name: string; reason: string }[] = []
     const failedIndices = new Set<number>()
-    const batch = lastRenameBatch.value
     for (let i = batch.length - 1; i >= 0; i--) {
       const item = batch[i]
       if (!item) continue
@@ -890,11 +896,15 @@ export const useMediaBatch = () => {
       }
     }
 
+    // pop the current layer from stack
+    lastRenameBatch.value.pop()
+
     if (failed.length) {
-      lastRenameBatch.value = batch.filter((_, i) => failedIndices.has(i))
+      // push back only the failed items as a new layer for potential retry
+      const remaining = batch.filter((_, i) => failedIndices.has(i))
+      if (remaining.length) lastRenameBatch.value.push(remaining)
       ElMessage.warning(t('撤销完成：成功 {success} 个，失败 {failed} 个', { success, failed: failed.length }))
     } else {
-      lastRenameBatch.value = []
       ElMessage.success(t('撤销完成：成功 {success} 个', { success }))
     }
   }
@@ -944,7 +954,6 @@ export const useMediaBatch = () => {
           duration: true,
           resolution: true,
           bitrate: true,
-          frameRate: true,
           size: true,
           preview: true
         })
@@ -954,7 +963,6 @@ export const useMediaBatch = () => {
           duration: true,
           resolution: true,
           bitrate: true,
-          frameRate: false,
           size: true,
           preview: true
         })
@@ -1009,7 +1017,6 @@ export const useMediaBatch = () => {
       visibleVideoColumns.duration = true
       visibleVideoColumns.resolution = true
       visibleVideoColumns.bitrate = true
-      visibleVideoColumns.frameRate = false
       visibleVideoColumns.size = true
     } else {
       visibleImageColumns.preview = false
@@ -1074,6 +1081,7 @@ export const useMediaBatch = () => {
     showPreview,
     renameSafetySummary,
     canUndoRename,
+    undoStackDepth,
     formatBytes,
     formatDuration,
     handleImport,

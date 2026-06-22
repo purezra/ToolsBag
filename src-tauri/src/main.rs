@@ -16,6 +16,7 @@ mod webdav;
 use crate::tools::image_compress;
 use crate::tools::image_to_pdf;
 use crate::tools::media_batch;
+use crate::tools::media_cache;
 use std::{path::PathBuf, process::Command};
 use tauri::Manager;
 use tauri_plugin_sql::{Migration, MigrationKind};
@@ -153,6 +154,22 @@ fn main() {
                 tools::mediainfo::set_resource_dir(res_dir.clone());
                 image_compress::set_resource_dir(res_dir);
             }
+            // 初始化媒体缓存数据库到 app_data_dir，fallback 到临时目录
+            {
+                let db_path = match app.path().app_data_dir() {
+                    Ok(dir) => {
+                        let _ = std::fs::create_dir_all(&dir);
+                        dir.join("media_cache.db")
+                    }
+                    Err(e) => {
+                        log::warn!("media_cache: 获取 app_data_dir 失败 ({}), fallback 到临时目录", e);
+                        let dir = std::env::temp_dir().join("toolsbag");
+                        let _ = std::fs::create_dir_all(&dir);
+                        dir.join("media_cache.db")
+                    }
+                };
+                media_cache::init_cache(&db_path);
+            }
             Ok(())
         })
         .plugin(tauri_plugin_dialog::init())
@@ -167,8 +184,6 @@ fn main() {
             media_batch::select_media_paths,
             media_batch::read_clipboard_paths,
             media_batch::get_mediainfo_status,
-            media_batch::check_ffprobe_status,
-            media_batch::check_exiftool_status,
             media_batch::import_detailed_video_info,
             media_batch::get_video_raw_xml,
             media_batch::get_video_complete_info,

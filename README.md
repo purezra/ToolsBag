@@ -8,10 +8,10 @@
 
 | 工具 | 说明 |
 |------|------|
-| **媒体元数据中心** | 批量导入视频/图片/音频，通过 MediaInfo / ffprobe / exiftool 提取元数据，支持整理命名、视频体检与报告导出 |
+| **媒体探针** | 批量导入视频/图片/音频，通过 MediaInfo / ffprobe / exiftool 提取元数据，支持整理命名、视频体检与报告导出 |
 | **PDF合成（原样）** | 无损合成图片为 PDF，保留原始 JPEG 字节，支持 CMYK 转换与 EXIF 方向校正 |
-| **文件遍历提取** | 多线程高速文件复制，按格式过滤与分类，支持媒体预览 |
-| **码本** | Argon2id + AES-256-GCM 加密的密码保险箱，支持 WebDAV 多设备同步、VaultX V2 导入导出、设备管理与回收站 |
+| **文件收割** | 多线程高速文件复制，按格式过滤与分类，支持媒体预览 |
+| **密码册** | Argon2id + AES-256-GCM 加密的密码保险箱，支持 WebDAV 多设备同步、VaultX V2 导入导出、设备管理与回收站 |
 | **图片合成PDF** | 高确定性图片合并 PDF，支持 A4/A3/B5/iPad Pro 等页面尺寸、边距控制、JPEG 质量调节 |
 
 ## 技术栈
@@ -70,11 +70,11 @@ ToolsBag 是 Tauri 应用：Vue/Vite 前端由 npm 生态管理，Rust 后端由
 toolsbag1/
 ├── core/               # Vue 公共层（App、hooks、API、组件）
 ├── tools/              # 各工具前端模块
-│   ├── media-batch/    # 媒体元数据中心
+│   ├── media-batch/    # 媒体探针
 │   ├── image-batch/    # PDF 合成（原样）
 │   ├── image-to-pdf/   # 图片合成 PDF
-│   ├── file-traverse/  # 文件遍历提取
-│   └── codebook/       # 码本
+│   ├── file-traverse/  # 文件收割
+│   └── codebook/       # 密码册
 ├── config/             # Vite + TypeScript 配置
 ├── public/             # 静态资源
 ├── src-tauri/          # Rust 后端
@@ -95,7 +95,7 @@ MIT
 
 ## 安全说明
 
-- 码本数据使用 Argon2id + AES-256-GCM + HMAC-SHA256 保护。
+- 密码册数据使用 Argon2id + AES-256-GCM + HMAC-SHA256 保护。
 - WebDAV 同步配置包含服务端凭据；新版保存时会在保险库解锁状态下加密落盘，旧版明文配置只会在解锁后迁移为加密格式。
 - WebDAV 远端内容使用保险库主密钥派生同步密钥后端到端加密；HTTP WebDAV 仅允许 localhost / 127.0.0.1 调试，生产地址必须使用 HTTPS。
 - Tauri 前端不再暴露 `fs:read-all` / `fs:write-all` / `shell:default` 权限；文件写入、重命名和扫描统一经后端命令做范围校验。

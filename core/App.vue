@@ -29,7 +29,7 @@ type Tool = {
 const tools: Tool[] = [
   {
     key: 'media-batch',
-    name: '媒体元数据中心',
+    name: '媒体探针',
     desc: '提取视频/图片元数据，批量整理命名，并输出视频体检报告',
     tag: 'V2',
     tagType: 'primary',
@@ -40,7 +40,7 @@ const tools: Tool[] = [
   },
   {
     key: 'image-tools',
-    name: '图片工具箱',
+    name: '图片工坊',
     desc: '集中处理图片批量操作、AVIF/JXL 压缩转换与图片合成 PDF',
     tag: 'Suite',
     tagType: 'success',
@@ -51,7 +51,7 @@ const tools: Tool[] = [
   },
   {
     key: 'file-traverse',
-    name: '文件遍历提取',
+    name: '文件收割',
     desc: '高速复制、按格式分类与过滤，批量提取整理',
     tag: 'New',
     tagType: 'primary',
@@ -62,7 +62,7 @@ const tools: Tool[] = [
   },
   {
     key: 'codebook',
-    name: '码本',
+    name: '密码册',
     desc: '密码生成器与账号资产管理，安全存储与导出',
     tag: 'New',
     tagType: 'warning',

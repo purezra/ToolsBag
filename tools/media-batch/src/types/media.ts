@@ -15,8 +15,6 @@ export type VideoRow = BaseRow & {
   width?: number
   height?: number
   bitrateMbps?: number
-  codec?: string
-  frameRate?: string
 }
 
 export type ImageRow = BaseRow & {
@@ -32,7 +30,6 @@ export type RenameFieldKey =
   | 'duration'
   | 'resolution'
   | 'bitrate'
-  | 'frameRate'
   | 'device'
   | 'takenAt'
   | 'focal'

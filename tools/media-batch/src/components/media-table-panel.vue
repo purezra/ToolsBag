@@ -12,7 +12,7 @@ const props = defineProps<{
   fileTypeTab: MediaKind
   tableVideos: TableVideo[]
   tableImages: TableImage[]
-  visibleVideoColumns: { duration: boolean; resolution: boolean; bitrate: boolean; frameRate: boolean; size: boolean; preview: boolean }
+  visibleVideoColumns: { duration: boolean; resolution: boolean; bitrate: boolean; size: boolean; preview: boolean }
   visibleImageColumns: { resolution: boolean; device: boolean; takenAt: boolean; focalLength: boolean; size: boolean; preview: boolean }
   showPreview: boolean
   formatBytes: (value: number) => string
@@ -113,12 +113,6 @@ const hasData = (kind: MediaKind) =>
             <span v-if="row.bitrateMbps">{{ row.bitrateMbps.toFixed(2) }} Mbps</span>
             <span v-else>-</span>
           </template>
-        </el-table-column>
-        <el-table-column
-          v-if="props.visibleVideoColumns.frameRate"
-          :label="t('帧率')" prop="frameRate" width="90" align="center"
-        >
-          <template #default="{ row }">{{ row.frameRate || '-' }}</template>
         </el-table-column>
         <el-table-column
           v-if="props.visibleVideoColumns.size"
