@@ -1,25 +1,20 @@
 <script setup lang="ts">
-import { FolderAdd, Plus, RefreshRight, Upload } from '@element-plus/icons-vue'
+import { RefreshRight } from '@element-plus/icons-vue'
 import { useSettings } from '@core/hooks/useSettings'
-
-type ImportKind = 'file' | 'folder' | 'clipboard'
 
 const props = defineProps<{
   importing: boolean
   batchSize: number
   allowAutoRefresh: boolean
-  recursive: boolean
 }>()
 
 const emit = defineEmits<{
   (e: 'update:batchSize', value: number): void
   (e: 'update:allowAutoRefresh', value: boolean): void
-  (e: 'update:recursive', value: boolean): void
-  (e: 'import', kind: ImportKind): void
   (e: 'refresh'): void
 }>()
 
-const handleChange = (key: 'batchSize' | 'allowAutoRefresh' | 'recursive', value: any) => {
+const handleChange = (key: 'batchSize' | 'allowAutoRefresh', value: any) => {
   emit(`update:${key}` as any, value)
 }
 
@@ -32,17 +27,6 @@ const { t } = useSettings()
       <h3 class="header-title">{{ t('视频与图片列表') }}</h3>
     </div>
     <div class="header-right">
-      <div class="actions">
-        <el-button :icon="Plus" size="small" :loading="props.importing" @click="emit('import', 'file')">
-          {{ t('添加') }}
-        </el-button>
-        <el-button :icon="FolderAdd" size="small" :loading="props.importing" @click="emit('import', 'folder')">
-          {{ t('文件夹') }}
-        </el-button>
-        <el-button :icon="Upload" size="small" plain :loading="props.importing" @click="emit('import', 'clipboard')">
-          {{ t('粘贴') }}
-        </el-button>
-      </div>
       <div class="meta-controls">
         <el-select :model-value="props.batchSize" size="small" style="width: 80px" @change="(val: number) => handleChange('batchSize', val)">
           <el-option v-for="size in [10, 20, 50, 100]" :key="size" :label="`${size}`" :value="size" />
@@ -50,10 +34,6 @@ const { t } = useSettings()
         <label class="switch-field">
           <span class="switch-label">{{ t('自动') }}</span>
           <el-switch :model-value="props.allowAutoRefresh" size="small" @change="(val: string | number | boolean) => handleChange('allowAutoRefresh', Boolean(val))" />
-        </label>
-        <label class="switch-field">
-          <span class="switch-label">{{ t('递归') }}</span>
-          <el-switch :model-value="props.recursive" size="small" @change="(val: string | number | boolean) => handleChange('recursive', Boolean(val))" />
         </label>
         <el-button :icon="RefreshRight" size="small" @click="emit('refresh')">{{ t('刷新') }}</el-button>
       </div>
@@ -83,10 +63,6 @@ const { t } = useSettings()
   display: flex;
   align-items: center;
   gap: 8px;
-}
-.actions {
-  display: flex;
-  gap: 4px;
 }
 .meta-controls {
   display: flex;

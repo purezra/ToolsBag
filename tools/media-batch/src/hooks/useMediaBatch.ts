@@ -8,6 +8,34 @@ import { formatBytes, formatDuration, type DurationFormat } from '@core/utils/fo
 import { hasTauriRuntime } from '@core/utils/tauri'
 import { useFileSelect } from '@core/hooks/useFileSelect'
 import { useSettings } from '@core/hooks/useSettings'
+
+/** 统一风格的确认弹窗：居中图标 + 标题 + 描述，所有弹窗视觉一致 */
+function confirmDialog(options: {
+  icon: string
+  title: string
+  desc: string
+  confirmText: string
+  cancelText: string
+  confirmType?: 'primary' | 'danger' | 'warning'
+}): Promise<boolean> {
+  const { icon, title, desc, confirmText, cancelText, confirmType = 'primary' } = options
+  return ElMessageBox.confirm(
+    `<div style="display:flex;flex-direction:column;align-items:center;gap:12px;padding:8px 0;">
+      <div style="font-size:32px;line-height:1;">${icon}</div>
+      <div style="font-weight:600;font-size:15px;color:var(--text-primary,#1a1d26);">${title}</div>
+      <div style="font-size:13px;color:var(--text-secondary,#6d7387);text-align:center;line-height:1.6;">${desc}</div>
+    </div>`,
+    '',
+    {
+      dangerouslyUseHTMLString: true,
+      confirmButtonText: confirmText,
+      cancelButtonText: cancelText,
+      confirmButtonClass: confirmType === 'danger' ? 'el-button--danger' : '',
+      type: '',
+      center: true,
+    }
+  ).then(() => true).catch(() => false)
+}
 import type { ImageRow, MediaKind, MediaInfoStatus, RenameField, RenameSafetySummary, VideoRow } from '../types/media'
 
 const VIDEO_EXTS = ['mp4', 'mov', 'mkv', 'avi', 'm4v', 'wmv', 'flv', 'webm', 'ts', 'mts', 'm2ts']
@@ -48,7 +76,7 @@ type UndoRenameItem = {
 const LIVE_IMPORT_SNAPSHOT_LIMIT = 80
 const LIVE_IMPORT_DISPLAY_LIMIT = 120
 
-export const useMediaBatch = () => {
+const useMediaBatchImpl = () => {
   const { pick } = useFileSelect()
   const { t } = useSettings()
 
@@ -158,8 +186,7 @@ export const useMediaBatch = () => {
   })
 
   onBeforeUnmount(() => {
-    unlistenProgress?.()
-    unlistenProgress = null
+    // ponytail: 会话级持久——不卸载进度监听，单例数据跨视图/跨工具切换保留
   })
 
   const formatPreviewName = (row: VideoRow | ImageRow, index: number) => {
@@ -489,9 +516,23 @@ export const useMediaBatch = () => {
 
   const mergeByPath = <T extends VideoRow | ImageRow>(prev: T[], next: T[]) => {
     const map = new Map<string, T>()
-    prev.forEach((item) => map.set(item.path, item))
-    next.forEach((item) => map.set(item.path, item))
-    return Array.from(map.values()).map((item, idx) => ({ ...item, id: idx + 1 } as T))
+    for (let i = 0; i < prev.length; i++) {
+      const p = prev[i]!
+      map.set(p.path, p)
+    }
+    for (let i = 0; i < next.length; i++) {
+      const n = next[i]!
+      map.set(n.path, n)
+    }
+    const out = new Array<T>(map.size)
+    let idx = 0
+    for (const item of map.values()) {
+      // ponytail: 直接替换 id 避免每行 spread 开销（此处由 mergeByPath 管理 id 分配）
+      item.id = idx + 1
+      out[idx] = item
+      idx++
+    }
+    return out
   }
 
   // 导入完成后的收尾定时器句柄；新一轮导入前清除，避免上一轮残留回调
@@ -567,6 +608,29 @@ export const useMediaBatch = () => {
       } else {
         ElMessage.success(`${t('导入完成')}：${importSummary.value}`)
       }
+
+      // 空文件夹兜底：非递归 + 文件夹模式 + 0 成功 → 询问是否递归再扫
+      if (
+        kind === 'folder' &&
+        !recursive.value &&
+        resp.stats.success === 0 &&
+        resp.stats.failed === 0 &&
+        paths.length > 0
+      ) {
+        importing.value = false  // 让后续 importPaths 重入
+        const confirmed = await confirmDialog({
+          icon: '📁',
+          title: t('空文件夹'),
+          desc: `${t('该文件夹内无视频/图片')}<br/>${t('是否开启遍历提取？')}`,
+          confirmText: t('是，递归扫描'),
+          cancelText: t('否'),
+        })
+        if (confirmed) {
+          recursive.value = true
+          await importPaths(paths, kind)
+        }
+        return
+      }
     } catch (error: any) {
       syncLiveImportStatus(new Set(), new Set(paths))
       clearPendingPlaceholders()
@@ -581,12 +645,17 @@ export const useMediaBatch = () => {
   const handleImport = async (kind: ImportKind) => {
     if (importing.value) return
     clearImportTimers()
-    // 先拿到路径，再开启 loading，避免选择/剪贴板为空导致一直转圈
     const picked = await pick(kind)
     const paths = (picked || []).filter((p: string) => !/[\*\?\[\]]/.test(p))
     if (picked && paths.length !== picked.length) {
       ElMessage.warning(t('已忽略包含通配符的路径'))
     }
+    return importPaths(paths, kind)
+  }
+
+  /** 公共区域调用：接受已选取的路径，由 index.vue 统一调度 */
+  const handleImportWithPaths = async (paths: string[], kind: ImportKind = 'file') => {
+    if (importing.value) return
     return importPaths(paths, kind)
   }
 
@@ -600,15 +669,14 @@ export const useMediaBatch = () => {
   }
 
   const handleClear = async (kind: MediaKind) => {
-    const confirmed = await ElMessageBox.confirm(
-      `${t('清空确认')} - ${kind === 'video' ? t('视频') : t('图片')}`,
-      t('清空确认'),
-      {
-        confirmButtonText: t('清空'),
-        cancelButtonText: t('取消'),
-        type: 'warning'
-      }
-    ).catch(() => false)
+    const confirmed = await confirmDialog({
+      icon: '🗑️',
+      title: t('清空确认'),
+      desc: `${t('清空确认')} - ${kind === 'video' ? t('视频') : t('图片')}`,
+      confirmText: t('清空'),
+      cancelText: t('取消'),
+      confirmType: 'danger',
+    })
     if (!confirmed) return
     if (kind === 'video') {
       videoRows.value = []
@@ -666,9 +734,11 @@ export const useMediaBatch = () => {
   }
 
   const appendSuffix = (fileName: string, counter: number) => {
+    // 找最后一个 "."，但跳过开头位置（避免 ".gitignore" 被当成纯扩展名）
     const dot = fileName.lastIndexOf('.')
-    const stem = dot > 0 ? fileName.slice(0, dot) : fileName
-    const ext = dot > 0 ? fileName.slice(dot) : ''
+    const hasExt = dot > 0 && dot < fileName.length - 1
+    const stem = hasExt ? fileName.slice(0, dot) : fileName
+    const ext = hasExt ? fileName.slice(dot) : ''
     return `${stem}(${counter})${ext}`
   }
 
@@ -795,15 +865,14 @@ export const useMediaBatch = () => {
     const warnings = plan.flatMap((item) => item.warnings)
 
     if (warnings.length) {
-      const confirmed = await ElMessageBox.confirm(
-        t('检测到 {count} 个命名风险，已生成自动避让方案。是否继续应用？', { count: warnings.length }),
-        t('重命名预检'),
-        {
-          confirmButtonText: t('继续应用'),
-          cancelButtonText: t('取消'),
-          type: 'warning'
-        }
-      ).catch(() => false)
+      const confirmed = await confirmDialog({
+        icon: '⚠️',
+        title: t('重命名预检'),
+        desc: t('检测到 {count} 个命名风险，已生成自动避让方案。是否继续应用？', { count: warnings.length }),
+        confirmText: t('继续应用'),
+        cancelText: t('取消'),
+        confirmType: 'warning',
+      })
       if (!confirmed) return
     }
 
@@ -859,15 +928,14 @@ export const useMediaBatch = () => {
       return
     }
     const batch = lastRenameBatch.value[lastRenameBatch.value.length - 1]!
-    const confirmed = await ElMessageBox.confirm(
-      t('将撤销上一次重命名，共 {count} 个文件。是否继续？', { count: batch.length }),
-      t('撤销重命名'),
-      {
-        confirmButtonText: t('撤销'),
-        cancelButtonText: t('取消'),
-        type: 'warning'
-      }
-    ).catch(() => false)
+    const confirmed = await confirmDialog({
+      icon: '↩️',
+      title: t('撤销重命名'),
+      desc: t('将撤销上一次重命名，共 {count} 个文件。是否继续？', { count: batch.length }),
+      confirmText: t('撤销'),
+      cancelText: t('取消'),
+      confirmType: 'warning',
+    })
     if (!confirmed) return
 
     let success = 0
@@ -1108,4 +1176,20 @@ export const useMediaBatch = () => {
     liveImports,
     mergeByPath
   }
+}
+
+/* ============================================================
+   会话级单例：跨工具切换 / 视图切换保留已导入数据与进度监听。
+   ponytail: 模块作用域缓存即可，无需引入 pinia；如需多实例再改回工厂。
+   注意：onMounted/onBeforeUnmount 钩子在首次调用时绑定到当时挂载的组件，
+   后续组件卸载后单例状态仍存活，但 importProgress 监听由首次 onMounted 注册，
+   此处不主动取消（见 useMediaBatchImpl 内的 onBeforeUnmount 注释）。
+   ============================================================ */
+let mediaBatchInstance: ReturnType<typeof useMediaBatchImpl> | null = null
+
+export const useMediaBatch = () => {
+  if (!mediaBatchInstance) {
+    mediaBatchInstance = useMediaBatchImpl()
+  }
+  return mediaBatchInstance
 }

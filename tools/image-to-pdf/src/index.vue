@@ -1,262 +1,256 @@
 <template>
   <div class="img2pdf">
-    <!-- ============ LEFT: Settings panel ============ -->
-    <aside class="left-panel">
-      <!-- Folder / path input -->
-      <section class="card">
-        <header class="card-head">
-          <p class="eyebrow">Image PDF</p>
-          <h3>{{ t('选择图片文件夹') }}</h3>
-        </header>
-
-        <div class="path-row">
-          <el-input
-            v-model="pathInput"
-            :placeholder="t('粘贴文件夹路径或图片路径，回车分析')"
-            clearable
-            :disabled="loading"
-            @keyup.enter="handlePathSubmit"
-          >
-            <template #prepend>
-              <el-button :icon="FolderOpened" :loading="loading" @click="selectFolder">
-                {{ t('选择') }}
-              </el-button>
-            </template>
-            <template #append>
-              <el-button :loading="loading" :disabled="!pathInput.trim()" @click="handlePathSubmit">
-                {{ t('分析') }}
-              </el-button>
-            </template>
-          </el-input>
-        </div>
-
-        <div class="path-options">
-          <el-checkbox v-model="recursive" :disabled="loading" @change="onRecursiveChange">
-            {{ t('遍历所有子目录') }}
-          </el-checkbox>
-          <span class="opt-hint">{{ t('未勾选时只扫描当前目录') }}</span>
-        </div>
-
-        <div v-if="analysis" class="folder-path">
-          <span class="path-label">{{ t('实际扫描') }}：</span>{{ analysis.effective_path }}
-          <el-tag v-if="analysis.recursive" size="small" type="info" effect="plain">
-            {{ t('递归') }}
-          </el-tag>
-        </div>
-
-        <p v-if="analysis?.auto_switched_from_file" class="hint is-warn">
-          {{ t('检测到的是文件路径，已自动切换为其所在目录并按非递归扫描') }}
-        </p>
-
-        <p class="hint">
-          {{ t('支持 JPG/PNG/WebP/TIFF/BMP/GIF/TGA/DDS/PNM/QOI/HDR/ICO 等位图格式混合合并') }}
-        </p>
-      </section>
-
-      <!-- Skipped files -->
-      <section v-if="analysis?.skipped?.length" class="card">
-        <header class="card-head compact">
-          <h3>{{ t('跳过的文件') }}</h3>
-          <el-tag type="warning" effect="plain">{{ analysis.skipped.length }} {{ t('个') }}</el-tag>
-        </header>
-        <div class="skipped-list">
-          <div v-for="sf in analysis.skipped" :key="sf.path" class="skipped-row">
-            <span class="skipped-ext">.{{ sf.ext }}</span>
-            <span class="skipped-reason">{{ sf.reason }}</span>
-            <span class="skipped-name" :title="sf.path">{{ shortFileName(sf.path) }}</span>
-          </div>
-        </div>
-      </section>
-
-      <!-- Analysis report -->
-      <section v-if="analysis" class="card">
-        <header class="card-head compact">
-          <h3>{{ t('图片分析结果') }}</h3>
-          <el-tag type="success" effect="plain">{{ analysis.images.length }} {{ t('张') }}</el-tag>
-        </header>
-
-        <div class="stats-row">
-          <div class="stat">
-            <span class="label">{{ t('总数量') }}</span>
-            <span class="value">{{ analysis.images.length }}</span>
-          </div>
-          <div class="stat">
-            <span class="label">{{ t('总大小') }}</span>
-            <span class="value">{{ formatFileSize(analysis.total_size) }}</span>
-          </div>
-          <div class="stat">
-            <span class="label">{{ t('建议方向') }}</span>
-            <span class="value suggestion">
-              {{ FIXED_ORIENTATION_NAMES[analysis.suggested_orientation as FixedOrientation] || analysis.suggested_orientation }}
-            </span>
-          </div>
-        </div>
-
-        <!-- 元数据告警 (P1/P2) -->
-        <div v-if="metaWarnings.length" class="meta-warnings">
-          <p v-for="w in metaWarnings" :key="w" class="meta-warn">{{ w }}</p>
-        </div>
-
-        <DistCard :title="t('方向分布')" :rows="orientationRows" />
-        <DistCard :title="t('格式分布')" :rows="formatRows" />
-        <DistCard v-if="resolutionRows.length" :title="t('分辨率分布（按长边）')" :rows="resolutionRows" />
-      </section>
-
-      <!-- Page settings -->
-      <section v-if="analysis" class="card">
-        <header class="card-head compact"><h3>{{ t('页面设置') }}</h3></header>
-
-        <div class="setting-group">
-          <label>{{ t('页面模式') }}</label>
-          <el-radio-group v-model="settings.pageModeType" size="small" @change="onPageModeChange">
-            <el-radio-button label="original">{{ t('原图大小') }}</el-radio-button>
-            <el-radio-button label="fixed">{{ t('固定幅面') }}</el-radio-button>
-          </el-radio-group>
-          <p class="hint" v-if="settings.pageModeType === 'original'">
-            {{ t('每页尺寸 = 原图像素（72 DPI），横图横摆竖图竖摆，无边距') }}
-          </p>
-        </div>
-
-        <template v-if="settings.pageModeType === 'fixed'">
-          <div class="setting-group">
-            <label>{{ t('页面尺寸') }}</label>
-            <el-radio-group v-model="settings.pageSize" size="small" @change="updatePreview">
-              <el-radio-button v-for="(name, key) in PAGE_SIZE_NAMES" :key="key" :label="key">
-                {{ name }}
-              </el-radio-button>
-            </el-radio-group>
-          </div>
-
-          <div class="setting-group">
-            <label>{{ t('幅面方向') }}</label>
-            <el-radio-group v-model="settings.fixedOrientation" size="small" @change="updatePreview">
-              <el-radio-button v-for="(name, key) in FIXED_ORIENTATION_NAMES" :key="key" :label="key">
-                {{ name }}
-              </el-radio-button>
-            </el-radio-group>
-          </div>
-
-          <div class="setting-group">
-            <label>{{ t('边距 (mm)') }}</label>
-            <div class="margin-input">
-              <div class="preset-buttons">
-                <el-button
-                  v-for="m in MARGIN_PRESETS"
-                  :key="m"
-                  size="small"
-                  :type="settings.margin === m ? 'primary' : 'default'"
-                  :plain="settings.margin !== m"
-                  @click="setMargin(m)"
-                >{{ m }}mm</el-button>
-              </div>
-              <el-input-number
-                v-model="settings.margin"
-                size="small"
-                :min="0"
-                :max="maxMargin"
-                :step="0.5"
-                @change="updatePreview"
-              />
-            </div>
-            <p class="hint is-danger" v-if="marginError">{{ marginError }}</p>
-          </div>
+    <!-- 顶部操作栏：路径 + 分析 + 合成 PDF -->
+    <div class="tb-toolbar pdf-toolbar">
+      <el-input
+        v-model="pathInput"
+        :placeholder="t('粘贴文件夹路径或图片路径，回车分析')"
+        clearable
+        :disabled="loading"
+        class="path-input"
+        @keyup.enter="handlePathSubmit"
+      >
+        <template #prepend>
+          <el-button :icon="FolderOpened" :loading="loading" @click="selectFolder">
+            {{ t('选择') }}
+          </el-button>
         </template>
+        <template #append>
+          <el-button :loading="loading" :disabled="!pathInput.trim()" @click="handlePathSubmit">
+            {{ t('分析') }}
+          </el-button>
+        </template>
+      </el-input>
+      <el-checkbox v-model="recursive" :disabled="loading" @change="onRecursiveChange">
+        {{ t('递归') }}
+      </el-checkbox>
+      <el-button
+        type="success"
+        :icon="MagicStick"
+        @click="generatePdfAction"
+        :disabled="generating || !canGenerate"
+        :loading="generating"
+      >{{ generating ? t('生成中') : t('合成 PDF') }}</el-button>
+      <span v-if="analysis" class="pdf-toolbar__hint">
+        {{ analysis.images.length }} {{ t('张') }} · {{ formatFileSize(analysis.total_size) }}
+      </span>
+    </div>
 
-        <div class="setting-group">
-          <label>{{ t('合并模式') }}</label>
-          <el-radio-group v-model="settings.mergeMode" size="small">
-            <el-radio-button label="lossless">{{ t('无损模式') }}</el-radio-button>
-            <el-radio-button label="portable">{{ t('便携模式') }}</el-radio-button>
-          </el-radio-group>
+    <!-- 实际扫描路径 / 自动切换提示 -->
+    <p v-if="analysis?.auto_switched_from_file" class="hint is-warn toolbar-hint">
+      {{ t('检测到的是文件路径，已自动切换为其所在目录并按非递归扫描') }}
+    </p>
+    <p v-if="analysis" class="hint toolbar-hint">
+      {{ t('实际扫描') }}：{{ analysis.effective_path }}
+      <el-tag v-if="analysis.recursive" size="small" type="info" effect="plain">{{ t('递归') }}</el-tag>
+    </p>
 
-          <div v-if="settings.mergeMode === 'lossless'" class="mode-detail">
-            <p class="hint">
-              {{ t('原始 JPEG 直接嵌入（零重编码），其他格式以 q=95 编码。') }}
-              <br />
-              {{ t('结果体积超过原图总大小') }} <strong>{{ Math.round(settings.maxSizeRatio * 100) }}%</strong>
-              {{ t('时自动降级到 q=85 / q=75。') }}
+    <!-- 生成进度 / 结果（内联） -->
+    <div v-if="progress" class="progress-container">
+      <el-progress :percentage="progressPercent" :text-inside="true" :stroke-width="18" />
+      <div class="progress-text">
+        {{ progress.phase }}: {{ progress.current }} / {{ progress.total }}
+        <span v-if="progress.current_file" class="current-file">— {{ shortFileName(progress.current_file) }}</span>
+      </div>
+    </div>
+    <div v-if="result" class="result-container" :class="{ success: result.success, error: !result.success, warn: result.success && result.exceeded_target }">
+      <div v-if="result.success">
+        <p class="result-title">
+          {{ result.exceeded_target ? t('PDF 已生成（超出体积上限）') : t('PDF 生成成功') }}
+        </p>
+        <div class="result-stats">
+          <span>{{ t('页数') }}: {{ result.page_count }}</span>
+          <span>{{ t('文件大小') }}: {{ formatFileSize(result.file_size) }}</span>
+          <span>{{ t('原始大小') }}: {{ formatFileSize(result.original_total_size) }}</span>
+          <span>{{ t('体积比') }}: {{ Math.round(result.size_ratio * 100) }}%</span>
+          <span>{{ t('耗时') }}: {{ (result.elapsed_ms / 1000).toFixed(2) }}s</span>
+        </div>
+        <p class="mode-used">{{ t('实际参数') }}: {{ result.mode_used }}</p>
+        <p v-if="result.exceeded_target" class="warn-note">
+          {{ t('已尝试最低质量档（q=75）但仍超过设定上限。可改用便携模式手动设置目标占比以获得更小体积。') }}
+        </p>
+        <div v-if="result.warnings && result.warnings.length" class="result-warnings">
+          <p class="warn-note">{{ t('已跳过以下文件：') }}</p>
+          <div v-for="(w, i) in result.warnings" :key="i" class="warning-item">· {{ w }}</div>
+        </div>
+        <p class="output-path">{{ result.output_path }}</p>
+      </div>
+      <div v-else>
+        <p class="result-title">{{ t('生成失败') }}: {{ result.error }}</p>
+      </div>
+    </div>
+
+    <!-- 页面设置（可折叠，默认收起；仅分析后显示） -->
+    <div v-if="analysis" class="tb-collapse">
+      <el-collapse>
+        <el-collapse-item>
+          <template #title>
+            {{ t('页面设置') }}
+            <span class="tb-collapse-summary">{{ pageSettingsSummary }}</span>
+          </template>
+
+          <div class="setting-group">
+            <label>{{ t('页面模式') }}</label>
+            <el-radio-group v-model="settings.pageModeType" size="small" @change="onPageModeChange">
+              <el-radio-button label="original">{{ t('原图大小') }}</el-radio-button>
+              <el-radio-button label="fixed">{{ t('固定幅面') }}</el-radio-button>
+            </el-radio-group>
+            <p class="hint" v-if="settings.pageModeType === 'original'">
+              {{ t('每页尺寸 = 原图像素（72 DPI），横图横摆竖图竖摆，无边距') }}
             </p>
-            <div class="ratio-row">
-              <span>{{ t('体积上限：原图的') }}</span>
-              <el-slider
-                v-model="settings.maxSizeRatio"
-                :min="1.05"
-                :max="2.00"
-                :step="0.05"
-                :format-tooltip="(v: number) => `${Math.round(v * 100)}%`"
-                style="flex:1; margin: 0 12px;"
-              />
-              <strong>{{ Math.round(settings.maxSizeRatio * 100) }}%</strong>
+          </div>
+
+          <template v-if="settings.pageModeType === 'fixed'">
+            <div class="setting-group">
+              <label>{{ t('页面尺寸') }}</label>
+              <el-radio-group v-model="settings.pageSize" size="small" @change="updatePreview">
+                <el-radio-button v-for="(name, key) in PAGE_SIZE_NAMES" :key="key" :label="key">
+                  {{ name }}
+                </el-radio-button>
+              </el-radio-group>
+            </div>
+
+            <div class="setting-group">
+              <label>{{ t('幅面方向') }}</label>
+              <el-radio-group v-model="settings.fixedOrientation" size="small" @change="updatePreview">
+                <el-radio-button v-for="(name, key) in FIXED_ORIENTATION_NAMES" :key="key" :label="key">
+                  {{ name }}
+                </el-radio-button>
+              </el-radio-group>
+            </div>
+
+            <div class="setting-group">
+              <label>{{ t('边距 (mm)') }}</label>
+              <div class="margin-input">
+                <div class="preset-buttons">
+                  <el-button
+                    v-for="m in MARGIN_PRESETS"
+                    :key="m"
+                    size="small"
+                    :type="settings.margin === m ? 'primary' : 'default'"
+                    :plain="settings.margin !== m"
+                    @click="setMargin(m)"
+                  >{{ m }}mm</el-button>
+                </div>
+                <el-input-number
+                  v-model="settings.margin"
+                  size="small"
+                  :min="0"
+                  :max="maxMargin"
+                  :step="0.5"
+                  @change="updatePreview"
+                />
+              </div>
+              <p class="hint is-danger" v-if="marginError">{{ marginError }}</p>
+            </div>
+          </template>
+
+          <div class="setting-group">
+            <label>{{ t('合并模式') }}</label>
+            <el-radio-group v-model="settings.mergeMode" size="small">
+              <el-radio-button label="lossless">{{ t('无损模式') }}</el-radio-button>
+              <el-radio-button label="portable">{{ t('便携模式') }}</el-radio-button>
+            </el-radio-group>
+
+            <div v-if="settings.mergeMode === 'lossless'" class="mode-detail">
+              <p class="hint">
+                {{ t('原始 JPEG 直接嵌入（零重编码），其他格式以 q=95 编码。') }}
+                <br />
+                {{ t('结果体积超过原图总大小') }} <strong>{{ Math.round(settings.maxSizeRatio * 100) }}%</strong>
+                {{ t('时自动降级到 q=85 / q=75。') }}
+              </p>
+              <div class="ratio-row">
+                <span>{{ t('体积上限：原图的') }}</span>
+                <el-slider
+                  v-model="settings.maxSizeRatio"
+                  :min="1.05"
+                  :max="2.00"
+                  :step="0.05"
+                  :format-tooltip="(v: number) => `${Math.round(v * 100)}%`"
+                  class="ratio-slider"
+                />
+                <strong>{{ Math.round(settings.maxSizeRatio * 100) }}%</strong>
+              </div>
+            </div>
+
+            <div v-else class="mode-detail">
+              <p class="hint">{{ t('用滑块设置目标体积占比。100% 接近原图大小，10% 大幅压缩。') }}</p>
+              <div class="ratio-row">
+                <span>{{ t('目标占比：原图的') }}</span>
+                <el-slider
+                  v-model="settings.portableTargetRatio"
+                  :min="0.10"
+                  :max="1.00"
+                  :step="0.05"
+                  :format-tooltip="(v: number) => `${Math.round(v * 100)}%`"
+                  class="ratio-slider"
+                />
+                <strong>{{ Math.round(settings.portableTargetRatio * 100) }}%</strong>
+              </div>
+            </div>
+          </div>
+        </el-collapse-item>
+      </el-collapse>
+    </div>
+
+    <!-- 分析结果（可折叠，默认展开；仅分析后显示） -->
+    <div v-if="analysis" class="tb-collapse">
+      <el-collapse v-model="analysisCollapse">
+        <el-collapse-item name="analysis">
+          <template #title>
+            {{ t('图片分析结果') }}
+            <el-tag type="success" effect="plain" size="small" class="collapse-tag">{{ analysis.images.length }} {{ t('张') }}</el-tag>
+          </template>
+
+          <div class="stats-row">
+            <div class="stat">
+              <span class="label">{{ t('总数量') }}</span>
+              <span class="value">{{ analysis.images.length }}</span>
+            </div>
+            <div class="stat">
+              <span class="label">{{ t('总大小') }}</span>
+              <span class="value">{{ formatFileSize(analysis.total_size) }}</span>
+            </div>
+            <div class="stat">
+              <span class="label">{{ t('建议方向') }}</span>
+              <span class="value suggestion">
+                {{ FIXED_ORIENTATION_NAMES[analysis.suggested_orientation as FixedOrientation] || analysis.suggested_orientation }}
+              </span>
             </div>
           </div>
 
-          <div v-else class="mode-detail">
-            <p class="hint">{{ t('用滑块设置目标体积占比。100% 接近原图大小，10% 大幅压缩。') }}</p>
-            <div class="ratio-row">
-              <span>{{ t('目标占比：原图的') }}</span>
-              <el-slider
-                v-model="settings.portableTargetRatio"
-                :min="0.10"
-                :max="1.00"
-                :step="0.05"
-                :format-tooltip="(v: number) => `${Math.round(v * 100)}%`"
-                style="flex:1; margin: 0 12px;"
-              />
-              <strong>{{ Math.round(settings.portableTargetRatio * 100) }}%</strong>
+          <div v-if="metaWarnings.length" class="meta-warnings">
+            <p v-for="w in metaWarnings" :key="w" class="meta-warn">{{ w }}</p>
+          </div>
+
+          <DistCard :title="t('方向分布')" :rows="orientationRows" />
+          <DistCard :title="t('格式分布')" :rows="formatRows" />
+          <DistCard v-if="resolutionRows.length" :title="t('分辨率分布（按长边）')" :rows="resolutionRows" />
+        </el-collapse-item>
+      </el-collapse>
+    </div>
+
+    <!-- 跳过的文件（可折叠，仅异常时显示） -->
+    <div v-if="analysis?.skipped?.length" class="tb-collapse">
+      <el-collapse>
+        <el-collapse-item>
+          <template #title>
+            {{ t('跳过的文件') }}
+            <el-tag type="warning" effect="plain" size="small" class="collapse-tag">{{ analysis.skipped.length }} {{ t('个') }}</el-tag>
+          </template>
+          <div class="skipped-list">
+            <div v-for="sf in analysis.skipped" :key="sf.path" class="skipped-row">
+              <span class="skipped-ext">.{{ sf.ext }}</span>
+              <span class="skipped-reason">{{ sf.reason }}</span>
+              <span class="skipped-name" :title="sf.path">{{ shortFileName(sf.path) }}</span>
             </div>
           </div>
-        </div>
-      </section>
+        </el-collapse-item>
+      </el-collapse>
+    </div>
 
-      <!-- Generate -->
-      <section v-if="analysis" class="card">
-        <header class="card-head compact"><h3>{{ t('生成 PDF') }}</h3></header>
-
-        <el-button
-          type="success"
-          size="large"
-          :icon="MagicStick"
-          @click="generatePdfAction"
-          :disabled="generating || !canGenerate"
-          :loading="generating"
-          style="width:100%;"
-        >{{ generating ? t('生成中') : t('合成 PDF') }}</el-button>
-
-        <div v-if="progress" class="progress-container">
-          <el-progress :percentage="progressPercent" :text-inside="true" :stroke-width="18" />
-          <div class="progress-text">
-            {{ progress.phase }}: {{ progress.current }} / {{ progress.total }}
-            <span v-if="progress.current_file" class="current-file">— {{ shortFileName(progress.current_file) }}</span>
-          </div>
-        </div>
-
-        <div v-if="result" class="result-container" :class="{ success: result.success, error: !result.success, warn: result.success && result.exceeded_target }">
-          <div v-if="result.success">
-            <p class="result-title">
-              {{ result.exceeded_target ? t('PDF 已生成（超出体积上限）') : t('PDF 生成成功') }}
-            </p>
-            <div class="result-stats">
-              <span>{{ t('页数') }}: {{ result.page_count }}</span>
-              <span>{{ t('文件大小') }}: {{ formatFileSize(result.file_size) }}</span>
-              <span>{{ t('原始大小') }}: {{ formatFileSize(result.original_total_size) }}</span>
-              <span>{{ t('体积比') }}: {{ Math.round(result.size_ratio * 100) }}%</span>
-              <span>{{ t('耗时') }}: {{ (result.elapsed_ms / 1000).toFixed(2) }}s</span>
-            </div>
-            <p class="mode-used">{{ t('实际参数') }}: {{ result.mode_used }}</p>
-            <p v-if="result.exceeded_target" class="warn-note">
-              {{ t('已尝试最低质量档（q=75）但仍超过设定上限。可改用便携模式手动设置目标占比以获得更小体积。') }}
-            </p>
-            <p class="output-path">{{ result.output_path }}</p>
-          </div>
-          <div v-else>
-            <p class="result-title">{{ t('生成失败') }}: {{ result.error }}</p>
-          </div>
-        </div>
-      </section>
-    </aside>
-
-    <!-- ============ RIGHT: Preview panel ============ -->
-    <main class="right-panel" v-if="previewData">
+    <!-- 预览面板（全宽） -->
+    <main class="preview-panel" v-if="previewData">
       <header class="preview-toolbar">
         <div class="tool-group">
           <span class="tool-label">{{ t('网格') }}</span>
@@ -285,7 +279,7 @@
             :max="5"
             :step="0.1"
             :format-tooltip="(v: number) => `${v.toFixed(1)}s`"
-            style="width: 140px;"
+            class="interval-slider"
             size="small"
           />
           <span class="interval-display">{{ autoPlayInterval.toFixed(1) }}s</span>
@@ -389,9 +383,10 @@
       </div>
     </main>
 
-    <main v-else class="right-panel placeholder-panel">
+    <main v-else class="preview-panel placeholder-panel">
       <div class="placeholder-empty">
         <p>{{ t('选择文件夹后将在此处预览') }}</p>
+        <p class="hint">{{ t('支持 JPG/PNG/WebP/TIFF/BMP/GIF/TGA/DDS/PNM/QOI/HDR/ICO 等位图格式混合合并') }}</p>
       </div>
     </main>
   </div>
@@ -530,9 +525,11 @@ const progressPercent = computed(() => {
   return Math.round((progress.value.current / progress.value.total) * 100)
 })
 
+// Chart palette resolves to per-skin CSS variables so colors adapt to light/dark
+// and each skin family (defined in core/assets/styles/variables.css).
 const PALETTE = [
-  '#409EFF', '#67C23A', '#E6A23C', '#F56C6C', '#909399',
-  '#9B59B6', '#1ABC9C', '#E74C3C', '#3498DB', '#2ECC71',
+  'var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)', 'var(--chart-4)', 'var(--chart-5)',
+  'var(--chart-6)', 'var(--chart-7)', 'var(--chart-8)', 'var(--chart-9)', 'var(--chart-10)',
 ]
 
 const orientationRows = computed<DistRow[]>(() => {
@@ -541,10 +538,10 @@ const orientationRows = computed<DistRow[]>(() => {
   const total = a.images.length || 1
   const rows: DistRow[] = []
   const items: [string, string, number, string][] = [
-    ['portrait', t('竖图'), a.portrait_count, '#409EFF'],
-    ['landscape', t('横图'), a.landscape_count, '#67C23A'],
+    ['portrait', t('竖图'), a.portrait_count, 'var(--chart-1)'],
+    ['landscape', t('横图'), a.landscape_count, 'var(--chart-2)'],
   ]
-  if (a.square_count > 0) items.push(['square', t('方图'), a.square_count, '#E6A23C'])
+  if (a.square_count > 0) items.push(['square', t('方图'), a.square_count, 'var(--chart-3)'])
   for (const [key, label, count, color] of items) {
     rows.push({ key, label, count, percent: Math.round((count / total) * 100), color })
   }
@@ -589,12 +586,29 @@ const metaWarnings = computed<string[]>(() => {
     warns.push(`${a.apng_count} ${t('张 APNG（动画 PNG），PDF 仅取首帧')}`)
   }
   if (a.bit16_count > 0) {
-    warns.push(`${a.bit16_count} ${t('张 16-bit PNG，已降级为 8-bit')}`)
+    warns.push(`${a.bit16_count} ${t('张 16-bit PNG，已降为 8-bit（视觉通常无明显影响，非严格无损）')}`)
   }
   if (a.gamma_count > 0) {
     warns.push(`${a.gamma_count} ${t('张含非 sRGB gamma 信息，可能轻微偏色')}`)
   }
+  if (a.icc_count > 0) {
+    warns.push(`${a.icc_count} ${t('张含 ICC 色彩配置，PDF 未内嵌 ICC，广色域图可能偏色')}`)
+  }
+  if (a.long_image_count > 0) {
+    warns.push(`${a.long_image_count} ${t('张长图（长宽比>5:1），可能生成超长页面，建议开启分页或缩放')}`)
+  }
   return warns
+})
+
+// 分析结果折叠区默认展开
+const analysisCollapse = ref<string[]>(['analysis'])
+
+// 页面设置折叠标题摘要
+const pageSettingsSummary = computed(() => {
+  const s = settings.value
+  const mode = s.pageModeType === 'original' ? t('原图大小') : t('固定幅面')
+  const merge = s.mergeMode === 'lossless' ? t('无损') : t('便携')
+  return `${mode} · ${merge}`
 })
 
 interface FileListRow {
@@ -944,7 +958,7 @@ async function generatePdfAction() {
     result.value = {
       success: false, output_path: '', file_size: 0, original_total_size: 0,
       page_count: 0, elapsed_ms: 0, mode_used: '', size_ratio: 0,
-      exceeded_target: false, error: String(e?.message || e),
+      exceeded_target: false, warnings: [], error: String(e?.message || e),
     }
   } finally {
     generating.value = false
@@ -975,34 +989,46 @@ onBeforeUnmount(() => {
 
 .img2pdf {
   display: flex;
+  flex-direction: column;
   height: 100%;
   min-height: 0;
   overflow: hidden;
   gap: 10px;
 }
-
-.left-panel {
-  flex: 0 0 380px;
-  min-width: 340px;
-  max-width: 480px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  overflow-y: auto;
-  overflow-x: hidden;
-  padding-right: 4px;
+.img2pdf :deep(.tb-collapse) {
+  flex-shrink: 0;
 }
 
-.right-panel {
+.pdf-toolbar {
+  flex-shrink: 0;
+}
+.path-input {
+  flex: 1;
+  min-width: 220px;
+  max-width: 520px;
+}
+.pdf-toolbar__hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-left: auto;
+  white-space: nowrap;
+}
+.toolbar-hint {
+  margin: 0;
+  font-size: 12px;
+}
+
+/* 预览面板（全宽，纵向流中占主区） */
+.preview-panel {
   flex: 1 1 auto;
   min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  min-height: 0;
   overflow: hidden;
-  border: 1px solid var(--border-secondary);
-  border-radius: var(--radius-md);
-  background: var(--bg-secondary, #fafafa);
+  border: 1px solid var(--card-border);
+  border-radius: var(--card-radius);
+  background: var(--bg-secondary);
 }
 
 .placeholder-panel {
@@ -1013,81 +1039,36 @@ onBeforeUnmount(() => {
 .placeholder-empty {
   color: var(--text-muted);
   font-size: 14px;
+  text-align: center;
+}
+.placeholder-empty .hint {
+  margin-top: 6px;
 }
 
-/* 中等宽度：缩窄左栏 */
-@media (max-width: 1100px) {
-  .left-panel {
-    flex: 0 0 340px;
-    min-width: 320px;
-  }
-}
-
-/* 窄屏：纵向堆叠 */
+/* 窄屏：允许整页滚动，预览区给最小高度 */
 @media (max-width: 820px) {
   .img2pdf {
-    flex-direction: column;
     overflow-y: auto;
   }
-  .left-panel {
-    flex: 0 0 auto;
-    max-width: none;
-    overflow-y: visible;
-  }
-  .right-panel {
-    flex: 1 1 auto;
+  .preview-panel {
     min-height: 360px;
   }
 }
 
 /* ============================ Cards ============================ */
 
-.card {
-  padding: 10px 12px;
-  border: 1px solid var(--border-secondary);
-  border-radius: var(--radius-md);
-  background: var(--bg-primary, #fff);
-}
-
-.card-head {
-  margin-bottom: 10px;
-}
-.card-head.compact { margin-bottom: 8px; }
-
-.card-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
-.card h3 { margin: 0; font-size: 14px; color: var(--text-primary); }
-.eyebrow {
-  margin: 0 0 2px; font-size: 11px; font-weight: 700; color: var(--accent);
-}
-
-/* ============================ Folder section ============================ */
-
-.path-row { margin-bottom: 8px; }
-.path-options { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; flex-wrap: wrap; }
-.opt-hint { font-size: 11px; color: var(--text-muted); }
-
-.folder-path {
-  color: var(--text-secondary);
-  font-family: var(--font-mono);
-  font-size: 11px;
-  word-break: break-all;
-  padding: 6px 8px;
-  border-radius: var(--radius-sm);
-  background: var(--bg-tertiary);
-  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
-  margin-top: 6px;
-}
-.path-label { color: var(--text-muted); font-family: inherit; }
+/* ============================ Shared ============================ */
 
 .hint { font-size: 11px; color: var(--text-muted); margin: 4px 0 0; line-height: 1.5; }
 .hint.is-danger { color: var(--danger); }
-.hint.is-warn { color: var(--warning, #d46b08); }
+.hint.is-warn { color: var(--warning); }
+
+/* 折叠标题里的 tag 与摘要 */
+.collapse-tag { margin-left: 8px; }
+
+/* 滑块在折叠区/工具栏内的弹性宽度 */
+.ratio-slider { flex: 1; min-width: 120px; margin: 0 12px; }
+.interval-slider { width: 140px; }
 
 /* ============================ Skipped ============================ */
 
@@ -1099,7 +1080,7 @@ onBeforeUnmount(() => {
 .skipped-ext {
   flex-shrink: 0;
   min-width: 44px; padding: 1px 6px; border-radius: 3px;
-  background: var(--warning, #faad14); color: #fff;
+  background: var(--warning); color: var(--text-inverse);
   font-weight: 600; font-size: 10px; text-align: center;
 }
 .skipped-reason { color: var(--text-secondary); flex: 1; }
@@ -1127,7 +1108,7 @@ onBeforeUnmount(() => {
 .meta-warnings { margin: 4px 0 8px; }
 .meta-warn {
   margin: 2px 0; padding: 4px 8px; font-size: 11px;
-  background: var(--warning-light, #fff7e6); color: var(--warning, #d46b08);
+  background: var(--warning-light); color: var(--warning);
   border-radius: var(--radius-xs); line-height: 1.5;
 }
 
@@ -1142,7 +1123,7 @@ onBeforeUnmount(() => {
 :deep(.dist-label) { min-width: 80px; color: var(--text-primary); font-weight: 500; }
 :deep(.dist-bar) {
   flex: 1; height: 7px; border-radius: 4px;
-  background: var(--bg-secondary, #e9ecef); overflow: hidden;
+  background: var(--bg-secondary); overflow: hidden;
 }
 :deep(.dist-bar-fill) {
   height: 100%; border-radius: 4px;
@@ -1184,7 +1165,7 @@ onBeforeUnmount(() => {
 .result-container.success { background: var(--success-light); }
 .result-container.error { background: var(--danger-light); }
 .result-container.warn {
-  background: var(--warning-light, #fff7e6); border-color: var(--warning, #faad14);
+  background: var(--warning-light); border-color: var(--warning);
 }
 .result-title { margin: 0 0 6px; font-weight: 600; color: var(--text-primary); font-size: 12px; }
 .result-stats {
@@ -1192,7 +1173,9 @@ onBeforeUnmount(() => {
   font-size: 11px; color: var(--text-secondary);
 }
 .mode-used { font-size: 10px; color: var(--text-muted); margin: 2px 0; }
-.warn-note { font-size: 10px; color: var(--warning, #d46b08); margin: 2px 0; }
+.warn-note { font-size: 10px; color: var(--warning); margin: 2px 0; }
+.result-warnings { margin-top: 6px; padding: 6px 8px; background: rgba(230, 162, 60, 0.08); border-radius: 4px; max-height: 120px; overflow-y: auto; }
+.warning-item { font-size: 11px; color: var(--text-secondary); line-height: 1.6; word-break: break-all; }
 .output-path { font-size: 10px; color: var(--text-muted); word-break: break-all; margin: 4px 0 0; }
 
 /* ============================ Preview toolbar ============================ */
@@ -1203,7 +1186,7 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 12px;
   padding: 8px 12px;
-  background: var(--bg-primary, #fff);
+  background: var(--bg-primary);
   border-bottom: 1px solid var(--border-secondary);
   flex-wrap: wrap;
 }
@@ -1256,7 +1239,7 @@ onBeforeUnmount(() => {
 
 .grid-scroller.list {
   padding: 0;
-  background: var(--bg-primary, #fff);
+  background: var(--bg-primary);
 }
 
 .file-list-view {
@@ -1273,7 +1256,7 @@ onBeforeUnmount(() => {
 }
 
 :deep(.file-list-view .el-table__row:hover > td) {
-  background: var(--accent-light, rgba(64, 158, 255, 0.08)) !important;
+  background: var(--accent-light) !important;
 }
 
 .grid-container {
@@ -1301,8 +1284,8 @@ onBeforeUnmount(() => {
 }
 
 .grid-cell.active {
-  background: var(--accent-light, rgba(64, 158, 255, 0.12));
-  outline: 1.5px solid var(--accent, #409EFF);
+  background: var(--accent-light);
+  outline: 1.5px solid var(--accent);
 }
 
 .cell-frame-wrap {
@@ -1316,9 +1299,9 @@ onBeforeUnmount(() => {
 
 .cell-frame {
   position: relative;
-  background: #fff;
-  border: 1px solid var(--border-primary, #ddd);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+  background: var(--tb-paper-bg);
+  border: 1px solid var(--tb-paper-border);
+  box-shadow: var(--shadow-xs);
   /* aspect-ratio set via inline style */
   max-width: 100%;
   max-height: 100%;
@@ -1337,7 +1320,7 @@ onBeforeUnmount(() => {
 
 .cell-margin-box {
   position: absolute;
-  border: 1px dashed #ccc;
+  border: 1px dashed var(--tb-paper-margin);
   pointer-events: none;
 }
 
@@ -1352,9 +1335,9 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #f0f0f0;
-  border: 1px solid #ddd;
-  color: #999;
+  background: var(--tb-paper-placeholder);
+  border: 1px solid var(--tb-paper-border);
+  color: var(--tb-paper-placeholder-text);
   font-size: 10px;
   text-align: center;
   overflow: hidden;
@@ -1372,8 +1355,8 @@ onBeforeUnmount(() => {
 
 .cell-num {
   flex-shrink: 0;
-  background: var(--accent, #409EFF);
-  color: #fff;
+  background: var(--accent);
+  color: var(--text-inverse);
   border-radius: 8px;
   padding: 0 6px;
   min-width: 18px;

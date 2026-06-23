@@ -20,8 +20,7 @@ pub fn init_cache(db_path: &Path) {
             Ok(c) => c,
             Err(e) => {
                 log::error!("media_cache: 无法打开数据库 {:?}: {}", db_path, e);
-                Connection::open_in_memory()
-                    .expect("media_cache: 内存数据库也无法创建")
+                Connection::open_in_memory().expect("media_cache: 内存数据库也无法创建")
             }
         };
         conn.execute_batch(
@@ -30,6 +29,7 @@ pub fn init_cache(db_path: &Path) {
              CREATE TABLE IF NOT EXISTS media_cache (
                  path  TEXT PRIMARY KEY,
                  mtime_ms INTEGER NOT NULL,
+                 schema_ver INTEGER NOT NULL DEFAULT 1,
                  data TEXT NOT NULL
              );",
         )
@@ -38,15 +38,18 @@ pub fn init_cache(db_path: &Path) {
     });
 }
 
-/// 查询缓存：路径 + mtime 匹配则返回缓存的 JSON 值
+/// 缓存 schema 版本：修复 duration 秒数丢失等问题后递增，使旧缓存自动失效
+const CACHE_SCHEMA_VERSION: i64 = 2;
+
+/// 查询缓存：路径 + mtime + schema版本 匹配则返回缓存的 JSON 值
 pub fn get_cached_item(path: &str, mtime_ms: u64) -> Option<serde_json::Value> {
     let conn = CACHE.get()?;
     let guard = conn.lock().unwrap();
     let mut stmt = guard
-        .prepare("SELECT data FROM media_cache WHERE path = ?1 AND mtime_ms = ?2")
+        .prepare("SELECT data FROM media_cache WHERE path = ?1 AND mtime_ms = ?2 AND schema_ver = ?3")
         .ok()?;
     let data: String = stmt
-        .query_row(rusqlite::params![path, mtime_ms as i64], |row| row.get(0))
+        .query_row(rusqlite::params![path, mtime_ms as i64, CACHE_SCHEMA_VERSION], |row| row.get(0))
         .ok()?;
     serde_json::from_str(&data).ok()
 }
@@ -61,12 +64,12 @@ pub fn cleanup_cache(max_entries: usize) {
         .query_row("SELECT COUNT(*) FROM media_cache", [], |row| row.get(0))
         .unwrap_or(0);
     if count as usize > max_entries {
-        guard
-            .execute(
-                "DELETE FROM media_cache WHERE rowid NOT IN (SELECT rowid FROM media_cache ORDER BY rowid DESC LIMIT ?1)",
-                rusqlite::params![max_entries as i64],
-            )
-            .unwrap_or_else(|e| log::error!("media_cache: 清理失败: {}", e));
+        if let Err(e) = guard.execute(
+            "DELETE FROM media_cache WHERE rowid NOT IN (SELECT rowid FROM media_cache ORDER BY rowid DESC LIMIT ?1)",
+            rusqlite::params![max_entries as i64],
+        ) {
+            log::error!("media_cache: 清理失败: {}", e);
+        }
         log::info!("media_cache: 清理完成，{} -> {}", count, max_entries);
     }
 }
@@ -85,12 +88,12 @@ pub fn set_cached_item(path: &str, mtime_ms: u64, data: &serde_json::Value) {
             return;
         }
     };
-    guard
-        .execute(
-            "INSERT OR REPLACE INTO media_cache (path, mtime_ms, data) VALUES (?1, ?2, ?3)",
-            rusqlite::params![path, mtime_ms as i64, json],
-        )
-        .unwrap_or_else(|e| log::error!("media_cache: 写入失败: {}", e));
+    if let Err(e) = guard.execute(
+        "INSERT OR REPLACE INTO media_cache (path, mtime_ms, schema_ver, data) VALUES (?1, ?2, ?3, ?4)",
+        rusqlite::params![path, mtime_ms as i64, CACHE_SCHEMA_VERSION, json],
+    ) {
+        log::error!("media_cache: 写入失败: {}", e);
+    }
     drop(guard);
     cleanup_cache(5000);
 }

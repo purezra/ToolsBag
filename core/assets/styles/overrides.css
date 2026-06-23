@@ -1,0 +1,718 @@
+/* ============ Cards ============ */
+.el-card {
+  border-radius: var(--card-radius);
+  border: 1px solid var(--card-border);
+  box-shadow: var(--card-shadow);
+  background: var(--color-card, var(--bg-primary));
+  transition: border-color var(--duration-fast) ease;
+}
+.el-card__body {
+  padding: var(--card-padding);
+}
+
+/* ============ Tables ============ */
+.el-table {
+  --el-table-bg-color: transparent;
+  --el-table-tr-bg-color: transparent;
+  --el-table-header-bg-color: var(--table-header-bg);
+  --el-table-row-hover-bg-color: var(--table-row-hover);
+  --el-table-border-color: var(--table-border);
+  --el-table-text-color: var(--text-primary);
+  --el-table-header-text-color: var(--text-secondary);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+.el-table th.el-table__cell {
+  font-weight: 600;
+  font-size: 12px;
+  letter-spacing: 0;
+  color: var(--text-secondary);
+  background: var(--table-header-bg);
+  border-bottom: 1px solid var(--border-secondary);
+  padding: 9px 0;
+}
+.el-table td.el-table__cell {
+  border-bottom: 1px solid var(--table-border);
+  transition: background var(--duration-fast) ease;
+  padding: 8px 0;
+}
+.el-table--small .el-table__cell {
+  padding: 6px 0;
+}
+.el-table--enable-row-hover .el-table__body tr:hover > td.el-table__cell {
+  background: var(--table-row-hover);
+}
+.el-table--striped .el-table__body tr.el-table__row--striped td.el-table__cell {
+  background: var(--table-row-stripe);
+}
+.el-table__empty-text {
+  color: var(--text-muted);
+}
+.el-table__body-wrapper {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-primary) transparent;
+}
+.el-table__body {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+/* ============ Buttons ============ */
+.el-button {
+  border-radius: var(--radius-button);
+  font-weight: 500;
+  letter-spacing: 0;
+  transition: background var(--duration-fast) ease,
+              border-color var(--duration-fast) ease,
+              color var(--duration-fast) ease,
+              box-shadow var(--duration-fast) ease;
+  position: relative;
+}
+	.el-button--primary {
+	  background: var(--accent);
+	  border: 1px solid var(--accent);
+	  color: var(--text-inverse);
+	}
+	.el-button--primary:hover {
+	  background: var(--accent-hover);
+	  border-color: var(--accent-hover);
+	}
+.el-button--primary:active {
+  background: var(--accent-hover);
+}
+.el-button--default {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-primary);
+  color: var(--text-primary);
+}
+.el-button--default:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--bg-primary);
+}
+.el-button.is-plain {
+  background: transparent;
+  border: 1px solid var(--border-primary);
+}
+.el-button.is-plain:hover {
+  background: var(--accent-light);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.el-button--primary.is-plain {
+  background: var(--accent-light);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.el-button--primary.is-plain:hover {
+  background: var(--accent);
+  color: var(--text-inverse);
+  border-color: var(--accent);
+}
+.el-button--small {
+  height: 26px;
+  padding: 4px 12px;
+  font-size: 12px;
+}
+.el-button.text {
+  border: none;
+  background: transparent;
+}
+.el-button--danger {
+  color: var(--danger);
+  border-color: transparent;
+  background: var(--danger-light);
+}
+.el-button--danger:hover {
+  color: #fff;
+  background: var(--danger);
+  border-color: var(--danger);
+}
+.el-button--success {
+  background: var(--success);
+  border-color: var(--success);
+  color: #fff;
+}
+.el-button--success:hover {
+  background: var(--success);
+  filter: brightness(0.95);
+  border-color: var(--success);
+}
+.el-button.is-text:hover {
+  background: var(--accent-light);
+  color: var(--accent);
+}
+.el-button-group .el-button {
+  border-radius: 0;
+}
+.el-button-group .el-button:first-child {
+  border-radius: var(--radius-button) 0 0 var(--radius-button);
+}
+.el-button-group .el-button:last-child {
+  border-radius: 0 var(--radius-button) var(--radius-button) 0;
+}
+
+/* ============ Inputs ============ */
+.el-input__wrapper {
+  background: var(--input-bg);
+  box-shadow: 0 0 0 1px var(--input-border) inset !important;
+  border-radius: var(--input-radius);
+  transition: box-shadow var(--duration-fast) ease;
+}
+.el-input__wrapper:hover {
+  box-shadow: 0 0 0 1px var(--accent) inset !important;
+}
+.el-input__wrapper.is-focus {
+  box-shadow: 0 0 0 1px var(--accent) inset, 0 0 0 3px var(--accent-light) !important;
+}
+.el-input__inner {
+  color: var(--text-primary);
+}
+.el-input__inner::placeholder {
+  color: var(--text-muted);
+}
+.el-textarea__inner {
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  border-radius: var(--input-radius);
+  color: var(--text-primary);
+  transition: border-color var(--duration-fast) ease, box-shadow var(--duration-fast) ease;
+}
+.el-textarea__inner:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-light);
+}
+
+/* ============ Selects ============ */
+.el-select__wrapper {
+  background: var(--input-bg);
+  box-shadow: 0 0 0 1px var(--input-border) inset !important;
+  border-radius: var(--input-radius);
+}
+.el-select__wrapper:hover {
+  box-shadow: 0 0 0 1px var(--accent) inset !important;
+}
+.el-select__wrapper.is-focused {
+  box-shadow: 0 0 0 1px var(--accent) inset, 0 0 0 3px var(--accent-light) !important;
+}
+.el-select-dropdown {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+}
+.el-select-dropdown__item {
+  color: var(--text-primary);
+  border-radius: var(--radius-sm);
+  margin: 2px 6px;
+}
+.el-select-dropdown__item.is-hovering {
+  background: var(--accent-light);
+}
+.el-select-dropdown__item.is-selected {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* ============ Tabs ============ */
+.el-tabs__item {
+  color: var(--text-muted);
+  transition: color var(--duration-fast) ease;
+  font-weight: 500;
+}
+.el-tabs__item:hover {
+  color: var(--text-primary);
+}
+.el-tabs__item.is-active {
+  color: var(--accent);
+  font-weight: 600;
+}
+.el-tabs__nav-wrap::after {
+  background: var(--border-secondary);
+}
+.el-tabs__active-bar {
+  background: var(--accent);
+  border-radius: var(--radius-pill);
+  height: 2px;
+}
+.el-tabs--border-card {
+  border: 1px solid var(--border-secondary);
+  border-radius: var(--radius-lg);
+  box-shadow: none;
+  background: var(--bg-primary);
+  overflow: hidden;
+}
+.el-tabs--border-card > .el-tabs__header {
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-secondary);
+}
+.el-tabs--border-card > .el-tabs__content {
+  padding: 16px;
+}
+
+/* ============ Dialogs / Drawers ============ */
+.el-dialog {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-lg);
+}
+.el-dialog__title {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+.el-dialog__body {
+  color: var(--text-primary);
+}
+.el-dialog__header {
+  border-bottom: 1px solid var(--border-secondary);
+  padding: 16px 20px;
+}
+.el-dialog__body {
+  padding: 20px;
+}
+.el-drawer {
+  background: var(--bg-primary);
+}
+.el-drawer__header {
+  color: var(--text-primary);
+  border-bottom: 1px solid var(--border-secondary);
+  font-weight: 600;
+  margin-bottom: 0;
+}
+.el-drawer__body {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+/* ============ Tags ============ */
+.el-tag {
+  border-radius: var(--radius-pill);
+  font-weight: 500;
+  font-size: 11px;
+  height: 20px;
+  line-height: 18px;
+  padding: 0 8px;
+  transition: all var(--duration-fast) ease;
+  border: 1px solid transparent;
+  letter-spacing: 0.01em;
+}
+/* Soft badges: very low background, desaturated text — reduce visual noise */
+.el-tag--success {
+  background: rgba(16, 185, 129, 0.10);
+  border-color: transparent;
+  color: var(--success);
+}
+.el-tag--warning {
+  background: rgba(245, 158, 11, 0.10);
+  border-color: transparent;
+  color: var(--warning);
+}
+.el-tag--danger {
+  background: rgba(239, 68, 68, 0.10);
+  border-color: transparent;
+  color: var(--danger);
+}
+.el-tag--info {
+  background: var(--soft-badge-bg, rgba(99, 102, 241, 0.08));
+  border-color: transparent;
+  color: var(--text-secondary);
+}
+.el-tag--primary {
+  background: var(--accent-light);
+  border-color: transparent;
+  color: var(--accent);
+}
+.el-tag.el-tag--plain {
+  background: transparent;
+  border-color: var(--border-primary);
+  color: var(--text-secondary);
+}
+
+/* ============ Switch / Checkbox / Radio ============ */
+.el-switch__core {
+  border-radius: var(--radius-pill);
+  transition: all var(--duration-fast) ease;
+}
+.el-switch.is-checked .el-switch__core {
+  background: var(--accent);
+  border-color: transparent;
+}
+.el-checkbox__inner {
+  border-radius: var(--radius-xs);
+  transition: all var(--duration-fast) ease;
+}
+.el-checkbox__input.is-checked .el-checkbox__inner {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.el-radio-button__inner {
+  transition: all var(--duration-fast) ease;
+}
+.el-radio-button__original-radio:checked + .el-radio-button__inner {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--text-inverse);
+  box-shadow: -1px 0 0 0 var(--accent);
+}
+
+/* ============ Tooltips / Popovers / Dropdowns ============ */
+.el-tooltip__popper.is-dark {
+  background: var(--text-primary);
+  border: 1px solid transparent;
+  color: var(--bg-primary);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
+  font-size: 12px;
+}
+.el-popover.el-popper {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-primary);
+  color: var(--text-primary);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+}
+.el-dropdown-menu {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  padding: 4px;
+}
+.el-dropdown-menu__item {
+  color: var(--text-primary);
+  border-radius: var(--radius-sm);
+}
+.el-dropdown-menu__item:hover {
+  background: var(--accent-light);
+  color: var(--accent);
+}
+
+/* ============ Skeleton / Empty ============ */
+.el-skeleton__item {
+  background: linear-gradient(
+    90deg,
+    var(--bg-tertiary) 25%,
+    var(--bg-secondary) 50%,
+    var(--bg-tertiary) 75%
+  );
+  background-size: 200% 100%;
+  border-radius: var(--radius-sm);
+}
+.el-empty__description {
+  color: var(--text-muted);
+}
+
+/* ============ Progress ============ */
+.el-progress__text {
+  color: var(--text-primary);
+}
+.el-progress-bar__outer {
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-pill);
+}
+/* Calm solid fill (was a saturated indigo gradient — too flashy) */
+.el-progress-bar__inner {
+  border-radius: var(--radius-pill);
+  background-color: var(--accent);
+  background-image: none;
+}
+.el-progress.is-success .el-progress-bar__inner {
+  background-color: var(--success);
+  background-image: none;
+}
+.el-progress.is-warning .el-progress-bar__inner {
+  background-color: var(--warning);
+  background-image: none;
+}
+.el-progress.is-exception .el-progress-bar__inner {
+  background-color: var(--danger);
+  background-image: none;
+}
+/* Striped: subtle diagonal lines over the solid fill */
+.el-progress-bar__inner--striped {
+  background-image:
+    linear-gradient(45deg, rgba(255, 255, 255, 0.18) 25%, transparent 25%, transparent 50%, rgba(255, 255, 255, 0.18) 50%, rgba(255, 255, 255, 0.18) 75%, transparent 75%, transparent);
+  background-size: 1.6em 1.6em, auto;
+}
+.el-progress-bar__inner--striped.el-progress-bar__inner--striped-flow {
+  animation: tb-progress-flow 8s linear infinite;
+}
+@keyframes tb-progress-flow {
+  0%   { background-position: -100% 0, 0 0; }
+  100% { background-position:  100% 0, 0 0; }
+}
+
+/* ============ Slider ============ */
+.el-slider__runway {
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-pill);
+}
+.el-slider__bar {
+  background: var(--accent);
+  border-radius: var(--radius-pill);
+}
+.el-slider__button {
+  border: 2px solid var(--accent);
+  background: var(--bg-primary);
+}
+.el-slider__marks-text {
+  color: var(--text-muted);
+}
+
+/* ============ Message / MessageBox ============ */
+.el-overlay-message-box {
+  position: fixed !important;
+  inset: 0 !important;
+  display: flex !important;
+  justify-content: center !important;
+  align-items: center !important;
+}
+.el-overlay-message-box::after {
+  display: none !important;
+}
+.el-message-box {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-lg);
+  max-width: 420px;
+  min-width: 300px;
+}
+/* 自定义居中弹窗：隐藏默认标题栏和图标，内容区域撑满 */
+.el-message-box__header {
+  display: none !important;
+}
+.el-message-box__content {
+  color: var(--text-secondary);
+  padding: 16px 20px !important;
+}
+/* 居中按钮排列 */
+.el-message-box__btns {
+  justify-content: center !important;
+  padding: 12px 20px 16px !important;
+}
+.el-message {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  color: var(--text-primary);
+}
+
+/* ============ Form ============ */
+.el-form-item {
+  margin-bottom: 12px;
+}
+.el-form-item__label {
+  color: var(--text-secondary);
+  font-weight: 500;
+  font-size: 13px;
+}
+
+/* ============ Divider ============ */
+.el-divider {
+  border-color: var(--border-secondary);
+}
+.el-divider__text {
+  background: var(--bg-primary);
+  color: var(--text-muted);
+}
+
+/* ============ Autocomplete ============ */
+.el-autocomplete-suggestion {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-primary);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+}
+.el-autocomplete-suggestion li {
+  color: var(--text-primary);
+  border-radius: var(--radius-sm);
+}
+.el-autocomplete-suggestion li:hover {
+  background: var(--accent-light);
+}
+
+/* ============ Segmented ============ */
+.el-segmented {
+  --el-segmented-item-selected-color: var(--text-inverse);
+  --el-segmented-bg-color: var(--bg-tertiary);
+  --el-segmented-item-selected-bg-color: var(--accent);
+}
+.el-segmented .el-segmented__item-selected {
+  background: var(--accent);
+}
+.el-segmented .el-segmented__item.is-checked {
+  font-weight: 600;
+}
+
+/* ============ Collapse ============ */
+.el-collapse {
+  --el-collapse-header-bg-color: transparent;
+  --el-collapse-content-bg-color: transparent;
+  border: none;
+}
+.el-collapse-item__header {
+  font-weight: 600;
+  font-size: 12px;
+  border-bottom: 1px solid var(--border-secondary);
+}
+.el-collapse-item__header.is-active {
+  border-bottom-color: var(--border-secondary);
+}
+.el-collapse-item__wrap {
+  border-bottom: none;
+}
+.el-collapse-item__content {
+  font-size: 12px;
+  padding-bottom: 8px;
+}
+
+/* ============ Badge ============ */
+.el-badge__content.is-fixed.is-dot {
+  background: var(--accent);
+}
+
+.el-card.is-always-shadow {
+  box-shadow: var(--shadow-xs);
+}
+.el-card.is-always-shadow:hover {
+  box-shadow: var(--shadow-sm);
+}
+
+/* ============ Tool watermark — styled in App.vue, opacity/mode user-adjustable ============ */
+
+/* ============ Scrollbar ============ */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-primary);
+  border-radius: var(--radius-pill);
+  border: 2px solid transparent;
+  background-clip: content-box;
+  transition: background var(--duration-fast) ease;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+  background-clip: content-box;
+}
+
+/* ============ Global tool layout helpers ============ */
+.tool-component,
+.media-tool,
+.file-traverse,
+.tool3,
+.codebook-tool,
+.image-to-pdf-tool {
+  min-height: 0;
+}
+
+.form-row label,
+.setting-group > label,
+.log-title,
+.progress-title {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.inline {
+  min-width: 0;
+}
+.inline > .el-input,
+.inline > .el-select {
+  flex: 1;
+  min-width: 160px;
+}
+
+.section,
+.progress-card,
+.result-card,
+.media-result,
+.preview-section,
+.media-preview-section,
+.progress-box,
+.status-panel .result-card,
+.lock-screen {
+  border: 1px solid var(--card-border);
+  border-radius: var(--card-radius);
+  background: var(--color-card);
+  box-shadow: var(--card-shadow);
+}
+
+.log-box,
+.note-content {
+  border: 1px solid var(--border-secondary);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  border-radius: var(--radius-md);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+@media (max-width: 1200px) {
+  .el-table {
+    font-size: 13px;
+  }
+  .el-card__body {
+    padding: 14px;
+  }
+}
+@media (max-width: 960px) {
+  .el-table {
+    display: block;
+    overflow-x: auto;
+  }
+  .el-table__body-wrapper {
+    overflow-x: auto;
+  }
+  .el-dialog {
+    width: 90vw !important;
+    margin: 16px auto;
+  }
+  .el-drawer {
+    width: 85vw !important;
+  }
+  .el-button-group {
+    flex-wrap: wrap;
+  }
+  .el-form-item {
+    flex-direction: column;
+  }
+  .el-form-item__label {
+    text-align: left;
+    padding-bottom: 4px;
+  }
+}
+@media (max-width: 768px) {
+  .el-table {
+    font-size: 12px;
+  }
+  .el-dialog {
+    width: 95vw !important;
+    margin: 8px auto;
+  }
+  .el-dialog__body {
+    padding: 14px;
+  }
+  .el-drawer {
+    width: 90vw !important;
+  }
+  .el-tabs--border-card > .el-tabs__header {
+    flex-wrap: wrap;
+  }
+  .el-radio-group {
+    flex-wrap: wrap;
+  }
+  .el-radio-button__inner {
+    padding: 8px 12px;
+    font-size: 12px;
+  }
+}

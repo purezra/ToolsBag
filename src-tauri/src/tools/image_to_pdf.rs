@@ -18,8 +18,8 @@ use image_crate::codecs::png::PngDecoder;
 use image_crate::codecs::webp::WebPDecoder;
 use image_crate::imageops::FilterType;
 use image_crate::{
-    ColorType, DynamicImage, GenericImageView, ImageBuffer, ImageDecoder,
-    ImageFormat, ImageReader, RgbImage, RgbaImage,
+    ColorType, DynamicImage, GenericImageView, ImageBuffer, ImageDecoder, ImageFormat, ImageReader,
+    RgbImage, RgbaImage,
 };
 use jpeg_decoder::{Decoder as RawJpegDecoder, PixelFormat};
 use printpdf::*;
@@ -147,10 +147,27 @@ pub struct ImageAnalysis {
     /// 文件字节大小（用于列表视图展示）
     #[serde(default)]
     pub file_size: u64,
+    /// TIFF 帧数（多页 TIFF 的页数，非 TIFF 为 1）。
+    /// analyze 阶段统计，用于让预览页数与最终 PDF 页数保持一致。
+    #[serde(default = "default_frame_count")]
+    pub frame_count: usize,
+    /// P2: 是否含 ICC 色彩配置（iCCP chunk 或 JPEG APP2 ICC）
+    #[serde(default)]
+    pub has_icc: bool,
+    /// P2: ICC 配置描述（如 "Adobe RGB", "Display P3", "sRGB" 等）
+    #[serde(default)]
+    pub icc_profile: Option<String>,
+    /// P3: 是否为长图（长宽比 > 5:1），可能生成超长 PDF 页面
+    #[serde(default)]
+    pub is_long_image: bool,
 }
 
 fn default_bit_depth() -> u16 {
     8
+}
+
+fn default_frame_count() -> usize {
+    1
 }
 
 /// 方向分类（用于分析报告）
@@ -234,6 +251,12 @@ pub struct FolderAnalysis {
     /// P2: 含 gamma 信息的文件数（PDF 不内嵌 ICC/gamma，可能有轻微色偏）
     #[serde(default)]
     pub gamma_count: usize,
+    /// P2: 含 ICC 色彩配置的文件数（广色域图片可能有偏色）
+    #[serde(default)]
+    pub icc_count: usize,
+    /// P3: 长图文件数（长宽比 > 5:1，可能生成超长页面）
+    #[serde(default)]
+    pub long_image_count: usize,
 }
 
 /// 单页布局
@@ -300,6 +323,9 @@ pub struct GenerationResult {
     pub size_ratio: f32,
     /// 是否超过 lossless 模式的目标阈值（无损模式下用户配置的 max_size_ratio）
     pub exceeded_target: bool,
+    /// 跳过的文件及原因（超大图、损坏等）
+    #[serde(default)]
+    pub warnings: Vec<String>,
     pub error: Option<String>,
 }
 
@@ -364,7 +390,11 @@ fn get_draw_area(page_width: f64, page_height: f64, margin: f64) -> (f64, f64) {
 }
 
 /// 原图模式无幅面限制，不需要边距校验
-fn validate_margin_for_mode(margin: f64, page_mode: &PageMode, page_size: PageSize) -> Result<f64, String> {
+fn validate_margin_for_mode(
+    margin: f64,
+    page_mode: &PageMode,
+    page_size: PageSize,
+) -> Result<f64, String> {
     match page_mode {
         PageMode::Original => {
             if margin < 0.0 {
@@ -437,8 +467,13 @@ fn calculate_page_layout(
         PageMode::Original => 0.0, // 原图模式无边距
         PageMode::Fixed { .. } => margin,
     };
-    let image_layout =
-        calculate_image_layout(image.width, image.height, page_width, page_height, effective_margin);
+    let image_layout = calculate_image_layout(
+        image.width,
+        image.height,
+        page_width,
+        page_height,
+        effective_margin,
+    );
     LayoutResult {
         image_path: image.path.clone(),
         page_width,
@@ -458,11 +493,6 @@ const SUPPORTED_EXTS: &[&str] = &[
 ];
 
 /// 小众/有坑格式：能识别但跳过，汇总到警告列表
-///   heic/heif — 需 libheif 绑定 + 专利
-///   avif      — 需 libavif，编译重
-///   jxl       — 需独立 crate
-///   svg       — 矢量格式，不是位图
-///   raw/cr2/nef/arw/dng — 相机 RAW，色彩空间极复杂
 const SKIPPED_FORMATS: &[(&str, &str)] = &[
     ("heic", "HEIC/HEIF（苹果拍照格式，需系统解码器）"),
     ("heif", "HEIC/HEIF（苹果拍照格式，需系统解码器）"),
@@ -475,7 +505,148 @@ const SKIPPED_FORMATS: &[(&str, &str)] = &[
     ("arw", "Sony RAW（需专业软件转换）"),
     ("dng", "DNG RAW（需专业软件转换）"),
     ("exr", "OpenEXR（影视 HDR 格式，需色调映射）"),
+    ("jp2", "JPEG2000（暂不支持）"),
+    ("j2k", "JPEG2000（暂不支持）"),
+    ("psd", "PSD（Photoshop 源文件，非位图图片）"),
+    ("ai", "AI（Illustrator 源文件，非位图图片）"),
 ];
+
+/// 通过文件头 magic number 检测真实格式。
+/// 读取前 12 字节即可区分绝大多数格式；扩展名仅作辅助。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DetectedFormat {
+    Jpeg,
+    Png,
+    WebP,
+    Tiff,
+    Bmp,
+    Gif,
+    Ico,
+    /// 支持但低频的小众格式（TGA/DDS/PNM/Farbfeld/HDR/QOI），走 image crate 通用路径
+    OtherImage,
+    /// PDF 文件伪装成图片
+    Pdf,
+    /// PSD/AI 等设计源文件
+    Psd,
+    /// SVG 矢量
+    Svg,
+    /// JP2/JPEG2000
+    Jp2,
+    /// 无法识别
+    Unknown,
+}
+
+fn detect_format_by_magic(path: &Path) -> DetectedFormat {
+    let mut file = match std::fs::File::open(path) {
+        Ok(f) => f,
+        Err(_) => return DetectedFormat::Unknown,
+    };
+    let mut buf = [0u8; 12];
+    // 读取可能不足 12 字节（极小文件），用实际读取长度判断
+    let n = match std::io::Read::read(&mut file, &mut buf) {
+        Ok(n) => n,
+        Err(_) => return DetectedFormat::Unknown,
+    };
+    let h = &buf[..n];
+
+    if h.len() >= 3 && h[0] == 0xFF && h[1] == 0xD8 && h[2] == 0xFF {
+        return DetectedFormat::Jpeg;
+    }
+    if h.len() >= 8 && h[..8] == [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A] {
+        return DetectedFormat::Png;
+    }
+    if h.len() >= 12 && h[..4] == [0x52, 0x49, 0x46, 0x46] && h[8..12] == [0x57, 0x45, 0x42, 0x50] {
+        return DetectedFormat::WebP;
+    }
+    if h.len() >= 4 && (h[..4] == [0x49, 0x49, 0x2A, 0x00] || h[..4] == [0x4D, 0x4D, 0x00, 0x2A]) {
+        return DetectedFormat::Tiff;
+    }
+    if h.len() >= 2 && h[0] == 0x42 && h[1] == 0x4D {
+        return DetectedFormat::Bmp;
+    }
+    if h.len() >= 4 && h[..4] == [0x47, 0x49, 0x46, 0x38] {
+        return DetectedFormat::Gif;
+    }
+    if h.len() >= 4 && h[..4] == [0x00, 0x00, 0x01, 0x00] {
+        return DetectedFormat::Ico;
+    }
+    if h.len() >= 4 && h[..4] == [0x25, 0x50, 0x44, 0x46] {
+        // %PDF — PDF 伪装成图片
+        return DetectedFormat::Pdf;
+    }
+    if h.len() >= 4 && h[..4] == [0x38, 0x42, 0x50, 0x53] {
+        // 8BPS — Photoshop PSD
+        return DetectedFormat::Psd;
+    }
+    if h.len() >= 8 && h[..8] == [0x00, 0x00, 0x00, 0x0C, 0x6A, 0x50, 0x20, 0x20] {
+        return DetectedFormat::Jp2;
+    }
+    // SVG 检测：文本开头 <?xml 或 <svg（只检测前 5 字节）
+    if h.len() >= 5 {
+        let prefix = String::from_utf8_lossy(h);
+        if prefix.trim_start().starts_with("<?xml") || prefix.trim_start().starts_with("<svg") {
+            return DetectedFormat::Svg;
+        }
+    }
+
+    // 扩展名辅助：小众格式 image crate 可解码但无明确 magic
+    if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+        match ext.to_lowercase().as_str() {
+            "tga" | "dds" | "pbm" | "pgm" | "ppm" | "pam" | "ff" | "hdr" | "qoi" => {
+                return DetectedFormat::OtherImage;
+            }
+            _ => {}
+        }
+    }
+
+    DetectedFormat::Unknown
+}
+
+impl DetectedFormat {
+    /// 是否为可直接处理的图片格式
+    fn is_processable(&self) -> bool {
+        matches!(
+            self,
+            DetectedFormat::Jpeg
+                | DetectedFormat::Png
+                | DetectedFormat::WebP
+                | DetectedFormat::Tiff
+                | DetectedFormat::Bmp
+                | DetectedFormat::Gif
+                | DetectedFormat::Ico
+                | DetectedFormat::OtherImage
+        )
+    }
+
+    /// 转为 ImageAnalysis 中的 format 字段值
+    fn to_format_string(&self) -> Option<String> {
+        match self {
+            DetectedFormat::Jpeg => Some("jpeg".to_string()),
+            DetectedFormat::Png => Some("png".to_string()),
+            DetectedFormat::WebP => Some("webp".to_string()),
+            DetectedFormat::Tiff => Some("tiff".to_string()),
+            DetectedFormat::Bmp => Some("bmp".to_string()),
+            DetectedFormat::Gif => Some("gif".to_string()),
+            DetectedFormat::Ico => Some("ico".to_string()),
+            DetectedFormat::OtherImage => {
+                // 从扩展名推断
+                None
+            }
+            _ => None,
+        }
+    }
+
+    /// 伪装/不支持格式的跳过原因
+    fn skip_reason(&self) -> Option<&'static str> {
+        match self {
+            DetectedFormat::Pdf => Some("文件实际是 PDF，不是图片"),
+            DetectedFormat::Psd => Some("文件实际是 PSD/AI 设计源文件，不是位图图片"),
+            DetectedFormat::Svg => Some("SVG 是矢量格式，非位图图片"),
+            DetectedFormat::Jp2 => Some("JPEG2000 格式暂不支持，请先转换为 JPEG/PNG"),
+            _ => None,
+        }
+    }
+}
 
 /// 跳过的文件信息（前端弹窗展示）
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -486,6 +657,25 @@ pub struct SkippedFile {
 }
 
 fn detect_image_format(path: &Path) -> Option<String> {
+    // 优先用 magic number
+    let detected = detect_format_by_magic(path);
+    if let Some(fmt) = detected.to_format_string() {
+        return Some(fmt);
+    }
+    if detected == DetectedFormat::OtherImage {
+        // 小众格式从扩展名推断
+        let ext = path.extension()?.to_str()?.to_lowercase();
+        return match ext.as_str() {
+            "tga" => Some("tga".to_string()),
+            "dds" => Some("dds".to_string()),
+            "pbm" | "pgm" | "ppm" | "pam" => Some("pnm".to_string()),
+            "ff" => Some("farbfeld".to_string()),
+            "hdr" => Some("hdr".to_string()),
+            "qoi" => Some("qoi".to_string()),
+            _ => None,
+        };
+    }
+    // 回退到扩展名
     let ext = path.extension()?.to_str()?.to_lowercase();
     if SUPPORTED_EXTS.contains(&ext.as_str()) {
         match ext.as_str() {
@@ -594,6 +784,23 @@ fn scan_folder(folder_path: &Path, recursive: bool) -> Result<ScanResult, String
         if !path.is_file() {
             return;
         }
+        // 优先用 magic number 检测真实格式
+        let detected = detect_format_by_magic(path);
+        if detected.is_processable() {
+            imgs.push(path.to_path_buf());
+            return;
+        }
+        // 伪装/不支持格式 → 给出明确原因
+        if let Some(reason) = detected.skip_reason() {
+            let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("?").to_string();
+            skip.push(SkippedFile {
+                path: path.to_string_lossy().to_string(),
+                ext,
+                reason: reason.to_string(),
+            });
+            return;
+        }
+        // magic 未识别 → 退回扩展名判断（兼容无 magic 的小众格式）
         if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
             let ext_lower = ext.to_lowercase();
             if is_supported_ext(&ext_lower) {
@@ -633,9 +840,7 @@ fn resolve_input_path(input: &Path) -> Result<(PathBuf, bool /* auto_switched */
         return Err(format!("路径不存在：{}", input.display()));
     }
     if input.is_file() {
-        let parent = input
-            .parent()
-            .ok_or_else(|| "无法取得父目录".to_string())?;
+        let parent = input.parent().ok_or_else(|| "无法取得父目录".to_string())?;
         if !parent.is_dir() {
             return Err("父目录不可访问".into());
         }
@@ -645,6 +850,58 @@ fn resolve_input_path(input: &Path) -> Result<(PathBuf, bool /* auto_switched */
     } else {
         Err("路径既不是文件也不是文件夹".into())
     }
+}
+
+// ==================== 内存保护 ====================
+
+/// 单图解码内存阈值（400 MB ≈ 100Mpx × 4 字节/像素）
+const MAX_IMAGE_MEMORY_BYTES: u64 = 400 * 1024 * 1024;
+/// 同时解码的大图最大数量（限制 rayon 并发）
+const MAX_CONCURRENT_LARGE_DECODES: usize = 2;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MemoryCheck {
+    Ok,
+    Oversized { estimated_mb: u64, width: u32, height: u32 },
+}
+
+/// 不解码像素，仅读宽高估算内存开销
+fn check_image_memory(width: u32, height: u32) -> MemoryCheck {
+    let estimated = width as u64 * height as u64 * 4; // RGBA worst case
+    if estimated > MAX_IMAGE_MEMORY_BYTES {
+        MemoryCheck::Oversized {
+            estimated_mb: estimated / (1024 * 1024),
+            width,
+            height,
+        }
+    } else {
+        MemoryCheck::Ok
+    }
+}
+
+/// 全局信号量：限制同时解码的大图数量。
+/// 用 AtomicUsize 简单实现（ponytail: 足够本场景，不用 crossbeam）
+static LARGE_DECODE_SEMAPHORE: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+fn acquire_large_decode_slot() -> bool {
+    use std::sync::atomic::Ordering;
+    loop {
+        let cur = LARGE_DECODE_SEMAPHORE.load(Ordering::Acquire);
+        if cur >= MAX_CONCURRENT_LARGE_DECODES {
+            return false;
+        }
+        if LARGE_DECODE_SEMAPHORE
+            .compare_exchange_weak(cur, cur + 1, Ordering::AcqRel, Ordering::Acquire)
+            .is_ok()
+        {
+            return true;
+        }
+    }
+}
+
+fn release_large_decode_slot() {
+    use std::sync::atomic::Ordering;
+    LARGE_DECODE_SEMAPHORE.fetch_sub(1, Ordering::AcqRel);
 }
 
 // ==================== 图片解码 / 透明处理 / EXIF ====================
@@ -684,7 +941,7 @@ fn flatten_rgba_to_white(rgba: &RgbaImage) -> RgbImage {
 /// 根据 EXIF orientation 修正分析阶段使用的宽高，确保预览/布局与最终解码结果一致。
 fn dimensions_after_exif_orientation(path: &Path, width: u32, height: u32) -> (u32, u32) {
     match read_exif_orientation(path) {
-        Some(5 | 6 | 7 | 8) => (height, width),
+        Some(5..=8) => (height, width),
         _ => (width, height),
     }
 }
@@ -700,15 +957,34 @@ fn analyze_image(path: &Path) -> Result<ImageAnalysis, String> {
         "png" | "webp" | "tiff" | "gif" | "ico" | "tga" | "dds" | "farbfeld"
     );
 
-    // P1+P2: 对 PNG 格式检测 APNG、灰度、16-bit、gamma 元数据
-    let (is_apng, is_grayscale, bit_depth, has_gamma, gamma) = if format == "png" {
+    // P1+P2: 对 PNG 格式检测 APNG、灰度、16-bit、gamma、ICC 元数据
+    let (is_apng, is_grayscale, bit_depth, has_gamma, gamma, has_icc, icc_profile) = if format == "png" {
         let meta = inspect_png_metadata(path);
-        (meta.is_apng, meta.is_grayscale, meta.bit_depth, meta.has_gamma, meta.gamma)
+        (
+            meta.is_apng,
+            meta.is_grayscale,
+            meta.bit_depth,
+            meta.has_gamma,
+            meta.gamma,
+            meta.has_icc,
+            meta.icc_profile,
+        )
+    } else if format == "jpeg" {
+        // JPEG: 检测 APP2 ICC_PROFILE
+        let has_icc = detect_jpeg_icc(path);
+        let icc_profile = detect_jpeg_icc_name(path);
+        (false, false, 8, false, None, has_icc, icc_profile)
     } else {
-        (false, false, 8, false, None)
+        (false, false, 8, false, None, false, None)
     };
 
     let file_size = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+    // 多页 TIFF 需统计帧数，让预览/页数/进度与实际 PDF 页数一致
+    let frame_count = if format == "tiff" {
+        count_tiff_frames(path)
+    } else {
+        1
+    };
 
     Ok(ImageAnalysis {
         path: path.to_string_lossy().to_string(),
@@ -723,6 +999,10 @@ fn analyze_image(path: &Path) -> Result<ImageAnalysis, String> {
         has_gamma,
         gamma,
         file_size,
+        frame_count,
+        has_icc,
+        icc_profile,
+        is_long_image: width > 0 && height > 0 && (width as f32 / height as f32 > 5.0 || height as f32 / width as f32 > 5.0),
     })
 }
 
@@ -783,9 +1063,11 @@ fn read_exif_orientation(path: &Path) -> Option<u32> {
     }
 }
 
-/// 仅在 orientation != 1 时进行变换；否则原样返回，避免无故 RGBA 化
-fn apply_exif_orientation(img: DynamicImage, path: &Path) -> DynamicImage {
-    let Some(orientation) = read_exif_orientation(path) else {
+/// 按 EXIF orientation 值对图像进行变换；orientation 为 None（无 EXIF 或为 1）时原样返回，
+/// 避免无故 RGBA 化。抽出 value 版本以便多页 TIFF 复用：EXIF 方向对整个文件生效，
+/// 每帧解码后套用同一个 orientation 即可，无需重复读盘解析 EXIF。
+fn apply_orientation_value(img: DynamicImage, orientation: Option<u32>) -> DynamicImage {
+    let Some(orientation) = orientation else {
         return img;
     };
     let base = img.to_rgba8();
@@ -800,6 +1082,11 @@ fn apply_exif_orientation(img: DynamicImage, path: &Path) -> DynamicImage {
         _ => return DynamicImage::ImageRgba8(base),
     };
     DynamicImage::ImageRgba8(rotated)
+}
+
+/// 仅在 orientation != 1 时进行变换；否则原样返回，避免无故 RGBA 化
+fn apply_exif_orientation(img: DynamicImage, path: &Path) -> DynamicImage {
+    apply_orientation_value(img, read_exif_orientation(path))
 }
 
 fn jpeg_is_cmyk(path: &Path) -> bool {
@@ -854,6 +1141,7 @@ fn encode_rgb_to_jpeg_processed(rgb: &RgbImage, quality: u8) -> Result<Processed
         width: w,
         height: h,
         encoding: ImageEncoding::Dct,
+        alpha_data: None,
     })
 }
 
@@ -867,6 +1155,7 @@ fn encode_rgb_to_flate_processed(rgb: &RgbImage) -> ProcessedImage {
         width: w,
         height: h,
         encoding: ImageEncoding::Flate,
+        alpha_data: None,
     }
 }
 
@@ -878,7 +1167,7 @@ fn classify_png_content(rgb: &RgbImage) -> ImageEncoding {
     let total_pixels = w as usize * h as usize;
     // 采样间隔：每 4 个像素取 1 个，加速统计
     let step = 4;
-    let sample_count = (total_pixels + step - 1) / step;
+    let sample_count = total_pixels.div_ceil(step);
     let mut colors = HashSet::with_capacity(sample_count.min(4096));
     let raw = rgb.as_raw();
     for i in (0..total_pixels).step_by(step) {
@@ -909,6 +1198,10 @@ struct PngMetadata {
     has_gamma: bool,
     /// gamma 值（如有）
     gamma: Option<f64>,
+    /// 是否含 iCCP chunk（嵌入式 ICC 配置）
+    has_icc: bool,
+    /// ICC profile 名称（如 "Adobe RGB", "Display P3" 等）
+    icc_profile: Option<String>,
 }
 
 /// 读取 PNG 文件的元数据（不解码像素），用于 APNG 检测、16-bit 警告、灰度优化等。
@@ -945,7 +1238,181 @@ fn inspect_png_metadata(path: &Path) -> PngMetadata {
         is_grayscale,
         has_gamma,
         gamma,
+        has_icc: detect_png_icc(path),
+        icc_profile: detect_png_icc_name(path),
     }
+}
+
+/// 快速扫描 JPEG APP2 marker 中是否有 ICC_PROFILE。
+fn detect_jpeg_icc(path: &Path) -> bool {
+    let data = match std::fs::read(path) {
+        Ok(d) => d,
+        Err(_) => return false,
+    };
+    if data.len() < 4 || data[0] != 0xFF || data[1] != 0xD8 {
+        return false;
+    }
+    let mut i = 2usize;
+    while i + 1 < data.len() {
+        if data[i] != 0xFF {
+            break;
+        }
+        let marker = data[i + 1];
+        // Skip padding FF bytes
+        if marker == 0xFF {
+            i += 1;
+            continue;
+        }
+        // Standalone markers (no length)
+        if (0xD0..=0xD9).contains(&marker) || marker == 0x01 {
+            i += 2;
+            continue;
+        }
+        if i + 3 >= data.len() {
+            break;
+        }
+        let seg_len = ((data[i + 2] as usize) << 8) | (data[i + 3] as usize);
+        // APP2 (0xE2) with "ICC_PROFILE\0" identifier
+        if marker == 0xE2 && i + 4 + 12 < data.len() {
+            let ident = &data[i + 4..i + 4 + 12];
+            if ident == b"ICC_PROFILE\x00" {
+                return true;
+            }
+        }
+        // SOS marker → stop scanning (image data follows)
+        if marker == 0xDA {
+            break;
+        }
+        i += 2 + seg_len;
+    }
+    false
+}
+
+/// 从 JPEG APP2 ICC_PROFILE 中提取 profile 描述名称。
+/// JPEG ICC 没有直接存名称，需要解析 ICC profile header 中的 'desc' tag。
+/// 为简化实现，仅返回 "ICC (embedded)" 标记，让前端知道有 ICC。
+fn detect_jpeg_icc_name(path: &Path) -> Option<String> {
+    if detect_jpeg_icc(path) {
+        // 读取 ICC profile 的前 128 字节（header），尝试提取描述
+        // ICC header 偏移 80-127 可能包含 profile description
+        let data = std::fs::read(path).ok()?;
+        let mut i = 2usize;
+        while i + 1 < data.len() {
+            if data[i] != 0xFF { break; }
+            let marker = data[i + 1];
+            if marker == 0xFF { i += 1; continue; }
+            if (0xD0..=0xD9).contains(&marker) || marker == 0x01 { i += 2; continue; }
+            if i + 3 >= data.len() { break; }
+            let seg_len = ((data[i + 2] as usize) << 8) | (data[i + 3] as usize);
+            if marker == 0xE2 && i + 4 + 12 < data.len() {
+                let ident = &data[i + 4..i + 4 + 12];
+                if ident == b"ICC_PROFILE\x00" {
+                    // ICC data 从 i+4+14 开始（12 bytes ident + 1 byte chunk_idx + 1 byte chunk_count）
+                    let icc_start = i + 4 + 14;
+                    // 读取 ICC header 的前 128 字节找 'desc' tag
+                    if icc_start + 128 < data.len() {
+                        let icc_header = &data[icc_start..icc_start + 128];
+                        // ICC header: offset 80-127 是 date/time，描述在 tag table 里
+                        // 简化：检查前 4 字节获取 profile 大小，再检查常见 profile 名称
+                        let profile_size = u32::from_be_bytes([icc_header[0], icc_header[1], icc_header[2], icc_header[3]]);
+
+                        // 常见 ICC profile 签名检测
+                        // 偏移 36-39: signature "acsp" (Adobe)
+                        if icc_header.len() > 43 && &icc_header[36..40] == b"acsp" {
+                            // 检查偏移 41-43 的 RGB 条件
+                            return Some("ICC (embedded)".to_string());
+                        }
+                        if profile_size > 0 {
+                            return Some("ICC (embedded)".to_string());
+                        }
+                    }
+                    return Some("ICC (embedded)".to_string());
+                }
+            }
+            if marker == 0xDA { break; }
+            i += 2 + seg_len;
+        }
+    }
+    None
+}
+/// 只读 chunk header，不解码像素，开销极小。
+fn detect_png_icc(path: &Path) -> bool {
+    let mut file = match std::fs::File::open(path) {
+        Ok(f) => f,
+        Err(_) => return false,
+    };
+    // PNG 签名 8 字节
+    let mut sig = [0u8; 8];
+    if std::io::Read::read(&mut file, &mut sig).is_err() || sig != [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A] {
+        return false;
+    }
+    loop {
+        let mut len_buf = [0u8; 4];
+        let mut type_buf = [0u8; 4];
+        if std::io::Read::read(&mut file, &mut len_buf).is_err() || std::io::Read::read(&mut file, &mut type_buf).is_err() {
+            break;
+        }
+        let chunk_len = u32::from_be_bytes(len_buf) as usize;
+        let chunk_type = &type_buf;
+        if chunk_type == b"iCCP" {
+            return true;
+        }
+        if chunk_type == b"sRGB" {
+            // sRGB chunk 也算色彩配置
+            return true;
+        }
+        if chunk_type == b"IEND" {
+            break;
+        }
+        // 跳过 chunk data + CRC (4 bytes)
+        let skip = chunk_len + 4;
+        if std::io::Seek::seek(&mut file, std::io::SeekFrom::Current(skip as i64)).is_err() {
+            break;
+        }
+    }
+    false
+}
+
+/// 从 iCCP chunk 中提取 profile 名称（如 "Adobe RGB", "Display P3"）。
+/// 名称是 iCCP chunk data 的前段（null-terminated compressed string）。
+fn detect_png_icc_name(path: &Path) -> Option<String> {
+    let mut file = std::fs::File::open(path).ok()?;
+    let mut sig = [0u8; 8];
+    std::io::Read::read(&mut file, &mut sig).ok()?;
+    if sig != [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A] {
+        return None;
+    }
+    loop {
+        let mut len_buf = [0u8; 4];
+        let mut type_buf = [0u8; 4];
+        if std::io::Read::read(&mut file, &mut len_buf).is_err() || std::io::Read::read(&mut file, &mut type_buf).is_err() {
+            break;
+        }
+        let chunk_len = u32::from_be_bytes(len_buf) as usize;
+        let chunk_type = &type_buf;
+        if chunk_type == b"sRGB" {
+            return Some("sRGB".to_string());
+        }
+        if chunk_type == b"iCCP" {
+            // iCCP data: profile name (null-terminated) + compression method (1 byte) + compressed profile
+            let mut data = vec![0u8; chunk_len.min(256)]; // 只读前 256 字节拿名称
+            let read_len = std::io::Read::read(&mut file, &mut data).ok()?;
+            let name_end = data[..read_len].iter().position(|&b| b == 0);
+            if let Some(end) = name_end {
+                let name = String::from_utf8_lossy(&data[..end]).to_string();
+                return Some(name);
+            }
+            // 读完剩余 data + CRC
+            let remaining = chunk_len - read_len + 4;
+            std::io::Seek::seek(&mut file, std::io::SeekFrom::Current(remaining as i64)).ok()?;
+            continue;
+        }
+        if chunk_type == b"IEND" {
+            break;
+        }
+        std::io::Seek::seek(&mut file, std::io::SeekFrom::Current((chunk_len + 4) as i64)).ok()?;
+    }
+    None
 }
 
 /// Adobe APP14 marker，明确声明 ColorTransform=1（YCbCr → RGB）。
@@ -966,7 +1433,7 @@ const APP14_ADOBE_YCBCR: [u8; 16] = [
     0x00, 0x64, // DCTEncodeVersion = 100
     0x00, 0x00, // APP14Flags0
     0x00, 0x00, // APP14Flags1
-    0x01,       // ColorTransform = 1 (YCbCr)
+    0x01, // ColorTransform = 1 (YCbCr)
 ];
 
 /// 在 JPEG 字节流的 APP segment 区域末尾插入 Adobe APP14（YCbCr）。
@@ -1099,6 +1566,23 @@ struct ProcessedImage {
     width: u32,
     height: u32,
     encoding: ImageEncoding,
+    /// Alpha 通道数据（DeviceGray，8-bit），用于 PDF SMask。
+    /// Some(alpha_bytes) → PDF 中 RGB 作为主图像，Alpha 作为 SMask 子图像。
+    /// None → 图像无透明通道，直接嵌入 RGB。
+    alpha_data: Option<Vec<u8>>,
+}
+
+/// 将 RGBA 图像分离为 RGB + Alpha 两个通道。
+/// RGB 走主图像路径（DCT 或 Flate），Alpha 走 SMask 路径（DeviceGray + FlateDecode）。
+fn split_rgba_to_rgb_alpha(rgba: &RgbaImage) -> (RgbImage, Vec<u8>) {
+    let (w, h) = rgba.dimensions();
+    let mut rgb = RgbImage::new(w, h);
+    let mut alpha = Vec::with_capacity((w * h) as usize);
+    for (rgb_pixel, rgba_pixel) in rgb.pixels_mut().zip(rgba.pixels()) {
+        rgb_pixel.0 = [rgba_pixel.0[0], rgba_pixel.0[1], rgba_pixel.0[2]];
+        alpha.push(rgba_pixel.0[3]);
+    }
+    (rgb, alpha)
 }
 
 struct PreparedPage {
@@ -1115,15 +1599,69 @@ fn jpeg_passthrough(path: &Path) -> Result<ProcessedImage, String> {
     let mut data = Vec::new();
     file.read_to_end(&mut data)
         .map_err(|e| format!("读取 JPEG 失败: {}", e))?;
-    let (w, h) = image_crate::image_dimensions(path)
-        .map_err(|e| format!("读取 JPEG 尺寸失败: {}", e))?;
+    let (w, h) =
+        image_crate::image_dimensions(path).map_err(|e| format!("读取 JPEG 尺寸失败: {}", e))?;
+
+    // JPEG 完整性检测：必须有 SOI + EOI
+    if data.len() < 4 || data[0] != 0xFF || data[1] != 0xD8 {
+        return Err("JPEG 文件头损坏（缺少 SOI 标记）".to_string());
+    }
+    // 查找 EOI (FF D9)：从末尾向前搜索，允许尾部填充
+    let has_eoi = {
+        let mut found = false;
+        let mut i = data.len();
+        while i >= 2 {
+            i -= 2;
+            if data[i] == 0xFF && data[i + 1] == 0xD9 {
+                found = true;
+                break;
+            }
+            // 跳过尾部填充（0x00 或空白字符）
+            if data[i] == 0x00 || data[i] == 0x0A || data[i] == 0x0D || data[i] == 0x20 {
+                continue;
+            }
+            break;
+        }
+        found
+    };
+    // ponytail: 缺少 EOI 但能读出尺寸 → 大多数图片查看器能正常显示，追加 EOI 即可合并进 PDF
+    if !has_eoi {
+        data.extend_from_slice(&[0xFF, 0xD9]);
+    }
+
     inject_app14_ycbcr(&mut data);
     Ok(ProcessedImage {
         data,
         width: w,
         height: h,
         encoding: ImageEncoding::Dct,
+        alpha_data: None,
     })
+}
+
+/// 统计 TIFF 文件的帧数（多页 TIFF 的页数）。
+/// 仅遍历 IFD 链（more_images/next_image），不解码像素，开销很小。
+/// 解析失败时返回 1（按单页处理），保证分析阶段不会因 TIFF 损坏而中断。
+fn count_tiff_frames(path: &Path) -> usize {
+    let file = match File::open(path) {
+        Ok(f) => f,
+        Err(_) => return 1,
+    };
+    let mut decoder = match TiffDecoder::new(file) {
+        Ok(d) => d,
+        Err(_) => return 1,
+    };
+    let mut count = 1usize;
+    loop {
+        if !decoder.more_images() {
+            break;
+        }
+        if decoder.next_image().is_err() {
+            break;
+        }
+        count += 1;
+    }
+    count
 }
 
 /// 处理多页 TIFF：每页单独压成 JPEG
@@ -1135,11 +1673,14 @@ fn handle_multipage_tiff(
     let file = File::open(path).map_err(|e| e.to_string())?;
     let mut decoder = TiffDecoder::new(file).map_err(|e| e.to_string())?;
     let mut pages = Vec::new();
-    let validated_margin = validate_margin_for_mode(config.margin, &config.page_mode, config.page_size)?;
+    let validated_margin =
+        validate_margin_for_mode(config.margin, &config.page_mode, config.page_size)?;
     let effective_margin = match &config.page_mode {
         PageMode::Original => 0.0,
         PageMode::Fixed { .. } => validated_margin,
     };
+    // EXIF 方向对整个 TIFF 文件生效，读一次后在每帧复用（参考 process_image 的 apply_exif_orientation）
+    let exif_orientation = read_exif_orientation(path);
 
     loop {
         let color = decoder.colortype().unwrap_or(tiff::ColorType::RGB(8));
@@ -1157,13 +1698,19 @@ fn handle_multipage_tiff(
 
         let mut rgba_image = if let Some(alpha_data) = alpha {
             let mut rgba = RgbaImage::new(w, h);
-            for ((pixel, rgb), a) in rgba.pixels_mut().zip(rgb_image.pixels()).zip(alpha_data.iter()) {
+            for ((pixel, rgb), a) in rgba
+                .pixels_mut()
+                .zip(rgb_image.pixels())
+                .zip(alpha_data.iter())
+            {
                 pixel.0 = [rgb.0[0], rgb.0[1], rgb.0[2], *a];
             }
             DynamicImage::ImageRgba8(rgba)
         } else {
             DynamicImage::ImageRgb8(rgb_image)
         };
+        // 应用 EXIF 方向（与 analyze_image/缩略图保持一致）；旋转后尺寸自动反映到 processed/layout
+        rgba_image = apply_orientation_value(rgba_image, exif_orientation);
         if (params.scale - 1.0).abs() > 1e-3 {
             rgba_image = resize_dynamic(&rgba_image, params.scale);
         }
@@ -1221,6 +1768,22 @@ fn process_image(
     config: &PdfConfig,
     params: &ProcessParams,
 ) -> Result<Vec<PreparedPage>, String> {
+    // ---- 内存预检：读取尺寸但不解码，超大图直接拒绝 ----
+    let (raw_w, raw_h) = match image_crate::image_dimensions(path) {
+        Ok((w, h)) => (w, h),
+        Err(e) => return Err(format!("无法读取图片尺寸 {}: {}", path.display(), e)),
+    };
+    let (w, h) = dimensions_after_exif_orientation(path, raw_w, raw_h);
+    match check_image_memory(w, h) {
+        MemoryCheck::Oversized { estimated_mb, .. } => {
+            return Err(format!(
+                "图片过大（约 {}MB，{}×{}像素），建议压缩后再试",
+                estimated_mb, w, h
+            ));
+        }
+        MemoryCheck::Ok => {}
+    }
+
     let guessed_format = ImageReader::open(path)
         .and_then(|r| r.with_guessed_format())
         .map(|r| r.format().unwrap_or(ImageFormat::Png))
@@ -1231,7 +1794,8 @@ fn process_image(
         return handle_multipage_tiff(path, config, params);
     }
 
-    let validated_margin = validate_margin_for_mode(config.margin, &config.page_mode, config.page_size)?;
+    let validated_margin =
+        validate_margin_for_mode(config.margin, &config.page_mode, config.page_size)?;
     let effective_margin = match &config.page_mode {
         PageMode::Original => 0.0,
         PageMode::Fixed { .. } => validated_margin,
@@ -1242,29 +1806,28 @@ fn process_image(
         && params.passthrough_jpeg
         && (params.scale - 1.0).abs() < 1e-3
         && !jpeg_is_cmyk(path)
+        && read_exif_orientation(path).is_none()
     {
-        if read_exif_orientation(path).is_none() {
-            let processed = jpeg_passthrough(path)?;
-            let (page_width, page_height) = get_page_dimensions(
-                &config.page_mode,
-                config.page_size,
-                processed.width,
-                processed.height,
-            );
-            let layout = calculate_image_layout(
-                processed.width,
-                processed.height,
-                page_width,
-                page_height,
-                effective_margin,
-            );
-            return Ok(vec![PreparedPage {
-                processed,
-                layout,
-                page_width,
-                page_height,
-            }]);
-        }
+        let processed = jpeg_passthrough(path)?;
+        let (page_width, page_height) = get_page_dimensions(
+            &config.page_mode,
+            config.page_size,
+            processed.width,
+            processed.height,
+        );
+        let layout = calculate_image_layout(
+            processed.width,
+            processed.height,
+            page_width,
+            page_height,
+            effective_margin,
+        );
+        return Ok(vec![PreparedPage {
+            processed,
+            layout,
+            page_width,
+            page_height,
+        }]);
     }
 
     // ---- 通用路径：解码 → EXIF → CMYK 转换 → 缩放 → 透明合成 → 编码 ----
@@ -1284,15 +1847,26 @@ fn process_image(
     }
 
     let (w, h) = img.dimensions();
-    let rgb = if has_alpha_channel(&img) {
-        flatten_rgba_to_white(&img.to_rgba8())
+    // 透明通道处理：
+    // - 方形/接近方形（|w-h| < 4px）透明图 → RGB + Alpha 分离，Alpha 走 PDF SMask（真正保留透明）
+    // - 非方形透明图 → 退回白底合成（printpdf 0.7 的 SMask height 用 img.width，非方形会尺寸错位）
+    //   ponytail: 上游 bug，方形时 width==height 无影响；非方形用白底兜底避免输出损坏 PDF
+    let (rgb, alpha_data) = if has_alpha_channel(&img) {
+        let is_square = (w as i32 - h as i32).abs() < 4;
+        if is_square {
+            let (r, a) = split_rgba_to_rgb_alpha(&img.to_rgba8());
+            (r, Some(a))
+        } else {
+            // 非方形透明图：白底合成（fallback），透明丢失但 PDF 不损坏
+            (flatten_rgba_to_white(&img.to_rgba8()), None)
+        }
     } else {
-        img.to_rgb8()
+        (img.to_rgb8(), None)
     };
 
     // ---- PNG 内容自适应编码分流 ----
     // 仅对 PNG 格式做分类；其他格式一律走 JPEG
-    let processed = if matches!(guessed_format, ImageFormat::Png) {
+    let mut processed = if matches!(guessed_format, ImageFormat::Png) {
         let encoding = classify_png_content(&rgb);
         match encoding {
             ImageEncoding::Flate => {
@@ -1320,13 +1894,10 @@ fn process_image(
     } else {
         encode_rgb_to_jpeg_processed(&rgb, params.quality)?
     };
+    // 附加 Alpha 数据到 ProcessedImage（SMask 会在 embed_page 时写入 PDF）
+    processed.alpha_data = alpha_data;
 
-    let (page_width, page_height) = get_page_dimensions(
-        &config.page_mode,
-        config.page_size,
-        w,
-        h,
-    );
+    let (page_width, page_height) = get_page_dimensions(&config.page_mode, config.page_size, w, h);
     let layout = calculate_image_layout(w, h, page_width, page_height, effective_margin);
 
     Ok(vec![PreparedPage {
@@ -1348,6 +1919,19 @@ fn embed_page(
     let current_layer = doc.get_page(page).get_layer(layer);
     let processed = &prepared.processed;
 
+    // 构造 SMask（Alpha 通道）：printpdf 的 SMask.matte 存储灰度 alpha 值
+    let smask = if let Some(ref alpha) = processed.alpha_data {
+        Some(SMask {
+            width: processed.width as i64,
+            height: processed.height as i64,
+            bits_per_component: 8,
+            interpolate: true,
+            matte: alpha.iter().map(|&b| b as i64).collect(),
+        })
+    } else {
+        None
+    };
+
     let image_xobject = match processed.encoding {
         ImageEncoding::Dct => ImageXObject {
             width: Px(processed.width as usize),
@@ -1358,14 +1942,9 @@ fn embed_page(
             image_data: processed.data.clone(),
             image_filter: Some(ImageFilter::DCT),
             clipping_bbox: None,
-            smask: None,
+            smask,
         },
         ImageEncoding::Flate => {
-            // FlateDecode 路径：image_filter = None，image_data = 原始 RGB 像素行
-            // lopdf 在 release 模式下会自动调用 Stream::compress() 对流做 FlateDecode 压缩，
-            // 并添加 /Filter /FlateDecode 字典条目。因为 dict 中没有 /Filter，
-            // compress() 不会跳过，会正确压缩并设置 /Filter。
-            // 注意：不要在这里用 flate2 预压缩，否则 lopdf 会再次压缩导致双重压缩。
             ImageXObject {
                 width: Px(processed.width as usize),
                 height: Px(processed.height as usize),
@@ -1375,7 +1954,7 @@ fn embed_page(
                 image_data: processed.data.clone(),
                 image_filter: None,
                 clipping_bbox: None,
-                smask: None,
+                smask,
             }
         }
     };
@@ -1402,19 +1981,35 @@ fn process_all(
     params: &ProcessParams,
     window: &tauri::WebviewWindow,
     phase_label: &str,
-) -> Result<(Vec<Vec<PreparedPage>>, u64), String> {
+) -> Result<(Vec<Vec<PreparedPage>>, u64, Vec<String>), String> {
     use std::sync::Mutex;
     let total = images.len();
     let counter = std::sync::atomic::AtomicUsize::new(0);
-    let results: Mutex<Vec<Option<Vec<PreparedPage>>>> = Mutex::new(
-        std::iter::repeat_with(|| None).take(total).collect(),
-    );
+    let results: Mutex<Vec<Option<Vec<PreparedPage>>>> =
+        Mutex::new(std::iter::repeat_with(|| None).take(total).collect());
+    let warnings: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
     let outcomes: Vec<Result<(), String>> = images
         .par_iter()
         .enumerate()
         .map(|(idx, img)| {
-            let pages = process_image(Path::new(&img.path), config, params)?;
+            // 大图并发限制
+            let is_large = img.width as u64 * img.height as u64 * 4 > 50 * 1024 * 1024;
+            let slot = if is_large {
+                while !acquire_large_decode_slot() {
+                    std::thread::yield_now();
+                }
+                true
+            } else {
+                false
+            };
+
+            let result = process_image(Path::new(&img.path), config, params);
+
+            if slot {
+                release_large_decode_slot();
+            }
+
             let cur = counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
             let _ = window.emit(
                 "pdf_progress",
@@ -1425,23 +2020,39 @@ fn process_all(
                     phase: phase_label.to_string(),
                 },
             );
-            results.lock().unwrap()[idx] = Some(pages);
-            Ok(())
+
+            match result {
+                Ok(pages) => {
+                    results.lock().unwrap()[idx] = Some(pages);
+                    Ok(())
+                }
+                Err(e) => {
+                    // 超大图等非致命错误 → 跳过该图但继续处理其他
+                    warnings.lock().unwrap().push(format!("{}: {}", img.path, e));
+                    Ok(())
+                }
+            }
         })
         .collect();
 
+    // outcomes 全是 Ok(())，因为错误已转到 warnings
     for r in outcomes {
         r?;
     }
 
-    let collected: Vec<Vec<PreparedPage>> =
-        results.into_inner().unwrap().into_iter().flatten().collect();
+    let collected: Vec<Vec<PreparedPage>> = results
+        .into_inner()
+        .unwrap()
+        .into_iter()
+        .flatten()
+        .collect();
     let processed_bytes: u64 = collected
         .iter()
         .flat_map(|v| v.iter())
         .map(|p| p.processed.data.len() as u64)
         .sum();
-    Ok((collected, processed_bytes))
+    let warnings = warnings.into_inner().unwrap();
+    Ok((collected, processed_bytes, warnings))
 }
 
 fn write_pdf(
@@ -1494,9 +2105,7 @@ fn write_pdf(
     doc.save(&mut writer)
         .map_err(|e| format!("保存PDF失败: {}", e))?;
 
-    Ok(std::fs::metadata(output_path)
-        .map(|m| m.len())
-        .unwrap_or(0))
+    Ok(std::fs::metadata(output_path).map(|m| m.len()).unwrap_or(0))
 }
 
 // ==================== Tauri Commands ====================
@@ -1538,6 +2147,7 @@ pub async fn analyze_folder_for_pdf(
         let mut apng_count = 0usize;
         let mut bit16_count = 0usize;
         let mut gamma_count = 0usize;
+        let mut icc_count = 0usize;
         let mut bucket_counts: std::collections::BTreeMap<u32, (&'static str, usize)> =
             std::collections::BTreeMap::new();
 
@@ -1552,7 +2162,7 @@ pub async fn analyze_folder_for_pdf(
                 let entry = bucket_counts.entry(min_edge).or_insert((label, 0));
                 entry.1 += 1;
 
-                // P1+P2: 统计 APNG、16-bit、gamma 文件数
+                // P1+P2: 统计 APNG、16-bit、gamma、ICC 文件数
                 if analysis.is_apng {
                     apng_count += 1;
                 }
@@ -1562,6 +2172,9 @@ pub async fn analyze_folder_for_pdf(
                 if analysis.has_gamma {
                     gamma_count += 1;
                 }
+                if analysis.has_icc {
+                    icc_count += 1;
+                }
 
                 if let Ok(meta) = std::fs::metadata(path) {
                     total_size += meta.len();
@@ -1569,6 +2182,8 @@ pub async fn analyze_folder_for_pdf(
                 images.push(analysis);
             }
         }
+
+        let long_image_count = images.iter().filter(|i| i.is_long_image).count();
 
         let suggested_orientation = if portrait_count > landscape_count {
             "portrait".to_string()
@@ -1602,6 +2217,8 @@ pub async fn analyze_folder_for_pdf(
             apng_count,
             bit16_count,
             gamma_count,
+            icc_count,
+            long_image_count,
         })
     })
     .await
@@ -1616,9 +2233,17 @@ pub fn calculate_preview_layout(
     margin: f64,
 ) -> Result<PreviewData, String> {
     let validated_margin = validate_margin_for_mode(margin, &page_mode, page_size)?;
-    let pages: Vec<LayoutResult> = images
+    // 多页 TIFF 按帧数展开预览页，使预览页数与最终 PDF 页数一致。
+    // 注：各帧共用 ImageAnalysis 中首帧的尺寸/缩略图；若多页 TIFF 各帧尺寸不同，
+    // 预览的逐帧尺寸以首帧为准（仅页数准确），实际生成时按各帧真实尺寸布局。
+    let base_pages: Vec<LayoutResult> = images
         .par_iter()
         .map(|img| calculate_page_layout(img, &page_mode, page_size, validated_margin))
+        .collect();
+    let pages: Vec<LayoutResult> = images
+        .iter()
+        .zip(base_pages)
+        .flat_map(|(img, layout)| std::iter::repeat(layout).take(img.frame_count.max(1)))
         .collect();
 
     Ok(PreviewData {
@@ -1649,7 +2274,8 @@ pub async fn generate_pdf(
             .map(|m| m.len())
             .sum();
 
-        let validated_margin = validate_margin_for_mode(config.margin, &config.page_mode, config.page_size)?;
+        let validated_margin =
+            validate_margin_for_mode(config.margin, &config.page_mode, config.page_size)?;
         let config = PdfConfig {
             margin: validated_margin,
             ..config
@@ -1675,6 +2301,7 @@ pub async fn generate_pdf(
         let output_path = PathBuf::from(&config.output_path);
         let mut last_pages: Option<Vec<Vec<PreparedPage>>> = None;
         let mut last_params: Option<ProcessParams> = None;
+        let mut all_warnings: Vec<String> = Vec::new();
 
         let _ = window.emit(
             "pdf_progress",
@@ -1694,9 +2321,10 @@ pub async fn generate_pdf(
             } else {
                 format!("处理图片 ({})", params.label())
             };
-            let (pages, processed_bytes) = process_all(&images, &config, params, &window, &phase)?;
+            let (pages, processed_bytes, attempt_warnings) = process_all(&images, &config, params, &window, &phase)?;
             last_pages = Some(pages);
             last_params = Some(*params);
+            all_warnings.extend(attempt_warnings);
 
             // 仅 Lossless 模式才需要看阈值；超出则用下一档参数重试
             if matches!(config.merge_mode, MergeMode::Lossless { .. })
@@ -1721,8 +2349,8 @@ pub async fn generate_pdf(
         } else {
             0.0
         };
-        let exceeded_target = matches!(config.merge_mode, MergeMode::Lossless { .. })
-            && size_ratio > max_ratio;
+        let exceeded_target =
+            matches!(config.merge_mode, MergeMode::Lossless { .. }) && size_ratio > max_ratio;
 
         Ok(GenerationResult {
             success: true,
@@ -1734,6 +2362,7 @@ pub async fn generate_pdf(
             mode_used: params.label(),
             size_ratio,
             exceeded_target,
+            warnings: all_warnings,
             error: None,
         })
     })
@@ -1782,8 +2411,7 @@ pub async fn get_image_thumbnail(image_path: String, max_size: u32) -> Result<St
         };
         let (tw, th) = rgb.dimensions();
         let mut buffer = Cursor::new(Vec::new());
-        let mut encoder =
-            image_crate::codecs::jpeg::JpegEncoder::new_with_quality(&mut buffer, 80);
+        let mut encoder = image_crate::codecs::jpeg::JpegEncoder::new_with_quality(&mut buffer, 80);
         encoder
             .encode(rgb.as_raw(), tw, th, image_crate::ExtendedColorType::Rgb8)
             .map_err(|e| e.to_string())?;
@@ -1823,12 +2451,18 @@ mod tests {
             has_gamma: false,
             gamma: None,
             file_size: 0,
+            frame_count: 1,
+            has_icc: false,
+            icc_profile: None,
+            is_long_image: width > 0 && height > 0 && (width as f32 / height as f32 > 5.0 || height as f32 / width as f32 > 5.0),
         }
     }
 
     #[test]
     fn validate_margin_for_mode_rejects_negative_and_oversized() {
-        let fixed = PageMode::Fixed { orientation: FixedOrientation::Auto };
+        let fixed = PageMode::Fixed {
+            orientation: FixedOrientation::Auto,
+        };
         assert!(validate_margin_for_mode(-1.0, &fixed, PageSize::A4).is_err());
         assert!(validate_margin_for_mode(85.0, &fixed, PageSize::A4).is_err());
         assert_eq!(
@@ -1845,7 +2479,9 @@ mod tests {
 
     #[test]
     fn fixed_orientation_resolves_based_on_image_shape() {
-        let auto_fixed = PageMode::Fixed { orientation: FixedOrientation::Auto };
+        let auto_fixed = PageMode::Fixed {
+            orientation: FixedOrientation::Auto,
+        };
         // 竖图 → 竖幅面
         assert_eq!(
             get_page_dimensions(&auto_fixed, PageSize::A4, 400, 800),
@@ -1857,13 +2493,17 @@ mod tests {
             (297.0, 210.0)
         );
         // 强制竖向
-        let force_p = PageMode::Fixed { orientation: FixedOrientation::Portrait };
+        let force_p = PageMode::Fixed {
+            orientation: FixedOrientation::Portrait,
+        };
         assert_eq!(
             get_page_dimensions(&force_p, PageSize::A4, 800, 400),
             (210.0, 297.0)
         );
         // 强制横向
-        let force_l = PageMode::Fixed { orientation: FixedOrientation::Landscape };
+        let force_l = PageMode::Fixed {
+            orientation: FixedOrientation::Landscape,
+        };
         assert_eq!(
             get_page_dimensions(&force_l, PageSize::A4, 400, 800),
             (297.0, 210.0)
@@ -1886,19 +2526,23 @@ mod tests {
     #[test]
     fn original_mode_per_image_pages_keep_aspect_ratio() {
         let orig = PageMode::Original;
-        let img1 = sample_image(800, 600);    // 4:3 横
-        let img2 = sample_image(1000, 2560);  // 25:64 竖（极长）
-        let img3 = sample_image(781, 781);    // 1:1 方
+        let img1 = sample_image(800, 600); // 4:3 横
+        let img2 = sample_image(1000, 2560); // 25:64 竖（极长）
+        let img3 = sample_image(781, 781); // 1:1 方
 
         let l1 = calculate_page_layout(&img1, &orig, PageSize::A4, 0.0);
         let l2 = calculate_page_layout(&img2, &orig, PageSize::A4, 0.0);
         let l3 = calculate_page_layout(&img3, &orig, PageSize::A4, 0.0);
 
         // 1) 三张页的尺寸两两不同
-        assert!((l1.page_width - l2.page_width).abs() > 1.0,
-            "page1 width should differ from page2");
-        assert!((l1.page_height - l2.page_height).abs() > 1.0,
-            "page1 height should differ from page2");
+        assert!(
+            (l1.page_width - l2.page_width).abs() > 1.0,
+            "page1 width should differ from page2"
+        );
+        assert!(
+            (l1.page_height - l2.page_height).abs() > 1.0,
+            "page1 height should differ from page2"
+        );
         assert!((l1.page_width - l3.page_width).abs() > 1.0);
         assert!((l2.page_width - l3.page_width).abs() > 1.0);
 
@@ -1906,35 +2550,49 @@ mod tests {
         let ratio1 = l1.page_width / l1.page_height;
         let ratio2 = l2.page_width / l2.page_height;
         let ratio3 = l3.page_width / l3.page_height;
-        assert!((ratio1 - 800.0 / 600.0).abs() < 1e-6,
-            "page1 ratio should match 800:600");
-        assert!((ratio2 - 1000.0 / 2560.0).abs() < 1e-6,
-            "page2 ratio should match 1000:2560");
+        assert!(
+            (ratio1 - 800.0 / 600.0).abs() < 1e-6,
+            "page1 ratio should match 800:600"
+        );
+        assert!(
+            (ratio2 - 1000.0 / 2560.0).abs() < 1e-6,
+            "page2 ratio should match 1000:2560"
+        );
         assert!((ratio3 - 1.0).abs() < 1e-6, "page3 ratio should match 1:1");
 
         // 3) 具体 mm 尺寸（72 DPI）
         //    800 × 25.4 / 72 ≈ 282.22 mm
         //    600 × 25.4 / 72 ≈ 211.67 mm
-        assert!((l1.page_width  - 282.222).abs() < 0.01);
+        assert!((l1.page_width - 282.222).abs() < 0.01);
         assert!((l1.page_height - 211.667).abs() < 0.01);
         //    1000 × 25.4 / 72 ≈ 352.78 mm
         //    2560 × 25.4 / 72 ≈ 903.11 mm
-        assert!((l2.page_width  - 352.778).abs() < 0.01);
+        assert!((l2.page_width - 352.778).abs() < 0.01);
         assert!((l2.page_height - 903.111).abs() < 0.01);
         //    781 × 25.4 / 72 ≈ 275.51 mm
-        assert!((l3.page_width  - 275.511).abs() < 0.01);
+        assert!((l3.page_width - 275.511).abs() < 0.01);
         assert!((l3.page_height - 275.511).abs() < 0.01);
 
         // 4) 图像完全填满页面：无偏移、无白边
         for layout in [&l1, &l2, &l3] {
-            assert!(layout.image.x.abs() < 0.01,
-                "image should start at x=0 (got {})", layout.image.x);
-            assert!(layout.image.y.abs() < 0.01,
-                "image should start at y=0 (got {})", layout.image.y);
-            assert!((layout.image.scaled_width - layout.page_width).abs() < 0.5,
-                "image width should equal page width");
-            assert!((layout.image.scaled_height - layout.page_height).abs() < 0.5,
-                "image height should equal page height");
+            assert!(
+                layout.image.x.abs() < 0.01,
+                "image should start at x=0 (got {})",
+                layout.image.x
+            );
+            assert!(
+                layout.image.y.abs() < 0.01,
+                "image should start at y=0 (got {})",
+                layout.image.y
+            );
+            assert!(
+                (layout.image.scaled_width - layout.page_width).abs() < 0.5,
+                "image width should equal page width"
+            );
+            assert!(
+                (layout.image.scaled_height - layout.page_height).abs() < 0.5,
+                "image height should equal page height"
+            );
             assert_close(layout.margin, 0.0);
         }
     }
@@ -1942,7 +2600,9 @@ mod tests {
     #[test]
     fn layout_preserves_aspect_ratio_and_centers_image() {
         let image = sample_image(400, 200);
-        let fixed = PageMode::Fixed { orientation: FixedOrientation::Landscape };
+        let fixed = PageMode::Fixed {
+            orientation: FixedOrientation::Landscape,
+        };
         let layout = calculate_page_layout(&image, &fixed, PageSize::A4, 10.0);
 
         assert_close(layout.page_width, 297.0);
@@ -1996,7 +2656,9 @@ mod tests {
     #[test]
     fn page_layout_includes_image_path() {
         let image = sample_image(400, 200);
-        let fixed = PageMode::Fixed { orientation: FixedOrientation::Landscape };
+        let fixed = PageMode::Fixed {
+            orientation: FixedOrientation::Landscape,
+        };
         let layout = calculate_page_layout(&image, &fixed, PageSize::A4, 10.0);
         assert_eq!(layout.image_path, "sample.jpg");
     }
@@ -2020,7 +2682,7 @@ mod tests {
         v.extend_from_slice(b"JFIF\0");
         v.extend_from_slice(&[
             0x01, 0x02, // version 1.02
-            0x00,       // density units
+            0x00, // density units
             0x00, 0x48, 0x00, 0x48, // X/Y density
             0x00, 0x00, // thumbnail w/h
         ]);
@@ -2079,11 +2741,17 @@ mod tests {
 
     #[test]
     fn classify_orientation_handles_three_cases() {
-        assert_eq!(classify_orientation(1920, 1080), OrientationClass::Landscape);
+        assert_eq!(
+            classify_orientation(1920, 1080),
+            OrientationClass::Landscape
+        );
         assert_eq!(classify_orientation(1080, 1920), OrientationClass::Portrait);
         assert_eq!(classify_orientation(1024, 1024), OrientationClass::Square);
         // [0.95, 1.05] 边界附近：1080/1024 ≈ 1.055，已超阈值 → 不算方图
-        assert_eq!(classify_orientation(1080, 1024), OrientationClass::Landscape);
+        assert_eq!(
+            classify_orientation(1080, 1024),
+            OrientationClass::Landscape
+        );
         // 4:5 (Instagram portrait) ratio = 0.8 → 竖图
         assert_eq!(classify_orientation(1080, 1350), OrientationClass::Portrait);
         // 边界保护：宽或高为 0 不应 panic
@@ -2191,5 +2859,93 @@ mod tests {
         assert_eq!(img.bit_depth, 8);
         assert!(!img.has_gamma);
         assert!(img.gamma.is_none());
+        assert!(!img.has_icc);
+        assert!(img.icc_profile.is_none());
+    }
+
+    // ==================== P1-3: magic number 检测测试 ====================
+
+    #[test]
+    fn detect_format_by_magic_jpeg() {
+        let dir = std::env::temp_dir();
+        let p = dir.join("magic_test.jpg");
+        std::fs::write(&p, b"\xFF\xD8\xFF\xE0JFIF").unwrap();
+        assert_eq!(detect_format_by_magic(&p), DetectedFormat::Jpeg);
+        let _ = std::fs::remove_file(&p);
+    }
+
+    #[test]
+    fn detect_format_by_magic_png() {
+        let dir = std::env::temp_dir();
+        let p = dir.join("magic_test.png");
+        std::fs::write(&p, b"\x89PNG\r\n\x1A\n").unwrap();
+        assert_eq!(detect_format_by_magic(&p), DetectedFormat::Png);
+        let _ = std::fs::remove_file(&p);
+    }
+
+    #[test]
+    fn detect_format_by_magic_pdf_disguised_as_jpg() {
+        // .jpg 扩展名但实际是 PDF
+        let dir = std::env::temp_dir();
+        let p = dir.join("fake.jpg");
+        std::fs::write(&p, b"%PDF-1.4 ...").unwrap();
+        assert_eq!(detect_format_by_magic(&p), DetectedFormat::Pdf);
+        assert!(!detect_format_by_magic(&p).is_processable());
+        let _ = std::fs::remove_file(&p);
+    }
+
+    #[test]
+    fn detect_format_by_magic_psd_disguised() {
+        let dir = std::env::temp_dir();
+        let p = dir.join("fake.png");
+        std::fs::write(&p, b"8BPS\x00\x01").unwrap();
+        assert_eq!(detect_format_by_magic(&p), DetectedFormat::Psd);
+        let _ = std::fs::remove_file(&p);
+    }
+
+    // ==================== P1-2: 内存保护测试 ====================
+
+    #[test]
+    fn check_image_memory_ok_for_normal_image() {
+        // 1920x1080 x4 = ~8MB，远低于 400MB
+        assert_eq!(check_image_memory(1920, 1080), MemoryCheck::Ok);
+    }
+
+    #[test]
+    fn check_image_memory_oversized_for_huge_image() {
+        // 20000x20000 x4 = 1.6GB，超过 400MB
+        match check_image_memory(20000, 20000) {
+            MemoryCheck::Oversized { estimated_mb, .. } => assert!(estimated_mb > 400),
+            _ => panic!("expected Oversized"),
+        }
+    }
+
+    // ==================== P1-1: SMask 分离测试 ====================
+
+    #[test]
+    fn split_rgba_separates_rgb_and_alpha() {
+        let mut rgba = RgbaImage::new(2, 2);
+        rgba.put_pixel(0, 0, image_crate::Rgba([10, 20, 30, 40]));
+        rgba.put_pixel(1, 0, image_crate::Rgba([50, 60, 70, 80]));
+        rgba.put_pixel(0, 1, image_crate::Rgba([90, 100, 110, 120]));
+        rgba.put_pixel(1, 1, image_crate::Rgba([130, 140, 150, 160]));
+        let (rgb, alpha) = split_rgba_to_rgb_alpha(&rgba);
+        assert_eq!(rgb.get_pixel(0, 0).0, [10, 20, 30]);
+        assert_eq!(alpha, vec![40, 80, 120, 160]);
+    }
+
+    // ==================== 长图判定测试 ====================
+
+    #[test]
+    fn long_image_detection() {
+        // 1080x20000 长截图 → 长图
+        let long = sample_image(1080, 20000);
+        assert!(long.is_long_image);
+        // 1920x1080 普通横图 → 非长图
+        let normal = sample_image(1920, 1080);
+        assert!(!normal.is_long_image);
+        // 1080x1350 竖图 → 非长图
+        let portrait = sample_image(1080, 1350);
+        assert!(!portrait.is_long_image);
     }
 }

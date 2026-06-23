@@ -1,6 +1,8 @@
-﻿<script setup lang="ts">
-import { computed, nextTick, reactive, ref, defineAsyncComponent } from 'vue'
+<script setup lang="ts">
+import { computed, nextTick, reactive, ref, defineAsyncComponent, watch } from 'vue'
 import { ElMessage } from 'element-plus'
+import { Plus, FolderAdd, Upload } from '@element-plus/icons-vue'
+import { useFileSelect } from '@core/hooks/useFileSelect'
 const MediaStatsPanel = defineAsyncComponent(() => import('./components/media-stats-panel.vue'))
 import MediaTablePanel from './components/media-table-panel.vue'
 import MediaTopBar from './components/media-top-bar.vue'
@@ -9,12 +11,73 @@ import VideoInfoView from './components/video-info-view.vue'
 import { useMediaBatch } from './hooks/useMediaBatch'
 import { useSettings } from '@core/hooks/useSettings'
 import type { VideoInfoItem, VideoRow } from './types/media'
+import type { PickKind } from '@core/api/common'
 
+// reactive 包装：让模板内 batch.xxx 自动解包 ref，避免在模板里到处 .value
 const batch = reactive(useMediaBatch())
 const { t } = useSettings()
+const { pick } = useFileSelect()
 
 const viewMode = ref<'batch' | 'exhibition'>('batch')
+// 公共递归开关：两个视图共享
+const recursive = ref(false)
+// 公共导入状态
+const importing = ref(false)
+
+// 元数据视图首次访问后才挂载，避免初始页就预加载大组件
+const exhibitionMounted = ref(false)
 const videoInfoRef = ref<InstanceType<typeof VideoInfoView> | null>(null)
+
+// 视图切换：batch→exhibition 时，若展览视图无数据但重命名视图有视频，
+// 自动用重命名视图的路径发起详细提取（缓存命中则秒开）
+watch(viewMode, async (v) => {
+  if (v === 'exhibition') {
+    exhibitionMounted.value = true
+    await nextTick()
+    const vi = videoInfoRef.value
+    if (vi && !vi.hasData()) {
+      const videoPaths = batch.videoRows.map(r => r.path).filter(Boolean)
+      if (videoPaths.length) {
+        vi.importByBatchPaths(videoPaths)
+      }
+    }
+  }
+})
+
+// ==================== 公共导入逻辑 ====================
+// 根据当前 viewMode 决定提取深度：
+// - batch 模式：只提取重命名所需字段（轻量 probe）
+// - exhibition 模式：提取完整元数据（详细 detailed），结果纳入缓存
+const handleImport = async (kind: PickKind) => {
+  if (importing.value) return
+  const picked = await pick(kind)
+  const paths = (picked || []).filter((p: string) => !/[\*\?\[\]]/.test(p))
+  if (picked && paths.length !== picked.length) {
+    ElMessage.warning(t('已忽略包含通配符的路径'))
+  }
+  if (!paths.length) return
+
+  if (viewMode.value === 'exhibition') {
+    // exhibition 模式：直接走详细提取
+    await nextTick()
+    const vi = videoInfoRef.value
+    if (vi) {
+      importing.value = true
+      try {
+        await vi.importByPaths(paths, recursive.value)
+      } finally {
+        importing.value = false
+      }
+    }
+  } else {
+    // batch 模式：走轻量提取，空文件夹兜底也在此处理
+    // 同步递归值给 batch
+    batch.recursive = recursive.value
+    await batch.handleImportWithPaths(paths, kind)
+    // 同步回可能被空文件夹逻辑修改的递归值
+    recursive.value = batch.recursive
+  }
+}
 
 const statsCardData = computed(() => ({
   basic: batch.basicStats,
@@ -28,7 +91,8 @@ const tickerText = computed(() => {
 })
 
 // 视频元数据导出 → 视频图片重命名：直接注入扁平字段，无需二次后端扫描
-const handleAddToRename = (videoItems: VideoInfoItem[]) => {
+// 异步化：先反馈 + 切到目标视图，让 mergeByPath 与表格重渲在下一帧再发生，避免按钮卡顿
+const handleAddToRename = async (videoItems: VideoInfoItem[]) => {
   if (!videoItems.length) return
   const rows: VideoRow[] = videoItems.map((item) => ({
     id: 0, // mergeByPath 会重排
@@ -42,8 +106,13 @@ const handleAddToRename = (videoItems: VideoInfoItem[]) => {
     height: item.height,
     bitrateMbps: item.bitrateMbps,
   }))
-  batch.videoRows = batch.mergeByPath(batch.videoRows, rows)
   ElMessage.success(t('已加入重命名：{n} 个', { n: rows.length }))
+  viewMode.value = 'batch'
+  await nextTick()
+  // 推到下一帧：让视图切换先完成，再做大数组合并/重排，避免主线程长任务
+  requestAnimationFrame(() => {
+    batch.videoRows = batch.mergeByPath(batch.videoRows, rows)
+  })
 }
 
 // 视频图片重命名 → 视频元数据导出：切到导出视图并导入该视频的完整详情
@@ -55,23 +124,46 @@ const handleInspect = async (path: string) => {
 </script>
 
 <template>
-  <div class="media-tool">
-    <div class="view-mode-bar">
-      <el-segmented
-        v-model="viewMode"
-        :options="[
-          { label: t('视频图片重命名'), value: 'batch' },
-          { label: t('视频元数据导出'), value: 'exhibition' },
-        ]"
-        size="default"
-      />
+  <div class="media-tool tool-page">
+    <!-- 公共工具栏：视图切换 + 导入按钮 + 递归开关 -->
+    <div class="common-toolbar">
+      <div class="toolbar-left">
+        <el-segmented
+          v-model="viewMode"
+          :options="[
+            { label: t('视频图片重命名'), value: 'batch' },
+            { label: t('视频元数据导出'), value: 'exhibition' },
+          ]"
+          size="default"
+        />
+      </div>
+      <div class="toolbar-right">
+        <el-button :icon="Plus" size="small" :loading="importing" @click="handleImport('file')">
+          {{ t('添加') }}
+        </el-button>
+        <el-button :icon="FolderAdd" size="small" :loading="importing" @click="handleImport('folder')">
+          {{ t('文件夹') }}
+        </el-button>
+        <el-button :icon="Upload" size="small" plain :loading="importing" @click="handleImport('clipboard')">
+          {{ t('粘贴') }}
+        </el-button>
+        <label class="switch-field">
+          <span class="switch-label">{{ t('递归') }}</span>
+          <el-switch v-model="recursive" size="small" />
+        </label>
+      </div>
     </div>
 
-    <KeepAlive>
-      <VideoInfoView ref="videoInfoRef" v-if="viewMode === 'exhibition'" @add-to-rename="handleAddToRename" />
-    </KeepAlive>
+    <VideoInfoView
+      v-if="exhibitionMounted"
+      ref="videoInfoRef"
+      v-show="viewMode === 'exhibition'"
+      class="view-pane"
+      :recursive="recursive"
+      @add-to-rename="handleAddToRename"
+    />
 
-    <template v-if="viewMode === 'batch'">
+    <div v-show="viewMode === 'batch'" class="batch-view view-pane">
       <div v-if="batch.importProgress.active && tickerText" class="live-strip">
         <div class="live-strip__label">{{ t('实时导入') }}</div>
         <div class="live-strip__track">
@@ -124,12 +216,9 @@ const handleInspect = async (path: string) => {
               :importing="batch.importing"
               :batch-size="batch.batchSize"
               :allow-auto-refresh="batch.allowAutoRefresh"
-              :recursive="batch.recursive"
-              @import="batch.handleImport"
               @refresh="batch.refreshStats"
               @update:batchSize="(val) => (batch.batchSize = val)"
               @update:allowAutoRefresh="(val) => (batch.allowAutoRefresh = val)"
-              @update:recursive="(val) => (batch.recursive = val)"
             />
             <MediaTablePanel
               v-model:file-type-tab="batch.fileTypeTab"
@@ -219,7 +308,7 @@ const handleInspect = async (path: string) => {
           <el-button @click="batch.showFailedDialog = false">{{ t('关闭') }}</el-button>
         </template>
       </el-dialog>
-    </template>
+    </div>
   </div>
 </template>
 
@@ -233,10 +322,46 @@ const handleInspect = async (path: string) => {
   min-height: 0;
   background: var(--bg-page);
 }
-.view-mode-bar {
+.common-toolbar {
   display: flex;
-  justify-content: flex-start;
-  padding: 0;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  border-radius: var(--card-radius, 10px);
+  border: 1px solid var(--card-border, rgba(20, 23, 31, 0.06));
+  background: linear-gradient(145deg, rgba(243, 246, 255, 0.96), rgba(227, 235, 255, 0.9));
+  flex-shrink: 0;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.toolbar-left {
+  display: flex;
+  align-items: center;
+}
+.toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.switch-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+.switch-label {
+  font-size: 12px;
+  color: #4b5570;
+}
+.view-pane {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.batch-view {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 .live-strip {
   display: flex;
