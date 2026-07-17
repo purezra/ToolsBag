@@ -619,7 +619,7 @@ impl DetectedFormat {
     }
 
     /// 转为 ImageAnalysis 中的 format 字段值
-    fn to_format_string(&self) -> Option<String> {
+    fn to_format_string(self) -> Option<String> {
         match self {
             DetectedFormat::Jpeg => Some("jpeg".to_string()),
             DetectedFormat::Png => Some("png".to_string()),
@@ -1920,17 +1920,13 @@ fn embed_page(
     let processed = &prepared.processed;
 
     // 构造 SMask（Alpha 通道）：printpdf 的 SMask.matte 存储灰度 alpha 值
-    let smask = if let Some(ref alpha) = processed.alpha_data {
-        Some(SMask {
-            width: processed.width as i64,
-            height: processed.height as i64,
-            bits_per_component: 8,
-            interpolate: true,
-            matte: alpha.iter().map(|&b| b as i64).collect(),
-        })
-    } else {
-        None
-    };
+    let smask = processed.alpha_data.as_ref().map(|alpha| SMask {
+        width: processed.width as i64,
+        height: processed.height as i64,
+        bits_per_component: 8,
+        interpolate: true,
+        matte: alpha.iter().map(|&b| b as i64).collect(),
+    });
 
     let image_xobject = match processed.encoding {
         ImageEncoding::Dct => ImageXObject {
@@ -1975,13 +1971,15 @@ fn embed_page(
 }
 
 /// 对一组图片应用一组参数，返回 (按图片顺序排好的 prepared pages, sum of processed bytes)
+type ProcessAllResult = (Vec<Vec<PreparedPage>>, u64, Vec<String>);
+
 fn process_all(
     images: &[ImageAnalysis],
     config: &PdfConfig,
     params: &ProcessParams,
     window: &tauri::WebviewWindow,
     phase_label: &str,
-) -> Result<(Vec<Vec<PreparedPage>>, u64, Vec<String>), String> {
+) -> Result<ProcessAllResult, String> {
     use std::sync::Mutex;
     let total = images.len();
     let counter = std::sync::atomic::AtomicUsize::new(0);
@@ -2370,17 +2368,49 @@ pub async fn generate_pdf(
     .map_err(|e| format!("task join error: {e}"))?
 }
 
+/// JPEG 缩略图专用：利用 DCT 缩放直接解码出接近目标尺寸的图像
+///
+/// jpeg-decoder 的 `scale()` 支持 1/8、1/4、1/2 缩放因子，会选取
+/// 「解码结果在两个轴上都不小于请求尺寸的最小缩放档」，随后只需一次
+/// 小幅重采样即可到目标尺寸。对 50MP 照片可避免全尺寸解码，
+/// 内存从 ~200MB 降到个位数 MB，耗时下降一个数量级。
+///
+/// 返回 None 表示不适用（非 RGB/灰度 JPEG 或解码失败），调用方回退通用路径。
+fn decode_jpeg_scaled(path: &Path, limit: u32) -> Option<DynamicImage> {
+    let file = File::open(path).ok()?;
+    let mut decoder = RawJpegDecoder::new(BufReader::new(file));
+    let requested = limit.min(u16::MAX as u32) as u16;
+    decoder.scale(requested, requested).ok()?;
+    let pixels = decoder.decode().ok()?;
+    let info = decoder.info()?;
+    let (w, h) = (info.width as u32, info.height as u32);
+    match info.pixel_format {
+        PixelFormat::RGB24 => {
+            ImageBuffer::from_raw(w, h, pixels).map(DynamicImage::ImageRgb8)
+        }
+        PixelFormat::L8 => ImageBuffer::from_raw(w, h, pixels).map(DynamicImage::ImageLuma8),
+        _ => None,
+    }
+}
+
 #[tauri::command]
 pub async fn get_image_thumbnail(image_path: String, max_size: u32) -> Result<String, String> {
     tokio::task::spawn_blocking(move || {
         let path = PathBuf::from(&image_path);
+        let limit = max_size.clamp(256, 1024);
         let guessed_format = ImageReader::open(&path)
             .and_then(|r| r.with_guessed_format())
             .map(|r| r.format().unwrap_or(ImageFormat::Png))
             .unwrap_or(ImageFormat::Png);
 
-        // TIFF 走 image_crate::open（多页只取第一页），其余走 fast 路径
-        let img = if matches!(guessed_format, ImageFormat::Tiff) {
+        // JPEG 优先走 DCT 缩放解码；TIFF 走 image_crate::open（多页只取第一页）；
+        // 其余格式走 fast 路径
+        let img = if matches!(guessed_format, ImageFormat::Jpeg) {
+            match decode_jpeg_scaled(&path, limit) {
+                Some(img) => img,
+                None => decode_image_fast(&path, guessed_format)?,
+            }
+        } else if matches!(guessed_format, ImageFormat::Tiff) {
             image_crate::open(&path).map_err(|e| e.to_string())?
         } else {
             decode_image_fast(&path, guessed_format)?
@@ -2388,7 +2418,6 @@ pub async fn get_image_thumbnail(image_path: String, max_size: u32) -> Result<St
 
         // 应用 EXIF 旋转，保证缩略图方向与最终 PDF 一致
         let img = apply_exif_orientation(img, &path);
-        let limit = max_size.clamp(256, 1024);
         let (w, h) = img.dimensions();
         let thumbnail = if w <= limit && h <= limit {
             img

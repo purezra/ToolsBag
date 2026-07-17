@@ -1,14 +1,11 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use uuid::Uuid;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct AnalyzeRequest {
     pub input_dir: PathBuf,
     pub recursive: bool,
-    pub force_preprocess: bool,
-    pub cache_max: usize,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -33,7 +30,6 @@ pub struct RepairRequest {
     pub input_dir: PathBuf,
     pub output_dir: Option<PathBuf>,
     pub only_problem: bool,
-    pub cache_max: usize,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -67,17 +63,6 @@ pub struct ConvertResult {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
-#[allow(dead_code)]
-pub struct ProgressPayload {
-    pub id: Uuid,
-    pub stage: String,
-    pub current: usize,
-    pub total: usize,
-    pub message: String,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(rename_all = "camelCase")]
 pub struct FileEntry {
     pub name: String,
     pub path: PathBuf,
@@ -95,9 +80,15 @@ pub struct Convert3Request {
     pub batch_size: Option<usize>,
     #[serde(default = "default_lossless_merge")]
     pub lossless_merge: bool,
+    #[serde(default = "default_recursive")]
+    pub recursive: bool,
 }
 
 fn default_lossless_merge() -> bool {
+    true
+}
+
+fn default_recursive() -> bool {
     true
 }
 
@@ -120,6 +111,8 @@ pub struct EpubConvertRequest {
     pub output_dir: Option<PathBuf>,
     #[serde(default)]
     pub page_size: Option<String>,
+    #[serde(default = "default_recursive")]
+    pub recursive: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

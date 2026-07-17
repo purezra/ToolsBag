@@ -1,13 +1,8 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import * as echarts from 'echarts/core'
-import { BarChart } from 'echarts/charts'
-import { GridComponent, TooltipComponent } from 'echarts/components'
-import { CanvasRenderer } from 'echarts/renderers'
+import type { ECharts } from 'echarts/core'
 import { useSettings } from '@core/hooks/useSettings'
 import { ArrowDown } from '@element-plus/icons-vue'
-
-echarts.use([BarChart, GridComponent, TooltipComponent, CanvasRenderer])
 
 type Bucket = { label: string; min: number; max: number; count: number }
 type Stats = Record<string, any>
@@ -22,7 +17,9 @@ type Props = {
 const props = defineProps<Props>()
 
 const chartRef = ref<HTMLDivElement | null>(null)
-let chartInstance: echarts.ECharts | null = null
+let chartInstance: ECharts | null = null
+let echartsCore: typeof import('echarts/core') | null = null
+let echartsLoadPromise: Promise<typeof import('echarts/core')> | null = null
 const { t } = useSettings()
 
 const collapsed = ref(true)
@@ -30,16 +27,40 @@ const collapsed = ref(true)
 const toggleCollapse = () => {
   collapsed.value = !collapsed.value
   if (!collapsed.value) {
-    nextTick(renderChart)
+    nextTick(() => { void renderChart() })
   }
 }
 
-const renderChart = () => {
+const loadECharts = async () => {
+  if (echartsCore) return echartsCore
+  if (!echartsLoadPromise) {
+    echartsLoadPromise = Promise.all([
+      import('echarts/core'),
+      import('echarts/charts'),
+      import('echarts/components'),
+      import('echarts/renderers'),
+    ]).then(([core, charts, components, renderers]) => {
+      core.use([
+        charts.BarChart,
+        components.GridComponent,
+        components.TooltipComponent,
+        renderers.CanvasRenderer,
+      ])
+      echartsCore = core
+      return core
+    })
+  }
+  return echartsLoadPromise
+}
+
+const renderChart = async () => {
   if (props.fileTypeTab !== 'video') {
     chartInstance?.clear()
     return
   }
   if (!chartRef.value) return
+  const echarts = await loadECharts()
+  if (collapsed.value || !chartRef.value) return
   if (!chartInstance) {
     chartInstance = echarts.init(chartRef.value)
   }
@@ -59,8 +80,8 @@ const renderChart = () => {
         itemStyle: {
           borderRadius: [4, 4, 0, 0],
           color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-            { offset: 0, color: '#6f8cff' },
-            { offset: 1, color: '#9cb8ff' }
+            { offset: 0, color: '#818CF8' },
+            { offset: 1, color: '#A5B4FC' }
           ])
         }
       }
@@ -70,10 +91,10 @@ const renderChart = () => {
 }
 
 onMounted(() => {
-  if (!collapsed.value) renderChart()
+  if (!collapsed.value) void renderChart()
 })
 watch(() => [props.durationBuckets, props.fileTypeTab], () => {
-  if (!collapsed.value) renderChart()
+  if (!collapsed.value) void renderChart()
 })
 onBeforeUnmount(() => chartInstance?.dispose())
 </script>

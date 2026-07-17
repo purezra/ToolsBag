@@ -407,6 +407,7 @@ import {
   getImageThumbnail,
   formatFileSize,
   PAGE_SIZE_NAMES,
+  PAGE_SIZE_DIMS_MM,
   FIXED_ORIENTATION_NAMES,
   MARGIN_PRESETS,
   DEFAULT_LOSSLESS_MAX_RATIO,
@@ -503,10 +504,9 @@ const settings = ref({
 // ==================== Computed ====================
 
 const maxMargin = computed(() => {
-  const sizes: Record<PageSize, number> = {
-    A4: 210 * 0.4, A3: 297 * 0.4, B5: 176 * 0.4, ipad_pro: 160.4 * 0.4,
-  }
-  return Math.floor(sizes[settings.value.pageSize])
+  // 上限 = 短边的 40%，避免任意方向下边距超过幅面；尺寸从共享常量派生。
+  const dim = PAGE_SIZE_DIMS_MM[settings.value.pageSize] ?? PAGE_SIZE_DIMS_MM.A4
+  return Math.floor(Math.min(dim.w, dim.h) * 0.4)
 })
 
 const marginError = computed(() => {
@@ -821,12 +821,24 @@ function cellMarginStyle(page: LayoutResult) {
 
 // ---- Thumbnail loading ----
 
+// 命中即“触碰”：删除后重新插入将其移到 Map 末尾，使淘汰真正按最近最少使用（LRU）进行。
+function touchThumbnail(path: string) {
+  const data = thumbnails.value.get(path)
+  if (data === undefined) return
+  thumbnails.value.delete(path)
+  thumbnails.value.set(path, data)
+}
+
 async function loadThumbnail(path: string): Promise<void> {
-  if (thumbnails.value.has(path) || loadingThumbnails.value.has(path)) return
+  if (thumbnails.value.has(path)) {
+    touchThumbnail(path)
+    return
+  }
+  if (loadingThumbnails.value.has(path)) return
   loadingThumbnails.value.add(path)
   try {
     const data = await getImageThumbnail(path, 384)
-    // LRU eviction
+    // LRU 淘汰：Map 头部即最久未使用项
     if (thumbnails.value.size >= THUMBNAIL_CACHE_MAX) {
       const firstKey = thumbnails.value.keys().next().value
       if (firstKey) thumbnails.value.delete(firstKey)
@@ -842,8 +854,10 @@ async function loadThumbnail(path: string): Promise<void> {
 // 并行预加载当前可见单元的缩略图（最多 8 个并发）
 function schedulePreloadVisible() {
   const cells = visibleCells.value
-  const tasks = cells
-    .map((c) => c.page.image_path)
+  const visiblePaths = cells.map((c) => c.page.image_path)
+  // 当前可见且已缓存的项标记为最近使用，避免被淘汰后又立刻重新请求（瀑布流滚动抖动）
+  visiblePaths.forEach((p) => { if (thumbnails.value.has(p)) touchThumbnail(p) })
+  const tasks = visiblePaths
     .filter((p) => !thumbnails.value.has(p) && !loadingThumbnails.value.has(p))
 
   // 简单并发控制：每次最多启动 8 个

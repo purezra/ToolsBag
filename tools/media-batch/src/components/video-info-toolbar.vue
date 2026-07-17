@@ -36,7 +36,7 @@ const { t } = useSettings()
       </el-button>
       <label class="switch-field">
         <span class="switch-label">{{ t('递归遍历') }}</span>
-        <el-switch :model-value="recursive" size="small" @update:model-value="emit('update:recursive', $event)" />
+        <el-switch :model-value="recursive" size="small" @update:model-value="emit('update:recursive', $event as boolean)" />
       </label>
       <el-button v-if="hasItems" type="primary" plain round @click="emit('addToRename')">
         {{ t('加入重命名') }}

@@ -20,6 +20,7 @@ const props = defineProps<{
   visibleImageColumns: ColumnsState
   showPreview: boolean
   renameSafetySummary: RenameSafetySummary
+  canApplyRename: boolean
   canUndoRename: boolean
   undoStackDepth: number
 }>()
@@ -212,8 +213,8 @@ const onDrop = (kind: 'video' | 'image', targetIndex: number) => {
             </div>
           </div>
           <div class="rename-buttons">
-            <el-button plain type="primary" class="large-btn" @click="emit('previewRename')">{{ t('预览') }}</el-button>
-            <el-button plain type="success" class="large-btn" @click="emit('applyRename')">{{ t('应用') }}</el-button>
+            <el-button plain type="primary" class="large-btn" :disabled="!props.canApplyRename" @click="emit('previewRename')">{{ t('预览') }}</el-button>
+            <el-button plain type="success" class="large-btn" :disabled="!props.canApplyRename" @click="emit('applyRename')">{{ t('应用') }}</el-button>
             <el-button plain type="warning" class="large-btn" :disabled="!props.canUndoRename" @click="emit('undoRename')">{{ props.undoStackDepth > 1 ? t('撤销') + `(${props.undoStackDepth})` : t('撤销') }}</el-button>
           </div>
         </div>
@@ -226,6 +227,7 @@ const onDrop = (kind: 'video' | 'image', targetIndex: number) => {
 .settings {
   display: flex;
   flex-direction: column;
+  padding: 0 12px 12px;
 }
 .settings :deep(.el-collapse-item__header) {
   font-size: 12px;

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Grid, List, Download, Filter } from '@element-plus/icons-vue'
+import { Grid, List, Download } from '@element-plus/icons-vue'
 import { useSettings } from '@core/hooks/useSettings'
 import type { DisplayLevel } from '../types/media'
 
@@ -55,7 +55,7 @@ const { t } = useSettings()
       </el-select>
       <label v-if="viewMode === 'table'" class="switch-field">
         <span class="switch-label">{{ t('高亮差异') }}</span>
-        <el-switch :model-value="highlightDiff" size="small" @update:model-value="emit('update:highlightDiff', $event)" />
+        <el-switch :model-value="highlightDiff" size="small" @update:model-value="emit('update:highlightDiff', $event as boolean)" />
       </label>
       <el-select v-if="viewMode === 'table'" :model-value="groupBy" size="small" style="width: 120px;" @update:model-value="emit('update:groupBy', $event)">
         <el-option v-for="opt in groupOptions" :key="opt.value" :label="opt.label" :value="opt.value" />

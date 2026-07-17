@@ -2,10 +2,11 @@
 
 export const formatBytes = (value: number): string => {
   if (!value || Number.isNaN(value)) return '0 B'
-  const units = ['B', 'KB', 'MB', 'GB', 'TB']
-  const idx = Math.min(Math.floor(Math.log(value) / Math.log(1024)), units.length - 1)
-  const num = value / Math.pow(1024, idx)
-  return `${num.toFixed(num >= 10 ? 0 : 1)} ${units[idx]}`
+  if (value < 1024) return `${value} B`
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`
+  if (value < 1024 * 1024 * 1024) return `${(value / 1024 / 1024).toFixed(1)} MB`
+  if (value < 1024 * 1024 * 1024 * 1024) return `${(value / 1024 / 1024 / 1024).toFixed(2)} GB`
+  return `${(value / 1024 / 1024 / 1024 / 1024).toFixed(2)} TB`
 }
 
 export const formatThroughput = (bytesPerSec: number): string => {
@@ -23,7 +24,10 @@ export const formatDuration = (seconds: number | undefined, mode: DurationFormat
   const m = Math.floor((val % 3600) / 60)
   const s = Math.floor(val % 60)
   if (mode === 'clock') {
-    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+    if (h > 0) {
+      return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+    }
+    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
   }
   if (mode === 'minutes') {
     const minutes = val / 60

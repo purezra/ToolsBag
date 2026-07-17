@@ -21,9 +21,6 @@ pub mod mediainfo {
         false
     }
     pub fn set_resource_dir(_path: std::path::PathBuf) {}
-    pub fn get_full_info(_path: &Path) -> Option<String> {
-        None
-    }
     pub fn is_mediainfo_available() -> bool {
         false
     }

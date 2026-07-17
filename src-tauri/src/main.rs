@@ -83,7 +83,7 @@ fn open_parent_dir(path: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn read_tool3_note() -> Result<String, String> {
+fn read_image_batch_note() -> Result<String, String> {
     let mut candidates = vec![
         PathBuf::from("关于这个小工具的一些说明.md"),
         PathBuf::from("../关于这个小工具的一些说明.md"),
@@ -115,13 +115,12 @@ fn main() {
     rayon::ThreadPoolBuilder::new()
         .num_threads(num_threads)
         .build_global()
-        .ok();  // 忽略错误（可能已被初始化）
+        .ok(); // 忽略错误（可能已被初始化）
 
-    let video_db_migrations = vec![
-        Migration {
-            version: 1,
-            description: "create_video_records_table",
-            sql: r#"
+    let video_db_migrations = vec![Migration {
+        version: 1,
+        description: "create_video_records_table",
+        sql: r#"
                 CREATE TABLE IF NOT EXISTS video_records (
                     id TEXT PRIMARY KEY,
                     name TEXT NOT NULL,
@@ -144,9 +143,8 @@ fn main() {
                 CREATE INDEX IF NOT EXISTS idx_vr_status ON video_records(status);
                 CREATE INDEX IF NOT EXISTS idx_vr_scanned ON video_records(scanned_at);
             "#,
-            kind: MigrationKind::Up,
-        },
-    ];
+        kind: MigrationKind::Up,
+    }];
 
     tauri::Builder::default()
         .setup(|app| {
@@ -162,7 +160,10 @@ fn main() {
                         dir.join("media_cache.db")
                     }
                     Err(e) => {
-                        log::warn!("media_cache: 获取 app_data_dir 失败 ({}), fallback 到临时目录", e);
+                        log::warn!(
+                            "media_cache: 获取 app_data_dir 失败 ({}), fallback 到临时目录",
+                            e
+                        );
                         let dir = std::env::temp_dir().join("toolsbag");
                         let _ = std::fs::create_dir_all(&dir);
                         dir.join("media_cache.db")
@@ -185,17 +186,18 @@ fn main() {
             media_batch::read_clipboard_paths,
             media_batch::get_mediainfo_status,
             media_batch::import_detailed_video_info,
+            media_batch::record_media_performance,
             media_batch::get_video_raw_xml,
             media_batch::get_video_complete_info,
             media_batch::get_video_xml_json,
             media_batch::get_video_xml_markdown,
             open_parent_dir,
-            read_tool3_note,
+            read_image_batch_note,
             cmd::analyze_folder,
             cmd::repair_images,
             cmd::convert_to_pdf,
             cmd::list_images,
-            cmd::convert_tool3,
+            cmd::convert_image_batch,
             cmd::convert_to_epub,
             cmd::traverse_copy,
             cmd::preview_media,
@@ -226,7 +228,6 @@ fn main() {
             cmd::webdav_test_connection,
             cmd::webdav_get_status,
             cmd::webdav_start_sync,
-            cmd::webdav_stop_sync,
             cmd::webdav_sync_entry,
             cmd::webdav_pull_changes,
             cmd::webdav_get_changelog,

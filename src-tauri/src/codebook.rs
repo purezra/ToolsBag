@@ -1,7 +1,7 @@
 use crate::crypto::{
     decrypt_with_device, decrypt_with_key, derive_file_keys, derive_master_key, encode_b64,
     encrypt_with_device, encrypt_with_key, unwrap_device_key, wrap_device_key, EncryptedBlob,
-    ENC_VERSION,
+    HmacSha256, ENC_VERSION,
 };
 use crate::models::{
     AccountDiff, CodebookConfig, DeviceSummary, DevicesPayload, KdfParams, SecureAccount,
@@ -9,11 +9,9 @@ use crate::models::{
     VaultxPreviewRequest, VaultxPreviewResult, VaultxV2Attachment, VaultxV2Dat, VaultxV2Entry,
     VaultxV2Meta,
 };
-use crate::utils::ensure_dir;
 use crate::webdav;
 use chrono::Utc;
 use ed25519_dalek::SigningKey;
-use hmac::{digest::KeyInit, Hmac, Mac};
 use rand::rngs::OsRng as RandOsRng;
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
@@ -29,7 +27,7 @@ use tauri::{AppHandle, Emitter, Manager};
 use uuid::Uuid;
 use zeroize::Zeroize;
 
-type HmacSha256 = Hmac<Sha256>;
+use hmac::{digest::KeyInit, Mac};
 
 const SYNC_HINT: &str = "【密码本同步提醒】\n你的一台已授权设备发生了数据变更";
 
@@ -269,10 +267,10 @@ fn derive_entry_context(id: &str) -> String {
 }
 
 fn ensure_dirs(root: &Path) -> Result<(), String> {
-    ensure_dir(&root.to_path_buf()).map_err(|e| e.to_string())?;
-    ensure_dir(&entries_dir(root)).map_err(|e| e.to_string())?;
-    ensure_dir(&images_dir(root)).map_err(|e| e.to_string())?;
-    ensure_dir(&recycle_dir(root)).map_err(|e| e.to_string())
+    fs::create_dir_all(root).map_err(|e| e.to_string())?;
+    fs::create_dir_all(entries_dir(root)).map_err(|e| e.to_string())?;
+    fs::create_dir_all(images_dir(root)).map_err(|e| e.to_string())?;
+    fs::create_dir_all(recycle_dir(root)).map_err(|e| e.to_string())
 }
 
 pub fn vault_status(app: AppHandle) -> Result<VaultStatus, String> {
@@ -802,20 +800,24 @@ pub fn export_vaultx(
                 let attach_id = format!("{}-attach-{}", acc.id, i);
                 let parts: Vec<&str> = img_data.splitn(2, ',').collect();
                 if parts.len() == 2 {
-                    let mime = if parts[0].contains("png") {
-                        "image/png"
+                    let (mime, ext) = if parts[0].contains("svg") {
+                        ("image/svg+xml", "svg")
+                    } else if parts[0].contains("webp") {
+                        ("image/webp", "webp")
+                    } else if parts[0].contains("gif") {
+                        ("image/gif", "gif")
+                    } else if parts[0].contains("bmp") {
+                        ("image/bmp", "bmp")
+                    } else if parts[0].contains("png") {
+                        ("image/png", "png")
                     } else {
-                        "image/jpeg"
+                        ("image/jpeg", "jpg")
                     };
                     attachments.insert(
                         attach_id.clone(),
                         VaultxV2Attachment {
                             mime: mime.to_string(),
-                            filename: format!(
-                                "image_{}.{}",
-                                i,
-                                if mime == "image/png" { "png" } else { "jpg" }
-                            ),
+                            filename: format!("image_{}.{ext}", i),
                             data: parts[1].to_string(),
                         },
                     );
@@ -902,7 +904,7 @@ pub fn export_vaultx(
 
     // 创建ZIP文件
     let output_dir = req.output_dir.unwrap_or_else(|| PathBuf::from("."));
-    ensure_dir(&output_dir).map_err(|e| e.to_string())?;
+    fs::create_dir_all(&output_dir).map_err(|e| e.to_string())?;
     let filename = format!(
         "vaultx_backup_{}.zip",
         chrono::Local::now().format("%Y%m%d_%H%M%S")
@@ -1066,9 +1068,13 @@ pub fn import_vaultx(app: AppHandle, req: VaultxImportRequest) -> Result<VaultEn
         save_entry_batch(&root, &dk, &account, &mut index)?;
     }
 
-    // 6. 保存配置（合并）
+    // 6. 保存配置（合并而非替换，避免丢弃本地预设）
     let mut config = index.config.clone();
-    config.identity_presets = v2_dat.identity_presets;
+    for preset in v2_dat.identity_presets {
+        if !config.identity_presets.contains(&preset) {
+            config.identity_presets.push(preset);
+        }
+    }
     for tag in v2_dat.service_tags {
         if !config.service_tags.contains(&tag) {
             config.service_tags.push(tag);

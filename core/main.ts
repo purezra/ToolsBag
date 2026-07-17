@@ -1,9 +1,10 @@
 import { createApp } from 'vue'
 import './assets/styles/variables.css'
 import './assets/styles/overrides.css'
+import './assets/styles/tools.css'
 import './assets/styles/style.css'
 import './assets/styles/theme-dark.css'
-import './assets/styles/catppuccin-mocha-vars.css'
+import './assets/styles/skin-minimal.css'
 import 'element-plus/theme-chalk/dark/css-vars.css'
 import App from './App.vue'
 

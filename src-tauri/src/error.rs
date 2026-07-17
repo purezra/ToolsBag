@@ -2,7 +2,6 @@
 //!
 //! 提供全局错误类型，替代分散的 `.map_err(|e| e.to_string())` 调用
 
-use serde::Serialize;
 use thiserror::Error;
 
 /// 应用全局错误类型
@@ -94,51 +93,6 @@ pub enum AppError {
     Custom(String),
 }
 
-/// Tauri 命令返回的序列化错误
-#[allow(dead_code)]
-#[derive(Debug, Serialize)]
-pub struct CommandError {
-    pub code: String,
-    pub message: String,
-}
-
-impl From<AppError> for CommandError {
-    fn from(err: AppError) -> Self {
-        let code = match &err {
-            AppError::Io(_) => "IO_ERROR",
-            AppError::FileNotFound(_) => "FILE_NOT_FOUND",
-            AppError::DirNotFound(_) => "DIR_NOT_FOUND",
-            AppError::InvalidPath(_) => "INVALID_PATH",
-            AppError::Image(_) => "IMAGE_ERROR",
-            AppError::UnsupportedFormat(_) => "UNSUPPORTED_FORMAT",
-            AppError::DecodeError(_) => "DECODE_ERROR",
-            AppError::PdfError(_) => "PDF_ERROR",
-            AppError::Encryption(_) => "ENCRYPTION_ERROR",
-            AppError::Decryption(_) => "DECRYPTION_ERROR",
-            AppError::HmacVerifyFailed => "HMAC_VERIFY_FAILED",
-            AppError::KeyDerivation(_) => "KEY_DERIVATION_ERROR",
-            AppError::VaultNotInitialized => "VAULT_NOT_INITIALIZED",
-            AppError::VaultLocked => "VAULT_LOCKED",
-            AppError::DeviceRevoked => "DEVICE_REVOKED",
-            AppError::VersionRollback => "VERSION_ROLLBACK",
-            AppError::EntryNotFound(_) => "ENTRY_NOT_FOUND",
-            AppError::WebdavNotConfigured => "WEBDAV_NOT_CONFIGURED",
-            AppError::WebdavConnection(_) => "WEBDAV_CONNECTION_ERROR",
-            AppError::WebdavRequest(_) => "WEBDAV_REQUEST_ERROR",
-            AppError::WebdavStructure(_) => "WEBDAV_STRUCTURE_ERROR",
-            AppError::WebdavPathDenied(_) => "WEBDAV_PATH_DENIED",
-            AppError::Json(_) => "JSON_ERROR",
-            AppError::InvalidArgument(_) => "INVALID_ARGUMENT",
-            AppError::Operation(_) => "OPERATION_ERROR",
-            AppError::Custom(_) => "CUSTOM_ERROR",
-        };
-        CommandError {
-            code: code.to_string(),
-            message: err.to_string(),
-        }
-    }
-}
-
 // 实现 Tauri 命令所需的 Into<InvokeError>
 impl From<AppError> for String {
     fn from(err: AppError) -> Self {
@@ -148,18 +102,6 @@ impl From<AppError> for String {
 
 /// 便捷类型别名
 pub type AppResult<T> = Result<T, AppError>;
-
-/// 从字符串错误转换的辅助 trait
-#[allow(dead_code)]
-pub trait IntoAppError<T> {
-    fn map_app_err(self, f: impl FnOnce(String) -> AppError) -> AppResult<T>;
-}
-
-impl<T, E: ToString> IntoAppError<T> for Result<T, E> {
-    fn map_app_err(self, f: impl FnOnce(String) -> AppError) -> AppResult<T> {
-        self.map_err(|e| f(e.to_string()))
-    }
-}
 
 /// 快速创建自定义错误
 #[macro_export]

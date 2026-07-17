@@ -1,3 +1,39 @@
+<template>
+  <div class="image-tools-shell tool-page">
+    <div class="image-tools-header">
+      <div class="seg-group">
+        <button
+          v-for="tab in tabs"
+          :key="tab.key"
+          class="seg-btn"
+          :class="{ active: activeTab === tab.key }"
+          type="button"
+          @click="activeTab = tab.key"
+        >
+          <el-icon class="seg-icon"><component :is="tab.icon" /></el-icon>
+          <span>{{ t(tab.name) }}</span>
+        </button>
+      </div>
+      <span class="image-tools-subtitle">{{ t(activeTabDesc) }}</span>
+    </div>
+
+    <section class="image-tools-content">
+      <Suspense>
+        <template #default>
+          <KeepAlive>
+            <component :is="activeComponent" />
+          </KeepAlive>
+        </template>
+        <template #fallback>
+          <div class="image-tool-skeleton">
+            <el-skeleton :rows="6" animated />
+          </div>
+        </template>
+      </Suspense>
+    </section>
+  </div>
+</template>
+
 <script setup lang="ts">
 import { computed, defineAsyncComponent, ref, type Component } from 'vue'
 import { Brush, Document, Picture } from '@element-plus/icons-vue'
@@ -43,117 +79,69 @@ const tabs: ImageToolTab[] = [
 
 const activeTab = ref(tabs[0]!.key)
 const activeComponent = computed(() => tabs.find(tab => tab.key === activeTab.value)?.component ?? tabs[0]!.component)
+const activeTabDesc = computed(() => tabs.find(tab => tab.key === activeTab.value)?.desc ?? tabs[0]!.desc)
 </script>
-
-<template>
-  <div class="image-tools-shell">
-    <section class="image-tools-tabs">
-      <button
-        v-for="tab in tabs"
-        :key="tab.key"
-        class="image-tool-tab"
-        :class="{ active: activeTab === tab.key }"
-        type="button"
-        @click="activeTab = tab.key"
-      >
-        <el-icon class="tab-icon"><component :is="tab.icon" /></el-icon>
-        <span class="tab-text">
-          <strong>{{ t(tab.name) }}</strong>
-          <small>{{ t(tab.desc) }}</small>
-        </span>
-      </button>
-    </section>
-
-    <section class="image-tools-content">
-      <Suspense>
-        <template #default>
-          <KeepAlive>
-            <component :is="activeComponent" :key="activeTab" />
-          </KeepAlive>
-        </template>
-        <template #fallback>
-          <div class="image-tool-skeleton">
-            <el-skeleton :rows="6" animated />
-          </div>
-        </template>
-      </Suspense>
-    </section>
-  </div>
-</template>
 
 <style scoped>
 .image-tools-shell {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
   height: 100%;
   min-height: 0;
   overflow: hidden;
 }
 
-.image-tools-tabs {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
-  flex-shrink: 0;
-}
-
-.image-tool-tab {
+/* Header: segmented sub-tabs + subtitle (sits below global topbar) */
+.image-tools-header {
   display: flex;
   align-items: center;
-  gap: 10px;
-  min-width: 0;
-  padding: 10px 12px;
+  gap: 12px;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+.seg-group {
+  display: inline-flex;
+  padding: 3px;
+  gap: 2px;
+  background: var(--bg-tertiary);
   border: 1px solid var(--border-secondary);
   border-radius: var(--radius-md);
-  background: var(--bg-primary);
-  color: var(--text-secondary);
-  text-align: left;
-  cursor: pointer;
-  transition: border-color var(--duration-normal), background var(--duration-normal), color var(--duration-normal), transform var(--duration-fast);
 }
 
-.image-tool-tab:hover {
-  transform: translateY(-1px);
-  border-color: var(--accent);
-  color: var(--text-primary);
-}
-
-.image-tool-tab.active {
-  border-color: var(--accent);
-  background: color-mix(in srgb, var(--accent) 10%, var(--bg-primary));
-  color: var(--text-primary);
-}
-
-.tab-icon {
-  width: 34px;
-  height: 34px;
-  border-radius: var(--radius-sm);
+.seg-btn {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  background: var(--bg-tertiary);
+  gap: 6px;
+  padding: 6px 12px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--duration-fast) ease, color var(--duration-fast) ease;
+}
+.seg-btn:hover {
+  color: var(--text-primary);
+}
+.seg-btn.active {
+  background: var(--bg-primary);
   color: var(--accent);
-  font-size: 18px;
-  flex-shrink: 0;
+  font-weight: 600;
+  box-shadow: var(--shadow-xs);
+}
+.seg-icon {
+  font-size: 15px;
 }
 
-.tab-text {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-
-.tab-text strong {
-  font-size: 13px;
-  line-height: 1.2;
-}
-
-.tab-text small {
-  font-size: 11px;
-  line-height: 1.4;
+.image-tools-subtitle {
+  font-size: 12px;
   color: var(--text-muted);
+  line-height: 1.4;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -172,13 +160,9 @@ const activeComponent = computed(() => tabs.find(tab => tab.key === activeTab.va
   background: var(--bg-primary);
 }
 
-@media (max-width: 960px) {
-  .image-tools-tabs {
-    grid-template-columns: 1fr;
-  }
-
-  .tab-text small {
-    white-space: normal;
+@media (max-width: 720px) {
+  .image-tools-subtitle {
+    display: none;
   }
 }
 </style>

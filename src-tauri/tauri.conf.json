@@ -5,7 +5,7 @@
   "identifier": "com.toolsbag.app",
   "build": {
     "beforeDevCommand": "npm run dev",
-    "beforeBuildCommand": "vite build --config config/vite.config.ts",
+    "beforeBuildCommand": "npm run build",
     "devUrl": "http://localhost:5173",
     "frontendDist": "../build"
   },
@@ -35,10 +35,6 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "resources": {
-      "MediaInfo.dll": "MediaInfo.dll",
-      "bin/libjxl/*": "bin/libjxl/"
-    },
     "windows": {
       "digestAlgorithm": "sha256",
       "nsis": {

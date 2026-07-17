@@ -25,6 +25,9 @@
 !public/
 !public/**
 
+!tests/
+!tests/**
+
 !src-tauri/
 !src-tauri/**
 
@@ -65,8 +68,10 @@ tmp/
 .claude/
 .claudecode
 .codexignore
-/core/assets
+/core/assets/*
+!/core/assets/styles/
 
-# 4) Markdown 仅保留 README
+# 4) Markdown 仅保留 README 与 About 页
 *.md
 !README.md
+!public/about.md

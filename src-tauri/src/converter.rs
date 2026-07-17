@@ -1,9 +1,9 @@
 use crate::models::{ConvertRequest, ConvertResult};
-use crate::utils::{emit_progress, ensure_dir, timestamped_log};
+use crate::utils::{emit_progress, timestamped_log};
 use image::codecs::png::PngEncoder;
 use image::{ImageEncoder, ImageFormat};
 use lopdf::{dictionary, Document, Object, ObjectId, Stream};
-use std::fs::File;
+use std::fs::{self, File};
 use std::io::BufWriter;
 use std::path::{Path, PathBuf};
 use tauri::AppHandle;
@@ -34,7 +34,7 @@ pub fn convert(app: AppHandle, req: ConvertRequest) -> Result<ConvertResult, Str
     } else {
         output_path.clone()
     };
-    ensure_dir(&output_dir).map_err(|e| e.to_string())?;
+    fs::create_dir_all(&output_dir).map_err(|e| e.to_string())?;
     let log_path = timestamped_log(&output_dir, "conversion_log");
 
     let mut files: Vec<PathBuf> = Vec::new();

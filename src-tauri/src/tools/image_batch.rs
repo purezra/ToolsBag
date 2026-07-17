@@ -1,7 +1,7 @@
 use crate::models::{
     Convert3Request, Convert3Result, EpubConvertRequest, EpubConvertResult, FileEntry, ImageIssue,
 };
-use crate::utils::{emit_progress, ensure_dir, timestamped_log};
+use crate::utils::{emit_progress, timestamped_log};
 use exif::{In, Reader, Tag};
 use image::codecs::jpeg::{JpegDecoder, JpegEncoder};
 use image::imageops;
@@ -69,6 +69,34 @@ struct PageBuf {
     rotated_90_or_270: bool,
 }
 
+/// 安全写出：先写入临时文件，全部成功后再原子重命名到目标路径。
+/// 避免直接 File::create 截断已存在的输出文件——若写入中途失败，
+/// 原文件不会被破坏，也不会留下空/半成品。
+fn save_atomically<F>(final_path: &Path, write_fn: F) -> Result<(), String>
+where
+    F: FnOnce(&Path) -> Result<(), String>,
+{
+    let parent = final_path
+        .parent()
+        .map(|p| p.to_path_buf())
+        .unwrap_or_else(|| PathBuf::from("."));
+    std::fs::create_dir_all(&parent).map_err(|e| format!("创建输出目录失败: {e}"))?;
+    let tmp_path = final_path.with_extension("pdf.tmp.__writing__");
+    // 临时文件若残留则先清理
+    let _ = std::fs::remove_file(&tmp_path);
+    match write_fn(&tmp_path) {
+        Ok(()) => {
+            std::fs::rename(&tmp_path, final_path)
+                .map_err(|e| format!("重命名输出文件失败: {e}"))?;
+            Ok(())
+        }
+        Err(e) => {
+            let _ = std::fs::remove_file(&tmp_path);
+            Err(e)
+        }
+    }
+}
+
 pub fn convert(app: AppHandle, req: Convert3Request) -> Result<Convert3Result, String> {
     let id = Uuid::new_v4();
     let input = req.input_dir.clone();
@@ -91,24 +119,39 @@ pub fn convert(app: AppHandle, req: Convert3Request) -> Result<Convert3Result, S
 
     let requested_output = req.output_dir.clone();
     // Output naming rules:
-    // - Single PDF merge (batch_size == 0): place in the input folder's parent with name "<input>_合并.pdf".
-    //   If user provides a custom name (file name or path), only the file name is used and ".pdf" is appended if missing.
-    // - Batched output keeps existing directory-based behavior.
+    // - Single PDF merge (batch_size == 0):
+    //   * 用户未指定输出：放入输入目录的父级，命名为 "<input>_合并.pdf"。
+    //   * 用户指定了一个 .pdf 文件路径：按该路径输出（取其父目录作为 output_dir）。
+    //   * 用户指定了一个目录（前端"浏览"选文件夹的常见情况）：在该目录内输出
+    //     "<input>_合并.pdf"（之前错误地丢弃了所选目录，落到输入父级）。
+    // - 批量输出保持原有按目录组织的逻辑。
     let (output_dir, output_path) = if is_single {
-        let custom_name = requested_output
-            .as_ref()
-            .and_then(|p| p.file_name())
-            .and_then(|n| n.to_str())
-            .map(|name| {
-                if name.to_ascii_lowercase().ends_with(".pdf") {
-                    name.to_string()
+        match requested_output.as_ref().and_then(|p| p.to_str()) {
+            Some(s) if !s.is_empty() => {
+                let p = Path::new(s);
+                let is_pdf = p
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .map(|e| e.eq_ignore_ascii_case("pdf"))
+                    .unwrap_or(false);
+                if is_pdf {
+                    let dir = p
+                        .parent()
+                        .map(|v| v.to_path_buf())
+                        .unwrap_or_else(|| base_dir.clone());
+                    (dir, p.to_path_buf())
                 } else {
-                    format!("{name}.pdf")
+                    // 用户选择的是目录：在该目录内输出默认文件名。
+                    let dir = p.to_path_buf();
+                    let final_name = format!("{input_name}_合并.pdf");
+                    (dir.clone(), dir.join(final_name))
                 }
-            });
-        let final_name = custom_name.unwrap_or_else(|| format!("{input_name}_合并.pdf"));
-        let dir = base_dir.clone();
-        (dir.clone(), dir.join(final_name))
+            }
+            _ => {
+                let final_name = format!("{input_name}_合并.pdf");
+                (base_dir.clone(), base_dir.join(final_name))
+            }
+        }
     } else {
         match requested_output {
             Some(p) => {
@@ -133,11 +176,11 @@ pub fn convert(app: AppHandle, req: Convert3Request) -> Result<Convert3Result, S
         }
     };
 
-    ensure_dir(&output_dir)
+    std::fs::create_dir_all(&output_dir)
         .map_err(|e| format!("创建输出目录失败: {} ({})", output_dir.to_string_lossy(), e))?;
     let log_path = timestamped_log(&output_dir, "conversion3_log");
 
-    let files = list_images(input.clone(), true)?;
+    let files = list_images(input.clone(), req.recursive)?;
     let paths: Vec<PathBuf> = files.iter().map(|f| f.path.clone()).collect();
     if paths.is_empty() {
         return Err("未找到图像文件".into());
@@ -150,6 +193,7 @@ pub fn convert(app: AppHandle, req: Convert3Request) -> Result<Convert3Result, S
 
     if is_single {
         let total = paths.len().max(1);
+        let lossless = req.lossless_merge;
         let mut doc = Document::with_version("1.5");
         let mut page_ids: Vec<ObjectId> = Vec::new();
         let results = paths
@@ -157,7 +201,7 @@ pub fn convert(app: AppHandle, req: Convert3Request) -> Result<Convert3Result, S
             .enumerate()
             .map(|(idx, p)| {
                 let w = warnings.clone();
-                prepare_pages(p, idx, &app, id, total, &w)
+                prepare_pages(p, idx, &app, id, total, lossless, true, &w)
             })
             .collect::<Vec<_>>();
         for res in results {
@@ -171,8 +215,12 @@ pub fn convert(app: AppHandle, req: Convert3Request) -> Result<Convert3Result, S
             }
         }
         build_catalog(&mut doc, &page_ids)?;
-        let mut bufw = BufWriter::new(File::create(&output_path).map_err(|e| e.to_string())?);
-        doc.save_to(&mut bufw).map_err(|e| e.to_string())?;
+        save_atomically(&output_path, |tmp| {
+            let mut bufw = BufWriter::new(File::create(tmp).map_err(|e| e.to_string())?);
+            doc.save_to(&mut bufw).map_err(|e| e.to_string())?;
+            bufw.flush().map_err(|e| e.to_string())?;
+            Ok(())
+        })?;
         output_bytes = std::fs::metadata(&output_path)
             .map(|m| m.len())
             .unwrap_or(0);
@@ -180,6 +228,7 @@ pub fn convert(app: AppHandle, req: Convert3Request) -> Result<Convert3Result, S
         let total = paths.len();
         let bs = batch_size.max(1);
         let batches = total.div_ceil(bs);
+        let lossless = req.lossless_merge;
         for (batch_idx, chunk) in paths.chunks(bs).enumerate() {
             emit_progress(
                 &app,
@@ -196,7 +245,7 @@ pub fn convert(app: AppHandle, req: Convert3Request) -> Result<Convert3Result, S
                 .enumerate()
                 .map(|(idx, p)| {
                     let w = warnings.clone();
-                    prepare_pages(p, idx, &app, id, bs, &w)
+                    prepare_pages(p, idx, &app, id, bs, lossless, false, &w)
                 })
                 .collect::<Vec<_>>();
             for res in results {
@@ -212,8 +261,12 @@ pub fn convert(app: AppHandle, req: Convert3Request) -> Result<Convert3Result, S
             build_catalog(&mut doc, &page_ids)?;
             let pdf_name = format!("{}_batch{:03}.pdf", input_name, batch_idx + 1);
             let pdf_path = output_dir.join(pdf_name);
-            let mut bufw = BufWriter::new(File::create(&pdf_path).map_err(|e| e.to_string())?);
-            doc.save_to(&mut bufw).map_err(|e| e.to_string())?;
+            save_atomically(&pdf_path, |tmp| {
+                let mut bufw = BufWriter::new(File::create(tmp).map_err(|e| e.to_string())?);
+                doc.save_to(&mut bufw).map_err(|e| e.to_string())?;
+                bufw.flush().map_err(|e| e.to_string())?;
+                Ok(())
+            })?;
             output_bytes += std::fs::metadata(&pdf_path).map(|m| m.len()).unwrap_or(0);
         }
     }
@@ -253,22 +306,28 @@ pub fn convert(app: AppHandle, req: Convert3Request) -> Result<Convert3Result, S
     })
 }
 
+#[allow(clippy::too_many_arguments)] // ponytail: local pipeline helper; a parameter object would add indirection without reuse.
 fn prepare_pages(
     path: &Path,
     idx: usize,
     app: &AppHandle,
     id: Uuid,
     total: usize,
+    lossless_merge: bool,
+    emit_file_progress: bool,
     warnings: &Arc<Mutex<Vec<String>>>,
 ) -> Result<Vec<PageBuf>, ImageIssue> {
-    emit_progress(
-        app,
-        "convert3",
-        idx + 1,
-        total,
-        path.to_string_lossy().as_ref(),
-        id,
-    );
+    // 批量模式下由外层按批发送进度，避免每批文件级进度从 ~1% 重起导致进度条跳动。
+    if emit_file_progress {
+        emit_progress(
+            app,
+            "convert3",
+            idx + 1,
+            total,
+            path.to_string_lossy().as_ref(),
+            id,
+        );
+    }
 
     let ext = path
         .extension()
@@ -288,12 +347,13 @@ fn prepare_pages(
         reasons: vec![e.to_string()],
     })?;
 
-    // WebP 和 PNG 都采用 JPEG 压缩优化，避免文件体积暴涨
-    if ext == "webp" {
+    // WebP 和 PNG：普通合并采用 JPEG 压缩优化（有损，体积小）；
+    // 无损合并走下方通用路径——以 Flate 压缩嵌入原始像素（数学无损，体积稍大）。
+    if ext == "webp" && !lossless_merge {
         return prepare_webp_optimized(path, warnings);
     }
 
-    if ext == "png" {
+    if ext == "png" && !lossless_merge {
         return prepare_png_optimized(path, warnings);
     }
 
@@ -1094,7 +1154,7 @@ pub fn convert_to_epub(
     };
 
     // 列出图片
-    let files = list_images(input.clone(), true)?;
+    let files = list_images(input.clone(), req.recursive)?;
     if files.is_empty() {
         return Err("未找到图像文件".into());
     }
@@ -1102,8 +1162,11 @@ pub fn convert_to_epub(
     let original_bytes: u64 = files.iter().map(|f| f.size).sum();
     let total = files.len();
 
-    // 创建 EPUB 文件
-    let file = File::create(&output_path).map_err(|e| format!("创建 EPUB 文件失败: {}", e))?;
+    // 创建 EPUB 文件：先写入临时文件，全部完成后再原子重命名，
+    // 避免中途失败时破坏已存在的输出文件或留下半成品。
+    let tmp_path = output_path.with_extension("epub.tmp.__writing__");
+    let _ = std::fs::remove_file(&tmp_path);
+    let file = File::create(&tmp_path).map_err(|e| format!("创建 EPUB 文件失败: {}", e))?;
     let mut zip = ZipWriter::new(file);
     let options = FileOptions::default().compression_method(zip::CompressionMethod::Stored);
     let options_deflate =
@@ -1221,7 +1284,17 @@ pub fn convert_to_epub(
     zip.write_all(EPUB_STYLE_CSS.as_bytes())
         .map_err(|e| e.to_string())?;
 
-    zip.finish().map_err(|e| e.to_string())?;
+    zip.finish().map_err(|e| {
+        let _ = std::fs::remove_file(&tmp_path);
+        e.to_string()
+    })?;
+    // 写入完成，原子重命名到目标路径。若中途 write_all 出错提前返回，
+    // 函数会跳过此处；临时文件会在下次运行时被开头的 remove_file 清理。
+    if std::fs::rename(&tmp_path, &output_path).is_err() {
+        // 跨卷或目标占用时的回退：复制后删除临时文件。
+        std::fs::copy(&tmp_path, &output_path).map_err(|e| format!("写出 EPUB 失败: {e}"))?;
+        let _ = std::fs::remove_file(&tmp_path);
+    }
 
     let output_bytes = std::fs::metadata(&output_path)
         .map(|m| m.len())

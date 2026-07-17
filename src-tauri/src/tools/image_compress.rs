@@ -138,6 +138,8 @@ pub struct CompressSummary {
     pub output_total_size: u64,
     pub compression_ratio: f32,
     pub zip_path: Option<String>,
+    /// ZIP 打包失败时的错误信息（独立于单图转换结果，不计入 failed 计数）。
+    pub zip_error: Option<String>,
     pub results: Vec<CompressResult>,
 }
 
@@ -161,6 +163,43 @@ pub fn set_resource_dir(path: PathBuf) {
     let _ = RESOURCE_DIR.set(path);
 }
 
+/// 内嵌的 libjxl/cjxl.exe（编译期嵌入，运行时释放到临时目录）。
+/// 仅 Windows 平台嵌入；其它平台走磁盘候选（dev/已安装环境）。
+#[cfg(target_os = "windows")]
+const EMBEDDED_CJXL_EXE: &[u8] = include_bytes!("../../bin/libjxl/cjxl.exe");
+
+/// 将内嵌的 cjxl.exe 释放到 `%TEMP%\toolsbag_cjxl.exe`，原子写入避免多进程竞态。
+/// 返回释放后的路径；dev/非 Windows 或释放失败时返回 None。
+fn released_cjxl_path() -> Option<PathBuf> {
+    #[cfg(target_os = "windows")]
+    {
+        let target =
+            std::env::temp_dir().join(format!("toolsbag_cjxl_{}.exe", env!("CARGO_PKG_VERSION")));
+        if target.exists() {
+            // 已存在：直接复用（跨进程共享，减少重复释放）
+            return Some(target);
+        }
+        // 原子写入：先写进程级临时文件，再 rename 到目标名
+        let staging =
+            std::env::temp_dir().join(format!("toolsbag_cjxl_{}.exe", std::process::id()));
+        if std::fs::write(&staging, EMBEDDED_CJXL_EXE).is_ok() {
+            // rename 目标已存在时会失败（Windows），不影响——说明别的进程已释放
+            let _ = std::fs::rename(&staging, &target);
+        }
+        // 清理可能残留的暂存文件
+        let _ = std::fs::remove_file(&staging);
+        if target.exists() {
+            Some(target)
+        } else {
+            None
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        None
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LibjxlStatus {
     pub available: bool,
@@ -170,12 +209,20 @@ pub struct LibjxlStatus {
 }
 
 fn cjxl_exe_name() -> &'static str {
-    if cfg!(windows) { "cjxl.exe" } else { "cjxl" }
+    if cfg!(windows) {
+        "cjxl.exe"
+    } else {
+        "cjxl"
+    }
 }
 
 fn cjxl_candidates() -> Vec<PathBuf> {
     let exe = cjxl_exe_name();
     let mut candidates = Vec::new();
+    // 优先：内嵌释放到 %TEMP% 的单 exe 路径（打包后无需外置 cjxl.exe）
+    if let Some(released) = released_cjxl_path() {
+        candidates.push(released);
+    }
     if let Some(res_dir) = RESOURCE_DIR.get() {
         candidates.push(res_dir.join(exe));
         candidates.push(res_dir.join("bin").join("libjxl").join(exe));
@@ -195,7 +242,12 @@ fn cjxl_candidates() -> Vec<PathBuf> {
         candidates.push(cwd.join(exe));
     }
     candidates.push(PathBuf::from(exe));
+    // 去重，避免内嵌路径与磁盘路径重复探测
+    let mut seen = std::collections::HashSet::new();
     candidates
+        .into_iter()
+        .filter(|p| seen.insert(p.to_string_lossy().to_ascii_lowercase()))
+        .collect()
 }
 
 fn run_command_hidden(cmd: &mut Command) -> std::io::Result<std::process::Output> {
@@ -213,9 +265,17 @@ fn cjxl_version(path: &Path) -> Option<String> {
     if !out.status.success() {
         return None;
     }
-    let text = if out.stdout.is_empty() { out.stderr } else { out.stdout };
+    let text = if out.stdout.is_empty() {
+        out.stderr
+    } else {
+        out.stdout
+    };
     let version = String::from_utf8_lossy(&text).trim().to_string();
-    if version.is_empty() { None } else { Some(version) }
+    if version.is_empty() {
+        None
+    } else {
+        Some(version)
+    }
 }
 
 fn cjxl_is_usable(path: &Path) -> bool {
@@ -239,14 +299,19 @@ pub async fn get_libjxl_status() -> Result<LibjxlStatus, String> {
             available: false,
             path: None,
             version: None,
-            message: "未找到 cjxl；请将 libjxl 的 cjxl.exe 放到 src-tauri/bin/libjxl/ 或打包资源目录".into(),
+            message:
+                "未找到 cjxl；请将 libjxl 的 cjxl.exe 放到 src-tauri/bin/libjxl/ 或打包资源目录"
+                    .into(),
         },
     })
 }
 
 fn is_supported_input(path: &Path) -> bool {
     matches!(
-        path.extension().and_then(|e| e.to_str()).map(|s| s.to_ascii_lowercase()).as_deref(),
+        path.extension()
+            .and_then(|e| e.to_str())
+            .map(|s| s.to_ascii_lowercase())
+            .as_deref(),
         Some("jpg" | "jpeg" | "png")
     )
 }
@@ -254,17 +319,25 @@ fn is_supported_input(path: &Path) -> bool {
 fn analyze_one(path: &Path) -> Result<CompressInput, String> {
     // 导入阶段只读尺寸（不解码像素），大幅提升大文件夹导入速度。
     // alpha 的精确判断推迟到编码阶段（编码时本来就要解码）。
-    let (width, height) = image_crate::image_dimensions(path)
-        .map_err(|e| format!("无法读取图片尺寸: {e}"))?;
+    let (width, height) =
+        image_crate::image_dimensions(path).map_err(|e| format!("无法读取图片尺寸: {e}"))?;
     let file_size = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
-    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("").to_ascii_lowercase();
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
     // 启发式：PNG 可能有 alpha，JPG/JPEG 一定无 alpha。
     let has_alpha = matches!(ext.as_str(), "png");
     // MVP：仅记录可能有 EXIF；实际保留 EXIF 依赖编码器能力，AVIF 路径暂不写回 EXIF。
     let has_exif = matches!(ext.as_str(), "jpg" | "jpeg");
     Ok(CompressInput {
         path: path.to_string_lossy().to_string(),
-        name: path.file_name().and_then(|n| n.to_str()).unwrap_or("image").to_string(),
+        name: path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("image")
+            .to_string(),
         ext,
         width,
         height,
@@ -275,30 +348,46 @@ fn analyze_one(path: &Path) -> Result<CompressInput, String> {
 }
 
 #[tauri::command]
-pub async fn analyze_compress_inputs(paths: Vec<String>, recursive: bool) -> Result<CompressAnalysis, String> {
+pub async fn analyze_compress_inputs(
+    paths: Vec<String>,
+    recursive: bool,
+) -> Result<CompressAnalysis, String> {
     tokio::task::spawn_blocking(move || {
         let mut candidates = Vec::<PathBuf>::new();
         let mut skipped = Vec::<String>::new();
         for raw in paths {
             let p = PathBuf::from(raw);
             if p.is_file() {
-                if is_supported_input(&p) { candidates.push(p); }
-                else { skipped.push(p.to_string_lossy().to_string()); }
+                if is_supported_input(&p) {
+                    candidates.push(p);
+                } else {
+                    skipped.push(p.to_string_lossy().to_string());
+                }
             } else if p.is_dir() {
                 if recursive {
-                    for entry in WalkDir::new(&p).follow_links(false).into_iter().filter_map(Result::ok) {
+                    for entry in WalkDir::new(&p)
+                        .follow_links(false)
+                        .into_iter()
+                        .filter_map(Result::ok)
+                    {
                         let path = entry.path().to_path_buf();
                         if path.is_file() {
-                            if is_supported_input(&path) { candidates.push(path); }
-                            else { skipped.push(path.to_string_lossy().to_string()); }
+                            if is_supported_input(&path) {
+                                candidates.push(path);
+                            } else {
+                                skipped.push(path.to_string_lossy().to_string());
+                            }
                         }
                     }
                 } else {
                     for entry in std::fs::read_dir(&p).map_err(|e| e.to_string())? {
                         let path = entry.map_err(|e| e.to_string())?.path();
                         if path.is_file() {
-                            if is_supported_input(&path) { candidates.push(path); }
-                            else { skipped.push(path.to_string_lossy().to_string()); }
+                            if is_supported_input(&path) {
+                                candidates.push(path);
+                            } else {
+                                skipped.push(path.to_string_lossy().to_string());
+                            }
                         }
                     }
                 }
@@ -308,7 +397,8 @@ pub async fn analyze_compress_inputs(paths: Vec<String>, recursive: bool) -> Res
         }
         candidates.sort();
         candidates.dedup();
-        let results: Vec<Result<CompressInput, String>> = candidates.par_iter().map(|p| analyze_one(p)).collect();
+        let results: Vec<Result<CompressInput, String>> =
+            candidates.par_iter().map(|p| analyze_one(p)).collect();
         let mut files = Vec::new();
         for (path, res) in candidates.iter().zip(results) {
             match res {
@@ -317,24 +407,37 @@ pub async fn analyze_compress_inputs(paths: Vec<String>, recursive: bool) -> Res
             }
         }
         let total_size = files.iter().map(|f| f.file_size).sum();
-        Ok(CompressAnalysis { files, skipped, total_size })
+        Ok(CompressAnalysis {
+            files,
+            skipped,
+            total_size,
+        })
     })
     .await
     .map_err(|e| format!("task join error: {e}"))?
 }
 
 fn resize_if_needed(img: DynamicImage, max_dimension: u32) -> DynamicImage {
-    if max_dimension == 0 { return img; }
+    if max_dimension == 0 {
+        return img;
+    }
     let (w, h) = img.dimensions();
     let long = w.max(h);
-    if long <= max_dimension { return img; }
+    if long <= max_dimension {
+        return img;
+    }
     let scale = max_dimension as f64 / long as f64;
     let nw = ((w as f64 * scale).round() as u32).max(1);
     let nh = ((h as f64 * scale).round() as u32).max(1);
     img.resize(nw, nh, FilterType::Lanczos3)
 }
 
-fn unique_output_path(dir: &Path, stem: &str, ext: &str, reserved: &mut HashSet<PathBuf>) -> PathBuf {
+fn unique_output_path(
+    dir: &Path,
+    stem: &str,
+    ext: &str,
+    reserved: &mut HashSet<PathBuf>,
+) -> PathBuf {
     for i in 0..10_000 {
         let file_name = if i == 0 {
             format!("{stem}.{ext}")
@@ -349,7 +452,10 @@ fn unique_output_path(dir: &Path, stem: &str, ext: &str, reserved: &mut HashSet<
     dir.join(format!("{stem} (10000).{ext}"))
 }
 
-fn plan_outputs(files: Vec<CompressInput>, config: &CompressConfig) -> Result<Vec<PlannedOutput>, String> {
+fn plan_outputs(
+    files: Vec<CompressInput>,
+    config: &CompressConfig,
+) -> Result<Vec<PlannedOutput>, String> {
     let out_dir = PathBuf::from(&config.output_dir);
     std::fs::create_dir_all(&out_dir).map_err(|e| format!("创建输出目录失败: {e}"))?;
     let mut reserved = HashSet::<PathBuf>::new();
@@ -357,8 +463,15 @@ fn plan_outputs(files: Vec<CompressInput>, config: &CompressConfig) -> Result<Ve
         .into_iter()
         .map(|input| {
             let input_path = PathBuf::from(&input.path);
-            let stem = input_path.file_stem().and_then(|s| s.to_str()).unwrap_or("image");
-            let out_ext = match resolve_output_format(&input, config) { OutputFormat::Jxl => "jxl", OutputFormat::Avif => "avif", OutputFormat::Auto => unreachable!() };
+            let stem = input_path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("image");
+            let out_ext = match resolve_output_format(&input, config) {
+                OutputFormat::Jxl => "jxl",
+                OutputFormat::Avif => "avif",
+                OutputFormat::Auto => unreachable!(),
+            };
             let output_path = unique_output_path(&out_dir, stem, out_ext, &mut reserved)
                 .to_string_lossy()
                 .to_string();
@@ -386,7 +499,13 @@ fn num_cpus_half() -> usize {
 fn resolve_output_format(input: &CompressInput, config: &CompressConfig) -> OutputFormat {
     match config.output_format {
         OutputFormat::Auto => {
-            if matches!(input.ext.as_str(), "jpg" | "jpeg") {
+            // JPG/JPEG → JXL（可用原始 JPEG 无损封装）。
+            // PNG：无损模式必须走 JXL（Modular d=0 是数学无损）；AVIF 路径基于
+            // ravif（有损编码器），即使 q=100 仍为有损，不能用于"严格无损"。
+            // 近无损/有损档的 PNG 仍输出 AVIF（体积优势明显）。
+            if matches!(input.ext.as_str(), "jpg" | "jpeg")
+                || matches!(config.mode, CompressMode::Lossless)
+            {
                 OutputFormat::Jxl
             } else {
                 OutputFormat::Avif
@@ -432,18 +551,26 @@ fn can_use_jpeg_lossless(input: &CompressInput, config: &CompressConfig) -> bool
         && matches!(input.ext.as_str(), "jpg" | "jpeg")
 }
 
-fn encode_jpeg_lossless_with_cjxl(input_path: &Path, out_path: &Path, effort: u8, keep_metadata: bool) -> Result<u64, String> {
+fn encode_jpeg_lossless_with_cjxl(
+    input_path: &Path,
+    out_path: &Path,
+    effort: u8,
+    keep_metadata: bool,
+) -> Result<u64, String> {
     let cjxl = find_cjxl().ok_or_else(|| "未找到 cjxl，无法执行 JPEG 原始无损封装".to_string())?;
     let effort = effort.clamp(1, 10).to_string();
     let mut cmd = Command::new(&cjxl);
     cmd.arg(input_path)
         .arg(out_path)
         .arg("--lossless_jpeg=1")
-        .arg(if keep_metadata { "--container=1" } else { "--container=0" })
+        .arg(if keep_metadata {
+            "--container=1"
+        } else {
+            "--container=0"
+        })
         .arg("-e")
         .arg(&effort);
-    let output = run_command_hidden(&mut cmd)
-        .map_err(|e| format!("启动 cjxl 失败: {e}"))?;
+    let output = run_command_hidden(&mut cmd).map_err(|e| format!("启动 cjxl 失败: {e}"))?;
     if !output.status.success() {
         let _ = std::fs::remove_file(out_path);
         let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
@@ -451,7 +578,9 @@ fn encode_jpeg_lossless_with_cjxl(input_path: &Path, out_path: &Path, effort: u8
         let detail = if stderr.is_empty() { stdout } else { stderr };
         return Err(format!("cjxl JPEG 无损封装失败: {detail}"));
     }
-    std::fs::metadata(out_path).map(|m| m.len()).map_err(|e| e.to_string())
+    std::fs::metadata(out_path)
+        .map(|m| m.len())
+        .map_err(|e| e.to_string())
 }
 
 fn compress_one(plan: &PlannedOutput, config: &CompressConfig) -> CompressResult {
@@ -461,7 +590,12 @@ fn compress_one(plan: &PlannedOutput, config: &CompressConfig) -> CompressResult
     let out_path = PathBuf::from(&plan.output_path);
 
     if can_use_jpeg_lossless(input, config) {
-        let res = encode_jpeg_lossless_with_cjxl(&input_path, &out_path, jxl_effort(config), keep_metadata(config));
+        let res = encode_jpeg_lossless_with_cjxl(
+            &input_path,
+            &out_path,
+            jxl_effort(config),
+            keep_metadata(config),
+        );
         return match res {
             Ok(output_size) => CompressResult {
                 input_path: input.path.clone(),
@@ -469,7 +603,11 @@ fn compress_one(plan: &PlannedOutput, config: &CompressConfig) -> CompressResult
                 success: true,
                 original_size,
                 output_size,
-                compression_ratio: if original_size > 0 { output_size as f32 / original_size as f32 } else { 0.0 },
+                compression_ratio: if original_size > 0 {
+                    output_size as f32 / original_size as f32
+                } else {
+                    0.0
+                },
                 error: None,
             },
             Err(e) => CompressResult {
@@ -515,10 +653,22 @@ fn compress_one(plan: &PlannedOutput, config: &CompressConfig) -> CompressResult
                     if has_alpha {
                         let rgba = img.to_rgba16();
                         // u16 像素按原生字节序展开为 u8（jxl-encoder 按布局解读字节）
-                        (PixelLayout::Rgba16, rgba.into_raw().into_iter().flat_map(u16::to_ne_bytes).collect())
+                        (
+                            PixelLayout::Rgba16,
+                            rgba.into_raw()
+                                .into_iter()
+                                .flat_map(u16::to_ne_bytes)
+                                .collect(),
+                        )
                     } else {
                         let rgb = img.to_rgb16();
-                        (PixelLayout::Rgb16, rgb.into_raw().into_iter().flat_map(u16::to_ne_bytes).collect())
+                        (
+                            PixelLayout::Rgb16,
+                            rgb.into_raw()
+                                .into_iter()
+                                .flat_map(u16::to_ne_bytes)
+                                .collect(),
+                        )
                     }
                 } else if has_alpha {
                     let rgba = img.to_rgba8();
@@ -549,14 +699,18 @@ fn compress_one(plan: &PlannedOutput, config: &CompressConfig) -> CompressResult
                     CompressMode::Lossy => {
                         // distance 1.0–15.0，越大体积越小
                         let distance = config.distance.clamp(1.0, 15.0);
-                        let cfg = LossyConfig::new(distance).with_effort(effort).with_threads(0);
+                        let cfg = LossyConfig::new(distance)
+                            .with_effort(effort)
+                            .with_threads(0);
                         cfg.encode(&pixels, w, h, layout)
                             .map_err(|e| format!("JXL 有损编码失败 (d={distance}): {e}"))?
                     }
                 };
 
                 write_new_file(&out_path, &jxl_bytes)?;
-                std::fs::metadata(&out_path).map(|m| m.len()).map_err(|e| e.to_string())
+                std::fs::metadata(&out_path)
+                    .map(|m| m.len())
+                    .map_err(|e| e.to_string())
             })();
             match res {
                 Ok(output_size) => CompressResult {
@@ -565,10 +719,22 @@ fn compress_one(plan: &PlannedOutput, config: &CompressConfig) -> CompressResult
                     success: true,
                     original_size,
                     output_size,
-                    compression_ratio: if original_size > 0 { output_size as f32 / original_size as f32 } else { 0.0 },
+                    compression_ratio: if original_size > 0 {
+                        output_size as f32 / original_size as f32
+                    } else {
+                        0.0
+                    },
                     error: None,
                 },
-                Err(e) => CompressResult { input_path: input.path.clone(), output_path: None, success: false, original_size, output_size: 0, compression_ratio: 0.0, error: Some(e) },
+                Err(e) => CompressResult {
+                    input_path: input.path.clone(),
+                    output_path: None,
+                    success: false,
+                    original_size,
+                    output_size: 0,
+                    compression_ratio: 0.0,
+                    error: Some(e),
+                },
             }
         }
         OutputFormat::Avif => {
@@ -622,7 +788,9 @@ fn compress_one(plan: &PlannedOutput, config: &CompressConfig) -> CompressResult
                 }?;
 
                 write_new_file(&out_path, &encoded.avif_file)?;
-                std::fs::metadata(&out_path).map(|m| m.len()).map_err(|e| e.to_string())
+                std::fs::metadata(&out_path)
+                    .map(|m| m.len())
+                    .map_err(|e| e.to_string())
             })();
             match res {
                 Ok(output_size) => CompressResult {
@@ -631,17 +799,32 @@ fn compress_one(plan: &PlannedOutput, config: &CompressConfig) -> CompressResult
                     success: true,
                     original_size,
                     output_size,
-                    compression_ratio: if original_size > 0 { output_size as f32 / original_size as f32 } else { 0.0 },
+                    compression_ratio: if original_size > 0 {
+                        output_size as f32 / original_size as f32
+                    } else {
+                        0.0
+                    },
                     error: None,
                 },
-                Err(e) => CompressResult { input_path: input.path.clone(), output_path: None, success: false, original_size, output_size: 0, compression_ratio: 0.0, error: Some(e) },
+                Err(e) => CompressResult {
+                    input_path: input.path.clone(),
+                    output_path: None,
+                    success: false,
+                    original_size,
+                    output_size: 0,
+                    compression_ratio: 0.0,
+                    error: Some(e),
+                },
             }
         }
         OutputFormat::Auto => unreachable!("resolve_output_format never returns Auto"),
     }
 }
 
-fn zip_success_outputs(results: &[CompressResult], output_dir: &Path) -> Result<Option<(String, u64)>, String> {
+fn zip_success_outputs(
+    results: &[CompressResult],
+    output_dir: &Path,
+) -> Result<Option<(String, u64)>, String> {
     let success_paths: Vec<PathBuf> = results
         .iter()
         .filter(|r| r.success)
@@ -663,9 +846,11 @@ fn zip_success_outputs(results: &[CompressResult], output_dir: &Path) -> Result<
 
     for path in success_paths {
         let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("image");
-        zip.start_file(name, options).map_err(|e| format!("写入 ZIP 失败: {e}"))?;
+        zip.start_file(name, options)
+            .map_err(|e| format!("写入 ZIP 失败: {e}"))?;
         let bytes = std::fs::read(&path).map_err(|e| format!("读取输出文件失败: {e}"))?;
-        zip.write_all(&bytes).map_err(|e| format!("写入 ZIP 失败: {e}"))?;
+        zip.write_all(&bytes)
+            .map_err(|e| format!("写入 ZIP 失败: {e}"))?;
     }
     zip.finish().map_err(|e| format!("完成 ZIP 失败: {e}"))?;
     let size = std::fs::metadata(&zip_path).map(|m| m.len()).unwrap_or(0);
@@ -674,19 +859,31 @@ fn zip_success_outputs(results: &[CompressResult], output_dir: &Path) -> Result<
 
 fn unique_zip_path(output_dir: &Path) -> PathBuf {
     let mut p = output_dir.join("compressed_images.zip");
-    if !p.exists() { return p; }
+    if !p.exists() {
+        return p;
+    }
     for i in 1..10_000 {
         p = output_dir.join(format!("compressed_images ({i}).zip"));
-        if !p.exists() { return p; }
+        if !p.exists() {
+            return p;
+        }
     }
     output_dir.join("compressed_images (10000).zip")
 }
 
 #[tauri::command]
-pub async fn compress_images(files: Vec<CompressInput>, config: CompressConfig, window: tauri::WebviewWindow) -> Result<CompressSummary, String> {
+pub async fn compress_images(
+    files: Vec<CompressInput>,
+    config: CompressConfig,
+    window: tauri::WebviewWindow,
+) -> Result<CompressSummary, String> {
     tokio::task::spawn_blocking(move || {
-        if files.is_empty() { return Err("没有可转换的图片".to_string()); }
-        if config.output_dir.trim().is_empty() { return Err("请选择输出目录".to_string()); }
+        if files.is_empty() {
+            return Err("没有可转换的图片".to_string());
+        }
+        if config.output_dir.trim().is_empty() {
+            return Err("请选择输出目录".to_string());
+        }
         let total = files.len();
         let planned = plan_outputs(files, &config)?;
         let counter = std::sync::atomic::AtomicUsize::new(0);
@@ -704,48 +901,50 @@ pub async fn compress_images(files: Vec<CompressInput>, config: CompressConfig, 
             OutputFormat::Auto => "自动编码",
         };
         let results: Vec<CompressResult> = pool.install(|| {
-            planned.par_iter().map(|plan| {
-                let result = compress_one(plan, &config);
-                let cur = counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
-                let _ = window.emit("image_compress_progress", CompressProgress {
-                    current: cur,
-                    total,
-                    current_file: plan.input.path.clone(),
-                    phase: phase.into(),
-                });
-                result
-            }).collect()
+            planned
+                .par_iter()
+                .map(|plan| {
+                    let result = compress_one(plan, &config);
+                    let cur = counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+                    let _ = window.emit(
+                        "image_compress_progress",
+                        CompressProgress {
+                            current: cur,
+                            total,
+                            current_file: plan.input.path.clone(),
+                            phase: phase.into(),
+                        },
+                    );
+                    result
+                })
+                .collect()
         });
-        let mut results = results;
         let success = results.iter().filter(|r| r.success).count();
-        let mut failed = results.len() - success;
+        let failed = results.len() - success;
         let original_total_size: u64 = results.iter().map(|r| r.original_size).sum();
-        let mut output_total_size: u64 = results.iter().map(|r| r.output_size).sum();
+        // output_total_size 仅统计图片输出体积；ZIP 是输出文件的副本，单独追踪，
+        // 不计入压缩比，避免"体积比"被显著抬高。
+        let output_total_size: u64 = results.iter().map(|r| r.output_size).sum();
         let mut zip_path = None;
+        let mut zip_error = None;
         if config.zip_output {
-            let _ = window.emit("image_compress_progress", CompressProgress {
-                current: success,
-                total,
-                current_file: String::new(),
-                phase: "打包 ZIP".into(),
-            });
+            let _ = window.emit(
+                "image_compress_progress",
+                CompressProgress {
+                    current: success,
+                    total,
+                    current_file: String::new(),
+                    phase: "打包 ZIP".into(),
+                },
+            );
             match zip_success_outputs(&results, &PathBuf::from(&config.output_dir)) {
-                Ok(Some((path, size))) => {
-                    output_total_size += size;
+                Ok(Some((path, _size))) => {
                     zip_path = Some(path);
                 }
                 Ok(None) => {}
                 Err(e) => {
-                    failed += 1;
-                    results.push(CompressResult {
-                        input_path: "ZIP".into(),
-                        output_path: None,
-                        success: false,
-                        original_size: 0,
-                        output_size: 0,
-                        compression_ratio: 0.0,
-                        error: Some(e),
-                    });
+                    // ZIP 失败不影响已成功转换的图片，记为独立错误而非伪造结果行。
+                    zip_error = Some(e);
                 }
             }
         }
@@ -755,8 +954,13 @@ pub async fn compress_images(files: Vec<CompressInput>, config: CompressConfig, 
             failed,
             original_total_size,
             output_total_size,
-            compression_ratio: if original_total_size > 0 { output_total_size as f32 / original_total_size as f32 } else { 0.0 },
+            compression_ratio: if original_total_size > 0 {
+                output_total_size as f32 / original_total_size as f32
+            } else {
+                0.0
+            },
             zip_path,
+            zip_error,
             results,
         })
     })

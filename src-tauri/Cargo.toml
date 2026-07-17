@@ -61,10 +61,13 @@ parking_lot = "0.12"
 libloading = "0.8"
 rusqlite = { version = "0.31", features = ["bundled"] }
 log = "0.4"
+glob = "0.3"
 
 [profile.release]
 strip = true
 lto = true
 # 速度优先：编码热路径对优化级别敏感，opt-level=3 比 "z" 显著提速，代价是二进制变大。
 opt-level = 3
+# 单代码生成单元换取更充分的跨函数优化（编译变慢，运行更快）
+codegen-units = 1
 panic = "abort"

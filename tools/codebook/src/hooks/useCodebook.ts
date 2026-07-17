@@ -219,12 +219,18 @@ export const useCodebook = () => {
       ;[resultChars[i], resultChars[j]] = [resultChars[j]!, resultChars[i]!]
     }
 
-    // ensure first 3 chars are not symbols
+    // ensure first 3 chars are not symbols — but draw from enabled charsets only
     const maxHead = Math.min(3, resultChars.length)
+    const enabledNonSymbol = [
+      ...(opts.uppercase ? [filterExcluded('ABCDEFGHIJKLMNOPQRSTUVWXYZ')] : []),
+      ...(opts.lowercase ? [filterExcluded('abcdefghijklmnopqrstuvwxyz')] : []),
+      ...(opts.numbers ? [filterExcluded('0123456789')] : []),
+    ].filter((s) => s.length > 0).join('')
+    const replacementPool = enabledNonSymbol.length > 0 ? enabledNonSymbol : nonSymbolPool
     for (let i = 0; i < maxHead; i++) {
       if (symbolSet.includes(resultChars[i]!)) {
-        const idx = randomArray[(randomIndex + i) % randomArray.length]! % nonSymbolPool.length
-        resultChars[i] = nonSymbolPool[idx]!
+        const idx = randomArray[(randomIndex + i) % randomArray.length]! % replacementPool.length
+        resultChars[i] = replacementPool[idx]!
       }
     }
 

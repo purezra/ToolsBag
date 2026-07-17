@@ -2,12 +2,13 @@
 //! 使用 MediaInfo 文本输出解析视频、音频、图片的基础元数据
 
 use crate::models::{AudioMeta, ImageMeta, VideoMeta};
-use crate::tools::mediainfo::{get_full_info, MediaInfoHandle, parse::*};
+use crate::tools::mediainfo::{parse::*, MediaInfoHandle};
 use std::path::Path;
 
 /// 获取视频元数据
 pub fn get_video_meta(path: &Path) -> Option<VideoMeta> {
-    let mi = MediaInfoHandle::open(path)?;
+    // 轻量提取：ParseSpeed=0 只读容器头部，避免深度扫描整段文件，批量导入显著提速。
+    let mi = MediaInfoHandle::open_fast(path)?;
     let full_info = mi.get_inform();
 
     if full_info.is_empty() {
@@ -174,7 +175,7 @@ pub fn get_video_meta(path: &Path) -> Option<VideoMeta> {
 
 /// 获取音频元数据
 pub fn get_audio_meta(path: &Path) -> Option<AudioMeta> {
-    let mi = MediaInfoHandle::open(path)?;
+    let mi = MediaInfoHandle::open_fast(path)?;
     let full_info = mi.get_inform();
 
     if full_info.is_empty() {
@@ -281,7 +282,9 @@ pub fn get_audio_meta(path: &Path) -> Option<AudioMeta> {
 
 /// 获取图片元数据
 pub fn get_image_meta(path: &Path) -> Option<ImageMeta> {
-    let full_info = get_full_info(path)?;
+    // 图片仅需宽高/格式，ParseSpeed=0 读头部即可。
+    let mi = MediaInfoHandle::open_fast(path)?;
+    let full_info = mi.get_inform();
 
     if full_info.is_empty() {
         return None;

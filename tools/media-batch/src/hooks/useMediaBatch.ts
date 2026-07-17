@@ -2,9 +2,18 @@
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { writeText } from '@tauri-apps/plugin-clipboard-manager'
 import { listen } from '@tauri-apps/api/event'
-import { importMedia, getMediaInfoStatus } from '../api/media-batch'
+import { importMedia, getMediaInfoStatus, recordMediaPerformance } from '../api/media-batch'
 import { openParentDir, pathExists, renamePath } from '@core/api/common'
 import { formatBytes, formatDuration, type DurationFormat } from '@core/utils/format'
+import {
+  compareByOrder,
+  evaluateVideoFilter,
+  splitMediaFormatCounts,
+  VIDEO_EXTENSIONS,
+  IMAGE_EXTENSIONS,
+  type MediaFormatCount,
+  type VideoFilterState,
+} from '../utils/media-utils'
 import { hasTauriRuntime } from '@core/utils/tauri'
 import { useFileSelect } from '@core/hooks/useFileSelect'
 import { useSettings } from '@core/hooks/useSettings'
@@ -38,11 +47,18 @@ function confirmDialog(options: {
 }
 import type { ImageRow, MediaKind, MediaInfoStatus, RenameField, RenameSafetySummary, VideoRow } from '../types/media'
 
-const VIDEO_EXTS = ['mp4', 'mov', 'mkv', 'avi', 'm4v', 'wmv', 'flv', 'webm', 'ts', 'mts', 'm2ts']
-const IMAGE_EXTS = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'tiff', 'webp', 'heic', 'heif']
-
 type ImportKind = 'file' | 'folder' | 'clipboard'
 type OrganizePresetKey = 'short-video' | 'archive-video' | 'photo-exif'
+
+type ImportSummary = {
+  success: number
+  failed: number
+  videoFormats: MediaFormatCount[]
+  imageFormats: MediaFormatCount[]
+  metadataMs: number
+  displayMs: number
+  totalMs: number
+}
 
 type LiveImportItem = {
   id: string
@@ -88,7 +104,7 @@ const useMediaBatchImpl = () => {
   const allowAutoRefresh = ref(true)
   const recursive = ref(false)
   const importing = ref(false)
-  const importSummary = ref('')
+  const importSummary = ref<ImportSummary | null>(null)
   const importProgress = reactive({
     active: false,
     batch: 0,
@@ -134,6 +150,15 @@ const useMediaBatchImpl = () => {
 
   const videoRows = ref<VideoRow[]>([])
   const imageRows = ref<ImageRow[]>([])
+  const videoFilters = reactive<VideoFilterState>({
+    formats: [],
+    durationMode: 'all',
+    durationMin: 0,
+    durationMax: 10,
+    durationUnit: 'minute',
+    recentDays: null,
+  })
+  const selectedVideoPaths = ref<string[]>([])
 
   const visibleVideoColumns = reactive({
     duration: true,
@@ -241,11 +266,6 @@ const useMediaBatchImpl = () => {
     return `${base}.${ext}`
   }
 
-  const compareByOrder = (a: number, b: number, order: 'ascending' | 'descending' | null) => {
-    if (!order) return 0
-    return order === 'ascending' ? a - b : b - a
-  }
-
   const sortVideoRows = (rows: VideoRow[]) => {
     const { prop, order } = videoSort.value
     if (!prop || !order) return [...rows]
@@ -279,8 +299,30 @@ const useMediaBatchImpl = () => {
     }
   }
 
+  const availableVideoFormats = computed(() =>
+    Array.from(new Set(videoRows.value.map((row) => {
+      const dot = row.name.lastIndexOf('.')
+      return dot >= 0 ? row.name.slice(dot + 1).toLowerCase() : ''
+    }).filter(Boolean))).sort()
+  )
+
+  const videoFilterResults = computed(() =>
+    sortVideoRows(videoRows.value).map((row) => ({
+      row,
+      decision: evaluateVideoFilter(row, videoFilters),
+    }))
+  )
+
+  const filteredVideoRows = computed(() =>
+    videoFilterResults.value.filter(({ decision }) => decision === 'match').map(({ row }) => row)
+  )
+
+  const videoFilterMissingCount = computed(() =>
+    videoFilterResults.value.filter(({ decision }) => decision === 'missing').length
+  )
+
   const tableVideos = computed(() =>
-    sortVideoRows(videoRows.value).map((row, index) => ({
+    filteredVideoRows.value.map((row, index) => ({
       ...row,
       previewName: formatPreviewName(row, index),
       order: index + 1
@@ -295,9 +337,49 @@ const useMediaBatchImpl = () => {
     }))
   )
 
-  const activeRenameRows = computed<RenameRow[]>(() =>
-    fileTypeTab.value === 'video' ? tableVideos.value : tableImages.value
+  const videoFilterKey = computed(() => JSON.stringify(videoFilters))
+  const matchingVideoPathKey = computed(() =>
+    filteredVideoRows.value.map(({ path }) => path).sort().join('\u0000')
   )
+
+  watch([videoFilterKey, matchingVideoPathKey], () => {
+    selectedVideoPaths.value = filteredVideoRows.value.map(({ path }) => path)
+  }, { immediate: true })
+
+  const selectedVideoPathSet = computed(() => new Set(selectedVideoPaths.value))
+
+  const toggleVideoSelection = (path: string, selected: boolean) => {
+    const next = new Set(selectedVideoPaths.value)
+    if (selected) next.add(path)
+    else next.delete(path)
+    selectedVideoPaths.value = [...next]
+  }
+
+  const toggleAllVideoSelection = (selected: boolean) => {
+    selectedVideoPaths.value = selected ? filteredVideoRows.value.map(({ path }) => path) : []
+  }
+
+  const updateVideoFilter = (field: keyof VideoFilterState, value: VideoFilterState[keyof VideoFilterState]) => {
+    Object.assign(videoFilters, { [field]: value })
+  }
+
+  const resetVideoFilters = () => {
+    Object.assign(videoFilters, {
+      formats: [],
+      durationMode: 'all',
+      durationMin: 0,
+      durationMax: 10,
+      durationUnit: 'minute',
+      recentDays: null,
+    } satisfies VideoFilterState)
+  }
+
+  const activeRenameRows = computed<RenameRow[]>(() =>
+    fileTypeTab.value === 'video'
+      ? tableVideos.value.filter(({ path }) => selectedVideoPathSet.value.has(path))
+      : tableImages.value
+  )
+  const canApplyRename = computed(() => activeRenameRows.value.length > 0)
 
   const canUndoRename = computed(() => lastRenameBatch.value.length > 0)
   const undoStackDepth = computed(() => lastRenameBatch.value.length)
@@ -426,8 +508,8 @@ const useMediaBatchImpl = () => {
 
   const detectMediaKind = (path: string): MediaKind | null => {
     const ext = path.split('.').pop()?.toLowerCase() || ''
-    if (VIDEO_EXTS.includes(ext)) return 'video'
-    if (IMAGE_EXTS.includes(ext)) return 'image'
+    if (VIDEO_EXTENSIONS.includes(ext)) return 'video'
+    if (IMAGE_EXTENSIONS.includes(ext)) return 'image'
     return null
   }
 
@@ -560,13 +642,19 @@ const useMediaBatchImpl = () => {
     importing.value = true
     lastRenameBatch.value = []
     failedItems.value = []
-    importSummary.value = ''
+    importSummary.value = null
     const pending = buildPendingRows(paths, kind)
+    // 快照导入前列表：pending 占位会按 path 覆盖同路径的已成功行，
+    // 若后端整体抛错则回滚到此快照，避免 clearPendingPlaceholders 误删被覆盖的行导致数据丢失。
+    const prevVideoRows = videoRows.value
+    const prevImageRows = imageRows.value
     videoRows.value = mergeByPath(videoRows.value, pending.pendingVideos)
     imageRows.value = mergeByPath(imageRows.value, pending.pendingImages)
     startProgress(paths.length)
     try {
+      const metadataStartedAt = performance.now()
       const resp = await importMedia(paths, recursive.value)
+      const metadataFinishedAt = performance.now()
       const videos = resp.items.filter((item) => item.mediaType === 'video') as VideoRow[]
       const images = resp.items.filter((item) => item.mediaType === 'image') as ImageRow[]
 
@@ -577,37 +665,46 @@ const useMediaBatchImpl = () => {
       failedItems.value = resp.items.filter((item) => item.status !== 'success') as (VideoRow | ImageRow)[]
       importProgress.totalItems = resp.stats.total
       importProgress.totalBatches = Math.max(1, Math.ceil((resp.stats.total as number) / batchSize.value))
-      const makeGroupedFormat = () => {
-        const sorted = [...(resp.stats.formatCounts || [])].sort((a, b) => {
-          if (b.count !== a.count) return b.count - a.count
-          return a.ext.localeCompare(b.ext)
-        })
-        const videosGrouped = sorted
-          .filter((f) => VIDEO_EXTS.includes(f.ext))
-          .map((f) => `${f.ext}(${f.count})`)
-          .join(', ')
-        const imagesGrouped = sorted
-          .filter((f) => IMAGE_EXTS.includes(f.ext))
-          .map((f) => `${f.ext}(${f.count})`)
-          .join(', ')
-        const vStr = videosGrouped || t('无')
-        const iStr = imagesGrouped || t('无')
-        return `视频{${vStr}} 图片{${iStr}}`
-      }
-      importSummary.value = t('成功 {success} 个，失败 {failed} 个；格式统计：{formats}', {
+      const summaryBase = {
         success: resp.stats.success,
         failed: resp.stats.failed,
-        formats: makeGroupedFormat()
-      })
+        ...splitMediaFormatCounts(resp.stats.formatCounts || []),
+      }
+      importSummary.value = {
+        ...summaryBase,
+        metadataMs: metadataFinishedAt - metadataStartedAt,
+        displayMs: 0,
+        totalMs: metadataFinishedAt - metadataStartedAt,
+      }
       const successPaths = new Set(resp.items.filter((item) => item.status === 'success').map((item) => item.path))
       const failedPaths = new Set(resp.items.filter((item) => item.status !== 'success').map((item) => item.path))
       syncLiveImportStatus(successPaths, failedPaths)
-      scheduleImportFinish(() => finishProgress(), 1200)
-      if (resp.stats.failed > 0) {
-        ElMessage.warning(`${t('导入完成')}：${importSummary.value}`)
-      } else {
-        ElMessage.success(`${t('导入完成')}：${importSummary.value}`)
+      await nextTick()
+      const displayedAt = performance.now()
+      importSummary.value = {
+        ...summaryBase,
+        metadataMs: metadataFinishedAt - metadataStartedAt,
+        displayMs: displayedAt - metadataFinishedAt,
+        totalMs: displayedAt - metadataStartedAt,
       }
+      void recordMediaPerformance({
+        mode: 'light',
+        inputCount: paths.length,
+        total: resp.stats.total,
+        success: resp.stats.success,
+        failed: resp.stats.failed,
+        metadataMs: metadataFinishedAt - metadataStartedAt,
+        displayMs: displayedAt - metadataFinishedAt,
+        totalMs: displayedAt - metadataStartedAt,
+        cached: false,
+      }).catch(() => undefined)
+      scheduleImportFinish(() => finishProgress(), 1200)
+      const toastText = t('导入完成：成功 {success} 个，失败 {failed} 个', {
+        success: resp.stats.success,
+        failed: resp.stats.failed,
+      })
+      if (resp.stats.failed > 0) ElMessage.warning(toastText)
+      else ElMessage.success(toastText)
 
       // 空文件夹兜底：非递归 + 文件夹模式 + 0 成功 → 询问是否递归再扫
       if (
@@ -633,7 +730,10 @@ const useMediaBatchImpl = () => {
       }
     } catch (error: any) {
       syncLiveImportStatus(new Set(), new Set(paths))
-      clearPendingPlaceholders()
+      // 回滚到导入前快照，保留原有成功行（不能只 clearPendingPlaceholders，
+      // 那会删掉被 pending 占位覆盖的已成功行）。
+      videoRows.value = prevVideoRows
+      imageRows.value = prevImageRows
       scheduleImportFinish(() => finishProgress(), 1600)
       ElMessage.error(error?.toString() || t('导入失败'))
     } finally {
@@ -711,6 +811,10 @@ const useMediaBatchImpl = () => {
   }
 
   const previewRename = () => {
+    if (!canApplyRename.value) {
+      ElMessage.info(t('没有已选中的文件'))
+      return
+    }
     showPreview.value = true
     if (fileTypeTab.value === 'video') {
       visibleVideoColumns.preview = true
@@ -1103,24 +1207,9 @@ const useMediaBatchImpl = () => {
       ElMessage.info(t('没有可重试的失败项'))
       return
     }
-    clearImportTimers()
-    importing.value = true
-    startProgress(retryPaths.length)
-    try {
-      const resp = await importMedia(retryPaths, recursive.value)
-      const videos = resp.items.filter((item) => item.mediaType === 'video') as VideoRow[]
-      const images = resp.items.filter((item) => item.mediaType === 'image') as ImageRow[]
-      videoRows.value = mergeByPath(videoRows.value, videos)
-      imageRows.value = mergeByPath(imageRows.value, images)
-      failedItems.value = resp.items.filter((item) => item.status !== 'success') as (VideoRow | ImageRow)[]
-      finishProgress()
-      ElMessage.success(t('失败项重试完成'))
-    } catch (error: any) {
-      finishProgress()
-      ElMessage.error(error?.toString() || t('重试失败'))
-    } finally {
-      importing.value = false
-    }
+    // 复用完整导入流程：统一刷新实时清单、导入摘要、进度与失败列表，
+    // 避免与主导入路径行为不一致。失败项均为已知文件路径，按 file 类型重入。
+    return importPaths(retryPaths, 'file')
   }
 
   return {
@@ -1141,6 +1230,10 @@ const useMediaBatchImpl = () => {
     imageRows,
     visibleVideoColumns,
     visibleImageColumns,
+    videoFilters,
+    availableVideoFormats,
+    selectedVideoPaths,
+    videoFilterMissingCount,
     tableVideos,
     tableImages,
     basicStats,
@@ -1148,11 +1241,13 @@ const useMediaBatchImpl = () => {
     durationBuckets,
     showPreview,
     renameSafetySummary,
+    canApplyRename,
     canUndoRename,
     undoStackDepth,
     formatBytes,
     formatDuration,
     handleImport,
+    handleImportWithPaths,
     importPaths,
     handleRemove,
     handleClear,
@@ -1164,6 +1259,10 @@ const useMediaBatchImpl = () => {
     applyRename,
     undoLastRename,
     handleTableSortChange,
+    toggleVideoSelection,
+    toggleAllVideoSelection,
+    updateVideoFilter,
+    resetVideoFilters,
     toggleAllColumns,
     toggleRenameFields,
     toggleRenameField,

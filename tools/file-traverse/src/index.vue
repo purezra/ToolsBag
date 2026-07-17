@@ -8,7 +8,7 @@ import { traverseCopy, checkMediaInfo } from './api/file-traverse'
 import { useFileSelect } from '@core/hooks/useFileSelect'
 import { useSettings } from '@core/hooks/useSettings'
 import { hasTauriRuntime } from '@core/utils/tauri'
-import { splitPatterns } from './utils/path'
+import { hasSelectedFormats, splitPatterns } from './utils/path'
 import { formatThroughput, formatBytes as formatFileSize } from '@core/utils/format'
 import type { TraverseReq } from './types/file'
 import { useTraverse } from './hooks/useTraverse'
@@ -95,6 +95,9 @@ const tableData = computed(() => {
   return rows
 })
 
+// 稳定的行唯一键，避免 tableData 重新计算时 el-table 因行身份变化而丢失选中。
+const getRowKey = (row: { categoryKey: string; ext: string }) => `${row.categoryKey}_${row.ext}`
+
 // 表格视图多选变化
 const handleTableSelectionChange = (rows: { categoryKey: string; ext: string }[]) => {
   // 先清空所有选择
@@ -156,6 +159,16 @@ const runTraverse = async () => {
     ElMessage.warning(t('请选择输入目录'))
     return
   }
+  if (
+    !mediaOnlyMode.value &&
+    previewStats.value &&
+    categories.value.length > 0 &&
+    !isAllSelected.value &&
+    !hasSelectedFormats(selectedFormats.value)
+  ) {
+    ElMessage.warning(t('请至少选择一种文件格式'))
+    return
+  }
   running.value = true
   progress.value = null
   result.value = null
@@ -214,7 +227,8 @@ const setupProgress = async () => {
   let unlisten: (() => void) | null = null
   unlisten = await listen('progress-update', (event) => {
     const payload = event.payload as any
-    if (!payload || payload.stage !== 'traverse') return
+    // 接受 traverse（提取移动）与 media_preview（媒体预览扫描）两个阶段。
+    if (!payload || (payload.stage !== 'traverse' && payload.stage !== 'media_preview')) return
     const percent = Math.floor(((payload.current || 0) / (payload.total || 1)) * 100)
     progress.value = {
       percent,
@@ -242,8 +256,11 @@ const openOutputDirPreview = async () => {
 }
 
 let unlistenFn: (() => void) | null = null
+let isMounted = false
 onMounted(async () => {
+  isMounted = true
   unlistenFn = await setupProgress()
+  if (!isMounted) { unlistenFn?.(); unlistenFn = null; return }
   if (!hasTauriRuntime()) {
     mediaInfoAvailable.value = false
     return
@@ -255,11 +272,11 @@ onMounted(async () => {
     mediaInfoAvailable.value = false
   }
 })
-onBeforeUnmount(() => unlistenFn?.())
+onBeforeUnmount(() => { isMounted = false; unlistenFn?.() })
 </script>
 
 <template>
-  <div class="file-traverse">
+  <div class="file-traverse tool-page">
     <!-- 顶部状态栏 -->
     <div class="top-status-bar">
       <div class="mediainfo-status" :class="{ available: mediaInfoAvailable === true, unavailable: mediaInfoAvailable === false }">
@@ -524,7 +541,7 @@ onBeforeUnmount(() => unlistenFn?.())
 
        <!-- 表格视图 -->
        <div v-else class="table-view">
-         <el-table :data="tableData" size="small" :max-height="360" stripe border @selection-change="handleTableSelectionChange">
+         <el-table :data="tableData" size="small" :max-height="360" stripe border :row-key="getRowKey" @selection-change="handleTableSelectionChange">
            <el-table-column type="selection" width="45" />
            <el-table-column prop="category" :label="t('分类')" width="90">
              <template #default="{ row }">
@@ -588,7 +605,9 @@ onBeforeUnmount(() => unlistenFn?.())
       <el-button type="primary" :icon="MagicStick" :loading="running" @click="runTraverse">{{ t('开始提取') }}</el-button>
       <span class="hint">{{ t('默认输出：源目录同级的"源名_汇总"') }}</span>
     </div>
+    </template>
 
+    <!-- ========== 以下为两种模式共享的结果展示区 ========== -->
     <div v-if="progress" class="progress-card">
       <div class="progress-title">{{ t('进度') }}</div>
       <el-progress :percentage="progress.percent" :text-inside="true" class="flow-progress" />
@@ -616,7 +635,7 @@ onBeforeUnmount(() => unlistenFn?.())
       <div class="media-result-header">
         <span>{{ t('媒体文件详情') }} ({{ mediaFiles.length }})</span>
       </div>
-      
+
       <!-- 视频列表 -->
       <div v-if="videoFiles.length > 0" class="media-section">
         <div class="media-section-title">{{ t('视频') }} ({{ videoFiles.length }})</div>
@@ -694,7 +713,6 @@ onBeforeUnmount(() => unlistenFn?.())
       <div class="log-title">{{ t('问题日志') }}</div>
       <pre class="log-box">{{ problemLog || t('暂无问题') }}</pre>
     </div>
-    </template>
     </div>
   </div>
 </template>
@@ -809,7 +827,7 @@ onBeforeUnmount(() => unlistenFn?.())
   color: var(--text-secondary);
 }
 .flow-progress :deep(.el-progress-bar__inner) {
-  background: linear-gradient(120deg, #6dd5ed, #2193b0, #6dd5ed);
+  background: linear-gradient(120deg, #818CF8, #6366F1, #818CF8);
   background-size: 200% 200%;
   animation: flow-bar 1.2s linear infinite;
 }

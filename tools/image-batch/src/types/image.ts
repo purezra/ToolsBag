@@ -3,6 +3,7 @@
   outputDir?: string | null
   batchSize?: number | null
   losslessMerge?: boolean | null
+  recursive?: boolean
 }
 
 export type ProblemItem = { path: string; reasons: string[] }
@@ -21,6 +22,7 @@ export type EpubConvertReq = {
   inputDir: string
   outputDir?: string | null
   pageSize?: EpubPageSize | null
+  recursive?: boolean
 }
 
 export type EpubConvertResp = {

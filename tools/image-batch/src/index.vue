@@ -1,14 +1,15 @@
 ﻿<script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { listen } from '@tauri-apps/api/event'
 import { ElMessage } from 'element-plus'
 import { FolderOpened, Upload as UploadIcon, MagicStick, Document } from '@element-plus/icons-vue'
 import ImageStatusCard from './components/image-status-card.vue'
-import { convertImages, convertToEpub, listImages, readTool3Note } from './api/image-batch'
+import { convertImages, convertToEpub, listImages, readImageBatchNote } from './api/image-batch'
 import { openParentDir } from '@core/api/common'
 import { useFileSelect } from '@core/hooks/useFileSelect'
 import { useSettings } from '@core/hooks/useSettings'
 import { formatBytes } from '@core/utils/format'
+import { hasTauriRuntime } from '@core/utils/tauri'
 import type { ConvertReq, ProblemItem, EpubPageSize, EpubConvertReq } from './types/image'
 import { EPUB_PAGE_SIZES } from './types/image'
 
@@ -17,6 +18,7 @@ const { t } = useSettings()
 
 const inputDir = ref('')
 const outputDir = ref('')
+const recursive = ref(true) // 递归扫描子目录（导入列表与转换保持一致）
 const batchSize = ref<number>(100) // 0 表示全部合并
 const losslessMerge = ref(true) // 无损合并开关
 const outputFormat = ref<'pdf' | 'epub'>('pdf') // 输出格式
@@ -64,7 +66,7 @@ const importList = async () => {
   }
   listLoading.value = true
   try {
-    const res = await listImages(inputDir.value, true)
+    const res = await listImages(inputDir.value, recursive.value)
     files.value = res.map((f) => ({ name: f.name, format: f.format, size: f.size }))
     showImportStats()
   } catch (e: any) {
@@ -99,7 +101,8 @@ const runConvert = async () => {
       const res = await convertToEpub({
         inputDir: inputDir.value,
         outputDir: outputDir.value || null,
-        pageSize: epubPageSize.value
+        pageSize: epubPageSize.value,
+        recursive: recursive.value
       } as EpubConvertReq)
       const delta = buildDelta(res.originalBytes, res.outputBytes)
       resultInfo.value = {
@@ -124,7 +127,8 @@ const runConvert = async () => {
         inputDir: inputDir.value,
         outputDir: outputDir.value || null,
         batchSize: batchSize.value || null, // 0 转为 null 表示全部合并
-        losslessMerge: losslessMerge.value
+        losslessMerge: losslessMerge.value,
+        recursive: recursive.value
       } as ConvertReq)
       const delta = buildDelta(res.originalBytes, res.outputBytes)
       resultInfo.value = {
@@ -150,10 +154,15 @@ const runConvert = async () => {
 }
 
 const setupProgress = async () => {
+  // 纯浏览器（npm run dev 无 Tauri 壳）下 __TAURI_INTERNALS__ 缺失，
+  // listen() 会抛 "Cannot read properties of undefined (reading 'transformCallback')"。
+  if (!hasTauriRuntime()) return
   if (unlistenProgress) return
   unlistenProgress = await listen('progress-update', (event) => {
     const payload = event.payload as any
-    if (!payload || !payload.stage || !payload.total) return
+    // 只处理本工具的进度事件，避免同进程其他工具（如 media_import）的进度串扰。
+    if (!payload || (payload.stage !== 'convert3' && payload.stage !== 'epub_convert')) return
+    if (!payload.total) return
     const percent = Math.floor(((payload.current || 0) / (payload.total || 1)) * 100)
     progress.value = {
       stage: payload.stage,
@@ -169,6 +178,16 @@ const openOutput = async (path: string) => {
     ElMessage.error(t('无法打开输出目录'))
   })
 }
+
+// 折叠标题里的设置摘要，一眼看当前关键选项
+const outputSettingsSummary = computed(() => {
+  if (outputFormat.value === 'epub') {
+    const size = EPUB_PAGE_SIZES.find(s => s.value === epubPageSize.value)
+    return `EPUB · ${size?.label ?? epubPageSize.value}`
+  }
+  const batch = batchSize.value === 0 ? t('全部合并') : batchSize.value
+  return `PDF · ${batch} · ${losslessMerge.value ? t('无损') : t('普通')}`
+})
 
 const showImportStats = () => {
   const total = files.value.length
@@ -196,7 +215,7 @@ const openNote = async () => {
   if (noteContent.value) return
   noteLoading.value = true
   try {
-    noteContent.value = await readTool3Note()
+    noteContent.value = await readImageBatchNote()
   } catch (e: any) {
     ElMessage.error(e?.toString() || t('读取说明失败'))
   } finally {
@@ -204,113 +223,119 @@ const openNote = async () => {
   }
 }
 
-onMounted(setupProgress)
+let isMounted = false
+onMounted(async () => {
+  isMounted = true
+  await setupProgress()
+  // 若在 listen 解析前组件已卸载，立即解除监听避免泄漏。
+  if (!isMounted && unlistenProgress) {
+    unlistenProgress()
+    unlistenProgress = null
+  }
+})
 onBeforeUnmount(() => {
+  isMounted = false
   unlistenProgress?.()
   unlistenProgress = null
 })
 </script>
 
 <template>
-  <div class="tool3">
-    <div class="tool3-header">
-      <!-- 文件路径 -->
-      <div class="tb-section">
-        <div class="tb-section-title">
-          <el-icon><FolderOpened /></el-icon>
-          {{ t('文件路径') }}
-        </div>
-        <div class="form-row">
-          <label>{{ t('输入目录') }}</label>
-          <div class="inline">
-            <el-input v-model="inputDir" :placeholder="t('选择包含图片的文件夹')" />
-            <el-button :icon="FolderOpened" @click="pickFolder('input')">{{ t('浏览') }}</el-button>
-            <el-button :icon="UploadIcon" @click="pastePath">{{ t('粘贴') }}</el-button>
-          </div>
-        </div>
-        <div class="form-row">
-          <label>{{ t('输出目录') }}</label>
-          <div class="inline">
-            <el-input
-              v-model="outputDir"
-              :placeholder="t('留空默认：同级生成 输入文件夹名_合并.pdf；填写自定义名自动补 .pdf')"
-            />
-            <el-button :icon="FolderOpened" @click="pickFolder('output')">{{ t('浏览') }}</el-button>
-          </div>
-        </div>
-      </div>
-
-      <div class="tb-section">
-        <div class="tb-section-title">
-          <el-icon><MagicStick /></el-icon>
-          输出设置
-        </div>
-        <div class="form-row">
-          <label>{{ t('输出格式') }}</label>
-          <el-radio-group v-model="outputFormat" size="small">
-            <el-radio label="pdf">PDF</el-radio>
-            <el-radio label="epub">EPUB</el-radio>
-          </el-radio-group>
-        </div>
-
-        <template v-if="outputFormat === 'pdf'">
-          <div class="form-row">
-            <label>{{ t('批大小') }}</label>
-            <el-radio-group v-model="batchSize" size="small">
-              <el-radio :label="100">100</el-radio>
-              <el-radio :label="200">200</el-radio>
-              <el-radio :label="300">300</el-radio>
-              <el-radio :label="0">{{ t('全部合并') }}</el-radio>
-            </el-radio-group>
-          </div>
-          <div class="form-row">
-            <label>{{ t('无损合并') }}</label>
-            <div class="inline">
-              <el-switch
-                v-model="losslessMerge"
-                :active-text="t('智能质量控制，控制文件大小在原图±5%以内')"
-                :inactive-text="t('普通质量合并')"
-              />
-            </div>
-          </div>
+  <div class="image-batch-tool">
+    <!-- 顶部操作栏：路径输入 + 主操作 -->
+    <div class="tb-toolbar image-batch-toolbar">
+      <el-input v-model="inputDir" :placeholder="t('选择包含图片的文件夹')" class="tb-toolbar__grow">
+        <template #append>
+          <el-button :icon="FolderOpened" @click="pickFolder('input')">{{ t('浏览') }}</el-button>
         </template>
-
-        <template v-if="outputFormat === 'epub'">
-          <div class="form-row">
-            <label>{{ t('页面尺寸') }}</label>
-            <el-radio-group v-model="epubPageSize" size="small">
-              <el-radio
-                v-for="size in EPUB_PAGE_SIZES"
-                :key="size.value"
-                :label="size.value"
-              >
-                {{ size.label }} <span class="size-desc">({{ size.desc }})</span>
-              </el-radio>
-            </el-radio-group>
-          </div>
-        </template>
-      </div>
-
-      <!-- 操作栏 -->
-      <div class="tb-action-bar">
-        <el-button type="primary" :icon="MagicStick" :loading="listLoading" @click="importList">
-          {{ t('导入列表') }}
-        </el-button>
-        <el-button type="success" :loading="running" @click="runConvert">{{ t('开始转换') }}</el-button>
-        <el-button @click="clearList">{{ t('清空列表') }}</el-button>
-        <span class="tb-action-hint">
-          <el-link type="info" :icon="Document" @click="openNote">{{ t('小工具说明') }}</el-link>
-        </span>
-      </div>
-
-      <ImageStatusCard :progress="progress" :result-info="resultInfo" :problem-log="problemLog" @openOutput="openOutput" />
+      </el-input>
+      <el-button :icon="UploadIcon" @click="pastePath">{{ t('粘贴') }}</el-button>
+      <el-checkbox v-model="recursive">{{ t('递归') }}</el-checkbox>
+      <el-button type="primary" :icon="MagicStick" :loading="listLoading" @click="importList">
+        {{ t('导入列表') }}
+      </el-button>
+      <el-button type="success" :loading="running" @click="runConvert">{{ t('开始转换') }}</el-button>
+      <el-button @click="clearList">{{ t('清空') }}</el-button>
+      <span class="tb-toolbar__hint">
+        <el-link type="info" :icon="Document" @click="openNote">{{ t('说明') }}</el-link>
+      </span>
     </div>
 
-    <div class="tool3-body">
+    <!-- 输出设置（可折叠，默认收起） -->
+    <div class="tb-collapse">
+      <el-collapse>
+        <el-collapse-item>
+          <template #title>
+            {{ t('输出设置') }}
+            <span class="tb-collapse-summary">{{ outputSettingsSummary }}</span>
+          </template>
+          <div class="tb-form-row">
+            <label class="tb-field-label">{{ t('输出目录') }}</label>
+            <div class="tb-inline">
+              <el-input
+                v-model="outputDir"
+                :placeholder="t('留空默认：同级生成 输入文件夹名_合并.pdf；填写自定义名自动补 .pdf')"
+              />
+              <el-button :icon="FolderOpened" @click="pickFolder('output')">{{ t('浏览') }}</el-button>
+            </div>
+          </div>
+          <div class="tb-form-row">
+            <label class="tb-field-label">{{ t('输出格式') }}</label>
+            <el-radio-group v-model="outputFormat" size="small">
+              <el-radio label="pdf">PDF</el-radio>
+              <el-radio label="epub">EPUB</el-radio>
+            </el-radio-group>
+          </div>
+
+          <template v-if="outputFormat === 'pdf'">
+            <div class="tb-form-row">
+              <label class="tb-field-label">{{ t('批大小') }}</label>
+              <el-radio-group v-model="batchSize" size="small">
+                <el-radio :label="100">100</el-radio>
+                <el-radio :label="200">200</el-radio>
+                <el-radio :label="300">300</el-radio>
+                <el-radio :label="0">{{ t('全部合并') }}</el-radio>
+              </el-radio-group>
+            </div>
+            <div class="tb-form-row">
+              <label class="tb-field-label">{{ t('无损合并') }}</label>
+              <div class="tb-inline">
+                <el-switch
+                  v-model="losslessMerge"
+                  :active-text="t('智能质量控制，控制文件大小在原图±5%以内')"
+                  :inactive-text="t('普通质量合并')"
+                />
+              </div>
+            </div>
+          </template>
+
+          <template v-if="outputFormat === 'epub'">
+            <div class="tb-form-row">
+              <label class="tb-field-label">{{ t('页面尺寸') }}</label>
+              <el-radio-group v-model="epubPageSize" size="small">
+                <el-radio
+                  v-for="size in EPUB_PAGE_SIZES"
+                  :key="size.value"
+                  :label="size.value"
+                >
+                  {{ size.label }} <span class="size-desc">({{ size.desc }})</span>
+                </el-radio>
+              </el-radio-group>
+            </div>
+          </template>
+        </el-collapse-item>
+      </el-collapse>
+    </div>
+
+    <!-- 进度 / 结果 / 问题 -->
+    <ImageStatusCard :progress="progress" :result-info="resultInfo" :problem-log="problemLog" @openOutput="openOutput" />
+
+    <!-- 文件列表 -->
+    <div class="image-batch-body">
       <div v-if="files.length > 0" class="tb-section file-list-section">
         <div class="tb-section-title">
-          文件列表
-          <el-tag size="small" type="info" style="margin-left: 4px;">{{ files.length }}</el-tag>
+          {{ t('文件列表') }}
+          <el-tag size="small" type="info" class="file-count-tag">{{ files.length }}</el-tag>
         </div>
         <el-table :data="files" size="small" height="100%" v-loading="listLoading">
           <el-table-column prop="name" :label="t('文件名')" />
@@ -332,7 +357,7 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <el-dialog v-model="noteVisible" :title="t('工具 3 说明')" width="640px">
+    <el-dialog v-model="noteVisible" :title="t('图片批处理说明')" width="640px">
       <el-scrollbar height="360px">
         <pre class="note-content" v-loading="noteLoading">{{ noteContent || t('未找到说明内容') }}</pre>
       </el-scrollbar>
@@ -341,7 +366,7 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.tool3 {
+.image-batch-tool {
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -349,13 +374,10 @@ onBeforeUnmount(() => {
   overflow: hidden;
   min-height: 0;
 }
-.tool3-header {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+.image-batch-toolbar {
   flex-shrink: 0;
 }
-.tool3-body {
+.image-batch-body {
   flex: 1;
   min-height: 0;
   overflow: hidden;
@@ -373,14 +395,8 @@ onBeforeUnmount(() => {
   flex: 1;
   min-height: 0;
 }
-.form-row {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.inline {
-  display: flex;
-  gap: 8px;
+.file-count-tag {
+  margin-left: 6px;
 }
 .note-content {
   white-space: pre-wrap;
@@ -390,6 +406,6 @@ onBeforeUnmount(() => {
 }
 .size-desc {
   font-size: 11px;
-  color: #888;
+  color: var(--text-muted);
 }
 </style>

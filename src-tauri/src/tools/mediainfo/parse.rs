@@ -149,7 +149,8 @@ fn parse_decimal_token_to_ms(s: &str) -> Option<u64> {
 fn is_time_unit(unit: &str) -> bool {
     let u = unit.to_lowercase();
     u.starts_with("h")
-        || u.starts_with("min") || u == "mn"
+        || u.starts_with("min")
+        || u == "mn"
         || (u.starts_with("s") && !u.starts_with("ms"))
         || u.starts_with("ms")
 }
@@ -172,7 +173,9 @@ fn apply_time_unit_ms(base_ms: u64, unit: &str) -> u64 {
 /// 尝试从 "2h"、"30min"、"45.5s"、"123ms" 中拆分小数数字和单位
 fn split_decimal_and_unit(s: &str) -> Option<(u64, String)> {
     // 数字部分可以包含小数点
-    let num_end = s.find(|c: char| !c.is_ascii_digit() && c != '.').unwrap_or(s.len());
+    let num_end = s
+        .find(|c: char| !c.is_ascii_digit() && c != '.')
+        .unwrap_or(s.len());
     if num_end == 0 {
         return None;
     }

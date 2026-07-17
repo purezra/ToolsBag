@@ -22,10 +22,6 @@ export const startWebdavSync = async () => {
   return invoke<SyncResult>('webdav_start_sync')
 }
 
-export const stopWebdavSync = async () => {
-  return invoke<void>('webdav_stop_sync')
-}
-
 export const syncEntryToRemote = async (entry: Account) => {
   return invoke<void>('webdav_sync_entry', { entry })
 }

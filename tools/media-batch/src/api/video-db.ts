@@ -128,6 +128,10 @@ export async function getRecordCount(): Promise<number> {
   return rows[0]?.cnt ?? 0
 }
 
+let _idSeq = 0
+// ponytail: global counter, crypto.randomUUID() overkill for table row keys
+const nextId = () => ++_idSeq
+
 /**
  * 将数据库行转换为 VideoInfoItem
  */
@@ -141,7 +145,7 @@ export function rowToVideoInfoItem(row: VideoRecordRow): VideoInfoItem {
     }
   }
   return {
-    id: Date.now() + Math.random(),
+    id: nextId(),
     name: row.name,
     path: row.path,
     size: row.size,

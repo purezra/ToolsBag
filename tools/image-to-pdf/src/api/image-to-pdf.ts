@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core'
+export { formatBytes as formatFileSize } from '@core/utils/format'
 
 // 页面尺寸
 export type PageSize = 'A4' | 'A3' | 'B5' | 'ipad_pro'
@@ -36,6 +37,14 @@ export interface ImageAnalysis {
   gamma?: number
   /** 文件字节大小 */
   file_size: number
+  /** TIFF 帧数（多页 TIFF 的页数，非 TIFF 为 1） */
+  frame_count?: number
+  /** 是否含 ICC 色彩配置（iCCP 或 JPEG APP2 ICC） */
+  has_icc?: boolean
+  /** ICC 配置描述（如 "sRGB", "ICC (embedded)" 等） */
+  icc_profile?: string
+  /** 是否为长图（长宽比 > 5:1，可能生成超长页面） */
+  is_long_image?: boolean
 }
 
 // 分辨率档位
@@ -71,6 +80,10 @@ export interface FolderAnalysis {
   bit16_count: number
   /** 含 gamma 信息的文件数（PDF 不内嵌 ICC/gamma，可能有轻微色偏） */
   gamma_count: number
+  /** 含 ICC 色彩配置的文件数（广色域图片可能有偏色） */
+  icc_count?: number
+  /** 长图文件数（长宽比 > 5:1，可能生成超长页面） */
+  long_image_count?: number
 }
 
 // 图片布局信息
@@ -128,6 +141,8 @@ export interface GenerationResult {
   mode_used: string
   size_ratio: number
   exceeded_target: boolean
+  /** 跳过的文件及原因（超大图、损坏等） */
+  warnings?: string[]
   error?: string
 }
 
@@ -170,20 +185,20 @@ export async function getImageThumbnail(
   return await invoke('get_image_thumbnail', { imagePath, maxSize })
 }
 
-/** 格式化文件大小 */
-export function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`
-  return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`
-}
-
 /** 页面尺寸中文名称 */
 export const PAGE_SIZE_NAMES: Record<PageSize, string> = {
   A4: 'A4 (210×297mm)',
   A3: 'A3 (297×420mm)',
   B5: 'B5 (176×250mm)',
   ipad_pro: 'iPad Pro (160×233mm)'
+}
+
+/** 页面尺寸物理尺寸（毫米），供边距上限等计算复用，避免各处硬编码尺寸漂移 */
+export const PAGE_SIZE_DIMS_MM: Record<PageSize, { w: number; h: number }> = {
+  A4: { w: 210, h: 297 },
+  A3: { w: 297, h: 420 },
+  B5: { w: 176, h: 250 },
+  ipad_pro: { w: 160, h: 233 }
 }
 
 /** 幅面方向中文名称 */

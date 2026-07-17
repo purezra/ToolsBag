@@ -9,13 +9,13 @@ export const listImages = (inputDir: string, recursive = true) => {
 }
 
 export const convertImages = (req: ConvertReq) => {
-  return invoke<ConvertResp>('convert_tool3', { req })
+  return invoke<ConvertResp>('convert_image_batch', { req })
 }
 
 export const convertToEpub = (req: EpubConvertReq) => {
   return invoke<EpubConvertResp>('convert_to_epub', { req })
 }
 
-export const readTool3Note = () => {
-  return invoke<string>('read_tool3_note')
+export const readImageBatchNote = () => {
+  return invoke<string>('read_image_batch_note')
 }

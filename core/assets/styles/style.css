@@ -1,0 +1,388 @@
+/* ============================================================
+   ToolsBag design system v2 — .tb-* component tokens
+   All visuals driven by CSS variables, so each skin adapts automatically.
+   ============================================================ */
+
+.panel-card,
+.tool-card {
+  border: 1px solid var(--card-border);
+  border-radius: var(--card-radius);
+  box-shadow: var(--card-shadow);
+  background: var(--color-card);
+  transition: border-color var(--duration-fast) ease,
+              box-shadow var(--duration-fast) ease;
+}
+
+[data-theme='light'] .section-title,
+[data-theme='dark'] .section-title {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border-secondary);
+}
+[data-theme='light'] .header .el-button--primary,
+[data-theme='dark'] .header .el-button--primary {
+  min-width: 112px;
+  height: 32px;
+  font-weight: 600;
+}
+[data-theme='light'] .header .pill,
+[data-theme='dark'] .header .pill {
+  letter-spacing: 0.4px;
+}
+[data-theme='light'] .placeholder-card .el-empty__description,
+[data-theme='dark'] .placeholder-card .el-empty__description {
+  color: var(--text-muted);
+}
+[data-theme='light'] .placeholder-card .el-empty__description::before,
+[data-theme='dark'] .placeholder-card .el-empty__description::before {
+  content: '暂无数据，点击"添加文件"或粘贴路径导入 · ';
+}
+
+/* ============ Section (unified card surface) ============ */
+.tb-section {
+  background: var(--color-card);
+  border: 1px solid var(--card-border);
+  border-radius: var(--card-radius);
+  padding: var(--card-padding);
+  box-shadow: var(--card-shadow);
+}
+.tb-section + .tb-section {
+  margin-top: 0;
+}
+.tb-section-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 14px;
+  letter-spacing: 0.01em;
+}
+.tb-section-title::before {
+  content: '';
+  flex-shrink: 0;
+  width: 3px;
+  height: 13px;
+  border-radius: var(--radius-pill);
+  background: var(--section-accent-bar, var(--accent));
+}
+.tb-section-title .el-icon {
+  color: var(--accent);
+  font-size: 15px;
+}
+/* Compact variant: tighter padding for nested/dense panels */
+.tb-section--compact {
+  padding: 12px 14px;
+}
+.tb-section--compact .tb-section-title {
+  margin-bottom: 10px;
+}
+
+/* ============ Form row / field (unified) ============ */
+.tb-form-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.tb-form-row:last-child {
+  margin-bottom: 0;
+}
+.tb-field-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.tb-field-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+.tb-field-hint--strong {
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+.tb-field-hint--warn {
+  color: var(--warning);
+}
+.tb-inline {
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+}
+.tb-inline > .el-input,
+.tb-inline > .el-select {
+  flex: 1;
+  min-width: 160px;
+}
+
+/* ============ Stat Grid ============ */
+.tb-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 8px;
+}
+.tb-stat-item {
+  padding: 12px 10px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-secondary);
+  border-radius: var(--radius-md);
+  text-align: center;
+  transition: transform var(--duration-fast) ease,
+              border-color var(--duration-fast) ease;
+}
+.tb-stat-item:hover {
+  transform: translateY(-1px);
+  border-color: var(--border-primary);
+}
+.tb-stat-value {
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--text-primary);
+  letter-spacing: -0.02em;
+}
+.tb-stat-value--sm { font-size: 16px; }
+.tb-stat-value--xs { font-size: 14px; }
+.tb-stat-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 4px;
+  font-weight: 500;
+}
+
+/* ============ Action Bar ============ */
+.tb-action-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  background: var(--bg-secondary);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-secondary);
+  flex-wrap: wrap;
+}
+.tb-action-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-left: auto;
+}
+
+/* ============ Result ============ */
+.tb-result {
+  display: flex;
+  gap: 16px;
+  padding: 16px 18px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-secondary);
+  background: var(--bg-primary);
+}
+.tb-result--success {
+  border-color: transparent;
+  background: var(--success-light);
+}
+.tb-result--error {
+  border-color: transparent;
+  background: var(--danger-light);
+}
+.tb-result-icon {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-md);
+  display: grid;
+  place-items: center;
+  font-size: 20px;
+}
+.tb-result--success .tb-result-icon {
+  background: rgba(16, 185, 129, 0.16);
+  color: var(--success);
+}
+.tb-result--error .tb-result-icon {
+  background: rgba(239, 68, 68, 0.16);
+  color: var(--danger);
+}
+.tb-result-body {
+  flex: 1;
+  min-width: 0;
+}
+.tb-result-title {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--text-primary);
+  margin-bottom: 6px;
+}
+.tb-result-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.tb-result-path {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-muted);
+  word-break: break-all;
+  margin-top: 6px;
+  padding: 6px 10px;
+  background: var(--bg-secondary);
+  border-radius: var(--radius-sm);
+}
+
+/* ============ Empty State ============ */
+.tb-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  color: var(--text-muted);
+}
+.tb-empty-icon {
+  font-size: 40px;
+  margin-bottom: 12px;
+  opacity: 0.4;
+}
+.tb-empty-text {
+  font-size: 14px;
+  font-weight: 500;
+}
+.tb-empty-hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 4px;
+  opacity: 0.7;
+}
+
+/* ============ Status Dot ============ */
+.tb-status-dot {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.tb-status-dot::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  flex-shrink: 0;
+}
+.tb-status-dot--success::before {
+  background: var(--success);
+  box-shadow: 0 0 6px rgba(16, 185, 129, 0.5);
+}
+.tb-status-dot--warning::before {
+  background: var(--warning);
+  box-shadow: 0 0 6px rgba(245, 158, 11, 0.5);
+}
+.tb-status-dot--danger::before {
+  background: var(--danger);
+  box-shadow: 0 0 6px rgba(239, 68, 68, 0.5);
+}
+
+/* ============ Delta Badge ============ */
+.tb-delta {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  font-size: 12px;
+  font-weight: 600;
+}
+.tb-delta--up {
+  background: var(--warning-light);
+  color: var(--warning);
+}
+.tb-delta--down {
+  background: var(--success-light);
+  color: var(--success);
+}
+
+/* ============ Paper tokens (for image preview frames etc.) ============
+   Lets "paper-like" surfaces adapt per skin instead of hardcoded #fff. */
+:root {
+  --tb-paper-bg: #FFFFFF;
+  --tb-paper-border: var(--border-primary);
+  --tb-paper-placeholder: var(--bg-tertiary);
+  --tb-paper-placeholder-text: var(--text-muted);
+  --tb-paper-margin: rgba(0, 0, 0, 0.18);
+}
+:root[data-theme='dark'] {
+  --tb-paper-bg: #ECECEC;
+  --tb-paper-border: rgba(0, 0, 0, 0.12);
+  --tb-paper-placeholder: #2A2A2A;
+  --tb-paper-placeholder-text: #888888;
+  --tb-paper-margin: rgba(255, 255, 255, 0.22);
+}
+
+/* ============ Toolbar (top action bar inside a tool page) ============ */
+.tb-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 12px 14px;
+  background: var(--color-card);
+  border: 1px solid var(--card-border);
+  border-radius: var(--card-radius);
+  box-shadow: var(--card-shadow);
+}
+.tb-toolbar__grow {
+  flex: 1;
+  min-width: 160px;
+}
+.tb-toolbar__spacer {
+  flex: 1;
+}
+.tb-toolbar__hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-left: auto;
+}
+
+/* ============ Collapse region (settings tucked away by default) ============ */
+.tb-collapse {
+  background: var(--color-card);
+  border: 1px solid var(--card-border);
+  border-radius: var(--card-radius);
+  box-shadow: var(--card-shadow);
+  overflow: hidden;
+}
+.tb-collapse .el-collapse {
+  --el-collapse-header-bg-color: transparent;
+  --el-collapse-content-bg-color: transparent;
+  border: none;
+}
+.tb-collapse .el-collapse-item__header {
+  height: 44px;
+  line-height: 44px;
+  padding: 0 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  border-bottom: 1px solid transparent;
+  transition: border-color var(--duration-fast) ease;
+}
+.tb-collapse .el-collapse-item.is-active .el-collapse-item__header {
+  border-bottom-color: var(--border-secondary);
+}
+.tb-collapse .el-collapse-item__content {
+  padding: 14px;
+  font-size: 13px;
+}
+.tb-collapse .el-collapse-item__wrap {
+  border-bottom: none;
+}
+/* Summary text shown in a collapsed header (e.g. "PDF · 全部合并 · 无损") */
+.tb-collapse-summary {
+  margin-left: 8px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+

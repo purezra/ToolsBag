@@ -55,9 +55,3 @@ pub fn webdav_stop_polling() -> Result<(), String> {
     webdav::stop_polling();
     Ok(())
 }
-
-#[tauri::command]
-pub fn webdav_stop_sync() -> Result<(), String> {
-    webdav::stop_polling();
-    Ok(())
-}

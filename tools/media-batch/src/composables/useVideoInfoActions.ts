@@ -1,15 +1,16 @@
-import { reactive, ref, shallowRef, computed, type Ref, type ComputedRef } from 'vue'
+import { reactive, ref, shallowRef, computed, nextTick, type Ref, type ComputedRef } from 'vue'
 import { ElMessage } from 'element-plus'
 import { save, open as openDialog } from '@tauri-apps/plugin-dialog'
 import { useFileSelect } from '@core/hooks/useFileSelect'
-import { formatBytes } from '@core/utils/format'
+import { formatBytes, formatDuration } from '@core/utils/format'
 import { writeBinaryExportFile, writeTextExportFile } from '@core/api/common'
-import { importDetailedVideoInfo, getVideoRawXml, getVideoCompleteInfo, getVideoXmlJson, getVideoXmlMarkdown } from '../api/media-batch'
+import { importDetailedVideoInfo, recordMediaPerformance, getVideoRawXml, getVideoCompleteInfo, getVideoXmlJson, getVideoXmlMarkdown } from '../api/media-batch'
 import { saveVideoRecords, loadVideoRecords, deleteVideoRecords, getRecordCount, rowToVideoInfoItem, type VideoRecordRow } from '../api/video-db'
 import type { VideoInfoImportResponse, VideoInfoItem, HealthIssue } from '../types/media'
 import type { ColumnDef } from './useVideoInfoColumns'
 
 export type ExportFormat = 'xlsx' | 'csv' | 'markdown' | 'html' | 'json' | 'txt' | 'xml2json' | 'xml2md'
+export type ImportTiming = { metadataMs: number; displayMs: number; totalMs: number; cached: boolean }
 
 // ==================== 导出辅助 ====================
 
@@ -55,6 +56,7 @@ export function useVideoInfoActions(
   // ==================== 导入 ====================
   const importing = ref(false)
   const importProgress = reactive({ active: false, percent: 0 })
+  const lastImportTiming = ref<ImportTiming | null>(null)
   // ponytail: 简易 LRU，上限 10 条；超过时按插入序丢弃最早一项
   const VIDEO_INFO_CACHE_MAX = 10
   const videoInfoCache = new Map<string, VideoInfoImportResponse>()
@@ -81,13 +83,31 @@ export function useVideoInfoActions(
 
   const importByPaths = async (paths: string[], overrideRecursive?: boolean) => {
     if (!paths || paths.length === 0) return
+    const startedAt = performance.now()
     const isRecursive = overrideRecursive ?? recursive.value
     const cacheKey = makeCacheKey(paths, isRecursive)
     const cached = getVideoInfoCache(cacheKey)
     if (cached) {
+      const metadataFinishedAt = performance.now()
       items.value = cached.items
       importSummary.value = `${t('成功')} ${cached.success}，${t('失败')} ${cached.failed}，${t('共')} ${cached.total} ${t('个视频')}`
       expandedIds.value.clear()
+      await nextTick()
+      const displayedAt = performance.now()
+      lastImportTiming.value = {
+        metadataMs: metadataFinishedAt - startedAt,
+        displayMs: displayedAt - metadataFinishedAt,
+        totalMs: displayedAt - startedAt,
+        cached: true,
+      }
+      void recordMediaPerformance({
+        mode: 'detailed',
+        inputCount: paths.length,
+        total: cached.total,
+        success: cached.success,
+        failed: cached.failed,
+        ...lastImportTiming.value,
+      }).catch(() => undefined)
       ElMessage.success(t('已使用本次会话缓存结果'))
       return
     }
@@ -98,9 +118,26 @@ export function useVideoInfoActions(
 
     try {
       const resp = await importDetailedVideoInfo(paths, isRecursive)
+      const metadataFinishedAt = performance.now()
       setVideoInfoCache(cacheKey, resp)
       items.value = resp.items
       importSummary.value = `${t('成功')} ${resp.success}，${t('失败')} ${resp.failed}，${t('共')} ${resp.total} ${t('个视频')}`
+      await nextTick()
+      const displayedAt = performance.now()
+      lastImportTiming.value = {
+        metadataMs: metadataFinishedAt - startedAt,
+        displayMs: displayedAt - metadataFinishedAt,
+        totalMs: displayedAt - startedAt,
+        cached: false,
+      }
+      void recordMediaPerformance({
+        mode: 'detailed',
+        inputCount: paths.length,
+        total: resp.total,
+        success: resp.success,
+        failed: resp.failed,
+        ...lastImportTiming.value,
+      }).catch(() => undefined)
 
       if (resp.failed > 0) {
         ElMessage.warning(importSummary.value)
@@ -127,6 +164,7 @@ export function useVideoInfoActions(
     items.value = []
     expandedIds.value.clear()
     importSummary.value = ''
+    lastImportTiming.value = null
     searchQuery.value = ''
   }
 
@@ -300,15 +338,7 @@ export function useVideoInfoActions(
   }
 
   // 格式化时长
-  const formatDurationMs = (ms: number): string => {
-    const totalSecs = Math.floor(ms / 1000)
-    const h = Math.floor(totalSecs / 3600)
-    const m = Math.floor((totalSecs % 3600) / 60)
-    const s = totalSecs % 60
-    return h > 0
-      ? `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
-      : `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
-  }
+  const formatDurationMs = (ms: number): string => formatDuration(ms / 1000, 'clock')
 
   const refreshHistoryCount = async () => {
     try {
@@ -662,6 +692,7 @@ export function useVideoInfoActions(
     // 导入
     importing,
     importProgress,
+    lastImportTiming,
     importByPaths,
     handleImport,
 
@@ -712,4 +743,3 @@ export function useVideoInfoActions(
     failedCount,
   }
 }
-

@@ -1,192 +1,134 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, defineAsyncComponent, type Component } from 'vue'
-import { Grid, FolderChecked, Key, Picture } from '@element-plus/icons-vue'
+import { ref } from 'vue'
+import { Setting, InfoFilled, Fold, Expand } from '@element-plus/icons-vue'
 
 import { provideSettings } from './hooks/useSettings'
-import { getClickEffectInstance } from './hooks/useClickEffect'
+import { useTools } from './hooks/useTools'
+import { toolComponentMap, HOME_KEY } from './tools'
+
 import ErrorBoundary from './components/ErrorBoundary.vue'
-import NavRail from './components/NavRail.vue'
 import SettingsDrawer from './components/SettingsDrawer.vue'
 import AboutDialog from './components/AboutDialog.vue'
+import NavRail from './components/NavRail.vue'
+import CommandSearch from './components/CommandSearch.vue'
+import ToolHome from './components/ToolHome.vue'
 
-const MediaBatchTool = defineAsyncComponent(() => import('@media-batch/index.vue'))
-const ImageToolsTool = defineAsyncComponent(() => import('@image-tools/index.vue'))
-const FileTraverseTool = defineAsyncComponent(() => import('@file-traverse/index.vue'))
-const CodebookTool = defineAsyncComponent(() => import('@codebook/index.vue'))
+const { t, showWatermark, watermarkMode, watermarkOpacity, watermarkScale } = provideSettings()
+const { activeKey, isHome, activeTool, goHome } = useTools(t)
 
-type Tool = {
-  key: string
-  name: string
-  desc: string
-  tag: string
-  tagType: 'primary' | 'success' | 'info' | 'warning'
-  icon: Component
-  iconImage: string
-  accent: string
-  meta: string
-}
-
-const tools: Tool[] = [
-  {
-    key: 'media-batch',
-    name: '媒体探针',
-    desc: '提取视频/图片元数据，批量整理命名，并输出视频体检报告',
-    tag: 'V2',
-    tagType: 'primary',
-    icon: Grid,
-    iconImage: '/assets/tool1.webp',
-    accent: 'linear-gradient(135deg, #48c6ef, #6f86d6)',
-    meta: '元数据提取 · 视频体检 · 批量整理'
-  },
-  {
-    key: 'image-tools',
-    name: '图片工坊',
-    desc: '集中处理图片批量操作、AVIF/JXL 压缩转换与图片合成 PDF',
-    tag: 'Suite',
-    tagType: 'success',
-    icon: Picture,
-    iconImage: '/assets/tool2.webp',
-    accent: 'linear-gradient(135deg, #43e97b, #38f9d7)',
-    meta: '批量处理 · AVIF/JXL · 图片转PDF'
-  },
-  {
-    key: 'file-traverse',
-    name: '文件收割',
-    desc: '高速复制、按格式分类与过滤，批量提取整理',
-    tag: 'New',
-    tagType: 'primary',
-    icon: FolderChecked,
-    iconImage: '/assets/tool3.webp',
-    accent: 'linear-gradient(135deg, #00c6ff, #0072ff)',
-    meta: '多线程复制 · 模式过滤'
-  },
-  {
-    key: 'codebook',
-    name: '密码册',
-    desc: '密码生成器与账号资产管理，安全存储与导出',
-    tag: 'New',
-    tagType: 'warning',
-    icon: Key,
-    iconImage: '/assets/tool4.webp',
-    accent: 'linear-gradient(135deg, #f093fb, #f5576c)',
-    meta: '密码生成 · 账号管理'
-  },
-]
-
-const activeToolKey = ref<string>(tools[0]!.key)
-const { t, showWatermark } = provideSettings()
+const navExpanded = ref(false)
 const settingsOpen = ref(false)
 const aboutOpen = ref(false)
-const sidebarCollapsed = ref(true)
 
-const clickEffect = getClickEffectInstance()
-
-onMounted(() => {
-  clickEffect.loadSettings()
-})
-
-const localizedTools = computed(() =>
-  tools.map((tool) => ({
-    ...tool,
-    name: t(tool.name),
-    desc: t(tool.desc),
-    meta: t(tool.meta)
-  }))
-)
-
-const activeTool = computed<Tool>(
-  () => localizedTools.value.find((item) => item.key === activeToolKey.value) ?? localizedTools.value[0]!
-)
-
-const toolComponentMap: Record<string, Component> = {
-  'media-batch': MediaBatchTool,
-  'image-tools': ImageToolsTool,
-  'file-traverse': FileTraverseTool,
-  'codebook': CodebookTool
+const toggleNav = () => {
+  navExpanded.value = !navExpanded.value
 }
 
-const handleToolSelect = (key: string) => {
-  activeToolKey.value = key
-}
-
-const handleCollapseChange = (collapsed: boolean) => {
-  sidebarCollapsed.value = collapsed
+const handleBrandClick = () => {
+  goHome()
 }
 </script>
 
 <template>
-  <div class="app-shell">
-    <NavRail
-      :tools="localizedTools"
-      :active-tool-key="activeToolKey"
-      @select="handleToolSelect"
-      @open-settings="settingsOpen = true"
-      @collapse-change="handleCollapseChange"
-    />
+  <div
+    class="app-shell"
+    :class="{
+      'nav-expanded': navExpanded,
+      'is-home': isHome
+    }"
+  >
+    <NavRail :expanded="navExpanded" @open-settings="settingsOpen = true" />
 
-    <div
-      class="main-area"
-      :class="{ 'sidebar-is-collapsed': sidebarCollapsed }"
-    >
-      <header class="header">
-        <div class="header-left">
-          <h1 class="header-title">{{ activeTool.name }}</h1>
-          <el-tag size="small" round :type="activeTool.tagType" effect="plain" class="header-tag">{{ activeTool.tag }}</el-tag>
+    <div class="app-main">
+      <header class="app-topbar">
+        <div class="topbar-left">
+          <button
+            type="button"
+            class="topbar-icon-btn icon-only"
+            :title="navExpanded ? t('折叠导航') : t('展开导航')"
+            :aria-label="navExpanded ? t('折叠导航') : t('展开导航')"
+            @click="toggleNav"
+          >
+            <el-icon :size="17"><Expand v-if="!navExpanded" /><Fold v-else /></el-icon>
+          </button>
+
+          <button type="button" class="topbar-brand" @click="handleBrandClick">
+            <div class="brand-mark">TB</div>
+            <span class="brand-name">ToolsBag</span>
+          </button>
         </div>
-        <div class="header-right">
-          <span class="header-meta">{{ activeTool.meta }}</span>
-          <el-tooltip effect="dark" :content="activeTool.desc" placement="bottom">
-            <div class="header-icon-wrap">
-              <img :src="activeTool.iconImage" :alt="activeTool.name" class="header-icon-img" />
-            </div>
+
+        <!-- Page title shown when a tool is active -->
+        <div v-if="!isHome && activeTool" class="topbar-page-title">
+          <span class="topbar-page-title__name">{{ activeTool.name }}</span>
+        </div>
+
+        <div class="topbar-center">
+          <CommandSearch />
+        </div>
+
+        <div class="topbar-right">
+          <el-tooltip effect="dark" :content="t('偏好设置')" placement="bottom">
+            <button class="topbar-icon-btn icon-only" type="button" @click="settingsOpen = true">
+              <el-icon :size="17"><Setting /></el-icon>
+            </button>
+          </el-tooltip>
+          <el-tooltip effect="dark" :content="t('关于')" placement="bottom">
+            <button class="topbar-icon-btn icon-only" type="button" @click="aboutOpen = true">
+              <el-icon :size="17"><InfoFilled /></el-icon>
+            </button>
           </el-tooltip>
         </div>
       </header>
 
-      <main class="content">
+      <main class="app-content">
         <div class="tool-wrapper">
-          <img
-            v-if="showWatermark"
-            :src="activeTool.iconImage"
-            :alt="activeTool.name"
-            class="tool-watermark"
-          />
-          <ErrorBoundary
-            v-if="toolComponentMap[activeToolKey]"
-            :key-name="activeToolKey"
-            class="tool-component"
+          <!-- 工具水印：4 种叠加模式（静态/平铺/漂浮/呼吸），透明度与大小可调 -->
+          <div
+            v-if="showWatermark && !isHome && activeTool?.iconImage"
+            class="tool-watermark-layer"
+            :class="`wm-mode-${watermarkMode}`"
+            :style="{
+              '--wm-opacity': watermarkOpacity / 100,
+              '--wm-scale': watermarkScale / 100,
+              '--wm-tile-url': `url('${activeTool.iconImage}')`
+            }"
+            aria-hidden="true"
           >
-            <Suspense>
-              <template #default>
-                <KeepAlive>
-                  <Transition name="tool-fade" mode="out-in">
-                    <component
-                      :is="toolComponentMap[activeToolKey]"
-                      :key="activeToolKey"
-                      class="tool-component"
-                    />
-                  </Transition>
-                </KeepAlive>
-              </template>
-              <template #fallback>
-                <div class="tool-skeleton">
-                  <el-skeleton :rows="6" animated />
-                </div>
-              </template>
-            </Suspense>
-          </ErrorBoundary>
-          <section v-else class="placeholder-card">
-            <el-empty :description="t('该工具正在路上，敬请期待')" />
-          </section>
+            <img :src="activeTool.iconImage" :alt="activeTool.name" class="tool-watermark-img" draggable="false" />
+          </div>
+
+          <!-- Launcher / Home -->
+          <Transition name="tool-fade" mode="out-in">
+            <ToolHome v-if="isHome" key="home" class="tool-component" />
+            <!-- Tool page -->
+            <ErrorBoundary
+              v-else-if="activeKey !== HOME_KEY && toolComponentMap[activeKey]"
+              :key-name="activeKey"
+              class="tool-component"
+            >
+              <Suspense>
+                <template #default>
+                  <KeepAlive>
+                    <component :is="toolComponentMap[activeKey]" :key="activeKey" class="tool-component" />
+                  </KeepAlive>
+                </template>
+                <template #fallback>
+                  <div class="tool-skeleton">
+                    <el-skeleton :rows="6" animated />
+                  </div>
+                </template>
+              </Suspense>
+            </ErrorBoundary>
+            <section v-else class="placeholder-card" key="placeholder">
+              <el-empty :description="t('该工具正在路上，敬请期待')" />
+            </section>
+          </Transition>
         </div>
       </main>
     </div>
 
-    <SettingsDrawer
-      v-model="settingsOpen"
-      @open-about="aboutOpen = true"
-    />
-
+    <SettingsDrawer v-model="settingsOpen" @open-about="aboutOpen = true" />
     <AboutDialog v-model="aboutOpen" />
   </div>
 </template>
@@ -197,91 +139,152 @@ const handleCollapseChange = (collapsed: boolean) => {
   height: 100vh;
   overflow: hidden;
   display: flex;
+  flex-direction: row;
 }
 
-.main-area {
-  margin-left: var(--sidebar-width);
-  height: 100%;
+/* ============ Main column (topbar + content) ============ */
+.app-main {
+  flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  flex: 1;
-  min-width: 0;
-  transition: margin-left var(--duration-normal) var(--ease-out);
 }
 
-.main-area.sidebar-is-collapsed {
-  margin-left: var(--sidebar-collapsed-width);
-}
-
-.header {
+/* ============ Topbar ============ */
+.app-topbar {
   height: var(--header-height);
   min-height: var(--header-height);
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 0 20px;
-  border-bottom: 1px solid var(--border-secondary);
-  background: var(--bg-secondary);
+  gap: var(--space-3);
+  padding: 0 var(--space-4);
+  border-bottom: 1px solid var(--topbar-border);
+  background: var(--topbar-bg);
   flex-shrink: 0;
 }
+.app-shell.nav-expanded .app-topbar {
+  backdrop-filter: blur(16px) saturate(140%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
+}
 
-.header-left {
+.topbar-left {
   display: flex;
   align-items: center;
-  gap: 10px;
-  min-width: 0;
-}
-
-.header-title {
-  margin: 0;
-  font-size: 16px;
-  font-weight: 700;
-  color: var(--text-primary);
-  white-space: nowrap;
-}
-
-.header-tag {
+  gap: var(--space-2);
   flex-shrink: 0;
 }
 
-.header-right {
+.topbar-brand {
   display: flex;
   align-items: center;
-  gap: 14px;
-  flex-shrink: 0;
-}
-
-.header-meta {
-  font-size: 12px;
-  color: var(--text-muted);
-  white-space: nowrap;
-}
-
-.header-icon-wrap {
-  width: 30px;
-  height: 30px;
-  border-radius: var(--radius-sm);
-  overflow: hidden;
+  gap: 9px;
+  padding: 0 4px;
+  border: none;
+  background: transparent;
   cursor: pointer;
-  transition: transform var(--duration-fast) var(--ease-out);
+}
+.topbar-brand:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
 }
 
-.header-icon-wrap:hover {
-  transform: scale(1.1);
+.brand-mark {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  display: grid;
+  place-items: center;
+  background: var(--accent-gradient);
+  color: var(--text-inverse);
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  user-select: none;
+}
+.brand-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+  white-space: nowrap;
 }
 
-.header-icon-img {
+/* Page title shown between left area and center search */
+.topbar-page-title {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  padding: 0 var(--space-2);
+  border-right: 1px solid var(--border-secondary);
+  margin-right: var(--space-2);
+}
+.topbar-page-title__name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.topbar-center {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  justify-content: center;
+}
+.topbar-center > .command-search {
   width: 100%;
-  height: 100%;
-  object-fit: contain;
+  max-width: var(--searchbar-max-width);
 }
 
-.content {
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+/* ============ Topbar icon buttons ============ */
+.topbar-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 11px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: border-color var(--duration-fast) ease,
+              color var(--duration-fast) ease,
+              background var(--duration-fast) ease;
+}
+.topbar-icon-btn:hover {
+  border-color: var(--border-primary);
+  color: var(--text-primary);
+  background: var(--hover-bg);
+}
+.topbar-icon-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.topbar-icon-btn.icon-only {
+  padding: 0;
+  width: 30px;
+  justify-content: center;
+}
+
+/* ============ Content ============ */
+.app-content {
   flex: 1;
   min-height: 0;
-  padding: 10px;
+  padding: var(--space-4);
   overflow: hidden;
+  background: var(--content-bg);
 }
 
 .tool-wrapper {
@@ -302,59 +305,124 @@ const handleCollapseChange = (collapsed: boolean) => {
   min-height: 0;
 }
 
-.tool-watermark {
+.tool-watermark-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  overflow: hidden;
+  opacity: var(--wm-opacity, 0.1);
+  /* 默认偏淡，避免压住内容；flat 时仍可被工具组件 z-index:1 盖在下方作为背景 */
+}
+.tool-watermark-img {
   position: absolute;
   top: 50%;
   left: 50%;
-  transform: translate(-50%, -50%);
-  width: min(260px, 34vw);
-  height: min(260px, 34vw);
+  width: min(220px, 26vw);
+  height: min(220px, 26vw);
   object-fit: contain;
-  opacity: 0.08;
-  pointer-events: none;
-  z-index: 0;
-  filter: grayscale(20%);
+  user-select: none;
+  transform: translate(-50%, -50%) scale(var(--wm-scale, 1));
+  filter: grayscale(30%);
+}
+
+/* === 模式 1：静态居中 === */
+.wm-mode-static .tool-watermark-img {
+  /* 仅静态居中，无动画 */
+}
+
+/* === 模式 2：平铺叠加 === */
+.wm-mode-tile {
+  /* 用整图重复铺满，单图尺寸由 --wm-scale 控制 */
+}
+.wm-mode-tile .tool-watermark-img {
+  display: none;
+}
+.wm-mode-tile::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: var(--wm-tile-url);
+  /* 单格大小随 scale 变化；spacing 通过 background-size 间接控制 */
+  background-size: calc(min(220px, 26vw) * var(--wm-scale, 1)) calc(min(220px, 26vw) * var(--wm-scale, 1));
+  background-repeat: repeat;
+  background-position: center;
+}
+
+/* === 模式 3：漂浮移动 === */
+.wm-mode-float .tool-watermark-img {
+  animation: wm-float 18s ease-in-out infinite;
+}
+
+/* === 模式 4：呼吸缩放 === */
+.wm-mode-breath .tool-watermark-img {
+  animation: wm-breath 6s ease-in-out infinite;
+}
+
+@keyframes wm-float {
+  0%   { transform: translate(-60%, -60%) scale(var(--wm-scale, 1)); }
+  25%  { transform: translate(-40%, -30%) scale(var(--wm-scale, 1)); }
+  50%  { transform: translate(-60%, -40%) scale(var(--wm-scale, 1)); }
+  75%  { transform: translate(-40%, -65%) scale(var(--wm-scale, 1)); }
+  100% { transform: translate(-60%, -60%) scale(var(--wm-scale, 1)); }
+}
+@keyframes wm-breath {
+  0%, 100% { transform: translate(-50%, -50%) scale(calc(var(--wm-scale, 1) * 0.92)); }
+  50%      { transform: translate(-50%, -50%) scale(calc(var(--wm-scale, 1) * 1.08)); }
 }
 
 .tool-skeleton {
-  padding: 24px;
+  padding: var(--space-6);
 }
 
+.placeholder-card {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  z-index: 1;
+}
+
+/* ============ Page transition ============ */
 .tool-fade-enter-active {
-  transition: opacity 0.15s ease, transform 0.15s ease;
+  transition: opacity 0.2s ease, transform 0.2s var(--ease-out);
 }
 .tool-fade-leave-active {
-  transition: opacity 0.1s ease, transform 0.1s ease;
+  transition: opacity 0.12s ease, transform 0.12s ease;
 }
 .tool-fade-enter-from {
   opacity: 0;
-  transform: translateY(6px);
+  transform: translateY(8px);
 }
 .tool-fade-leave-to {
   opacity: 0;
   transform: translateY(-4px);
 }
 
-@media (max-width: 820px) {
-  .header {
-    height: 44px;
-    min-height: 44px;
-    padding: 0 14px;
-  }
-
-  .header-meta {
-    display: none;
-  }
-
-  .content {
-    padding: 6px;
+@media (prefers-reduced-motion: reduce) {
+  .tool-fade-enter-active,
+  .tool-fade-leave-active {
+    transition: none !important;
   }
 }
 
-@media (max-width: 640px) {
-  .main-area {
-    margin-left: 0;
-    width: 100%;
+@media (max-width: 820px) {
+  .app-topbar {
+    height: 48px;
+    min-height: 48px;
+    padding: 0 var(--space-2);
+    gap: var(--space-2);
+  }
+  .brand-name {
+    display: none;
+  }
+  .topbar-page-title {
+    display: none;
+  }
+  .topbar-icon-btn:not(.icon-only) span {
+    display: none;
+  }
+  .app-content {
+    padding: var(--space-2);
   }
 }
 </style>

@@ -18,7 +18,7 @@ use sha2::Sha256;
 use crate::error::{AppError, AppResult};
 use crate::models::KdfParams;
 
-type HmacSha256 = Hmac<Sha256>;
+pub type HmacSha256 = Hmac<Sha256>;
 
 /// 当前加密版本号
 pub const ENC_VERSION: u32 = 1042;

@@ -34,11 +34,11 @@ type FnOption =
     unsafe extern "system" fn(*mut std::ffi::c_void, *const u16, *const u16) -> *const u16;
 type FnGetW = unsafe extern "system" fn(
     *mut std::ffi::c_void,
-    usize,       // StreamKind (General=0)
-    usize,       // StreamNumber (0)
-    *const u16,  // Parameter ("Duration")
-    usize,       // InfoKind (Text=1)
-    usize,  // SearchKind (0)
+    usize,      // StreamKind (General=0)
+    usize,      // StreamNumber (0)
+    *const u16, // Parameter ("Duration")
+    usize,      // InfoKind (Text=1)
+    usize,      // SearchKind (0)
 ) -> *const u16;
 
 /// 缓存的 MediaInfo 函数指针，避免每次调用重复查找符号
@@ -72,30 +72,13 @@ pub fn get_mediainfo_path() -> Option<String> {
     MEDIAINFO_PATH.get()?.lock().ok()?.clone()
 }
 
-/// 内嵌的 MediaInfo.dll（编译时嵌入二进制文件）
-const EMBEDDED_MEDIAINFO_DLL: &[u8] = include_bytes!("../../../MediaInfo.dll");
-
+/// 查找 MediaInfo 动态库的候选路径（纯运行期加载，不编译期嵌入）
+///
+/// 解析顺序：Tauri 资源目录 → 可执行文件目录 → 工作目录 → 系统 PATH。
+/// 打包时由 tauri.conf.json 的 bundle.resources 将 MediaInfo.dll 带入资源目录；
+/// 开发时把 DLL 放到 src-tauri/MediaInfo.dll 或系统 PATH 即可（该文件不入库）。
 fn mediainfo_library_candidates() -> Vec<PathBuf> {
     let mut candidates = Vec::new();
-
-    // 从内嵌资源释放到临时目录（原子写入，避免多进程竞态）
-    let temp_dll = std::env::temp_dir().join(format!(
-        "toolsbag_mediainfo_{}.dll",
-        env!("CARGO_PKG_VERSION")
-    ));
-    if !temp_dll.exists() {
-        let temp_part =
-            std::env::temp_dir().join(format!("toolsbag_mediainfo_{}.dll", std::process::id()));
-        if std::fs::write(&temp_part, EMBEDDED_MEDIAINFO_DLL).is_ok() {
-            // rename 是原子操作，如果目标已存在则忽略错误
-            let _ = std::fs::rename(&temp_part, &temp_dll);
-        }
-        // 清理可能残留的临时文件
-        let _ = std::fs::remove_file(&temp_part);
-    }
-    if temp_dll.exists() {
-        candidates.push(temp_dll.clone());
-    }
 
     // Tauri 资源目录（打包时 bundle.resources 的目标位置）
     if let Some(res_dir) = RESOURCE_DIR.get() {
@@ -204,11 +187,28 @@ pub(crate) struct MediaInfoHandle {
 impl MediaInfoHandle {
     /// 打开文件，返回句柄（使用缓存的函数指针）
     pub fn open(path: &Path) -> Option<Self> {
+        Self::open_inner(path, None)
+    }
+
+    /// 以指定 ParseSpeed 打开文件。`parse_speed` 为 "0"~"1"：
+    /// 0.0 = 只读容器头部元数据（最快，适合批量轻量提取），1.0 = 完整解析。
+    /// ParseSpeed 必须在 Open 之前设置，否则不生效。
+    pub fn open_fast(path: &Path) -> Option<Self> {
+        Self::open_inner(path, Some("0"))
+    }
+
+    fn open_inner(path: &Path, parse_speed: Option<&str>) -> Option<Self> {
         let syms = MEDIAINFO_SYMS.get()?.as_ref()?;
         unsafe {
             let handle = (syms.new_fn)();
             if handle.is_null() {
                 return None;
+            }
+
+            if let Some(speed) = parse_speed {
+                let key = to_wide_string("ParseSpeed");
+                let val = to_wide_string(speed);
+                (syms.option_fn)(handle, key.as_ptr(), val.as_ptr());
             }
 
             let path_wide = to_wide_string(&path.to_string_lossy());
@@ -278,13 +278,26 @@ impl MediaInfoHandle {
     /// 通过 MediaInfo_Get 获取指定流的 Duration 毫秒值
     /// StreamKind: General=0, Video=1, Audio=2, Text=3
     pub fn get_stream_duration_ms(&self, stream_kind: usize, stream_number: usize) -> u64 {
+        self.get_stream_value(stream_kind, stream_number, "Duration")
+            .trim()
+            .parse()
+            .unwrap_or(0)
+    }
+
+    /// 直接读取指定流字段，避免并发批量导入时 Inform 文本偶发缺列。
+    pub fn get_stream_value(
+        &self,
+        stream_kind: usize,
+        stream_number: usize,
+        parameter: &str,
+    ) -> String {
         const INFO_TEXT: usize = 1;
         let syms = match MEDIAINFO_SYMS.get() {
             Some(Some(s)) => s,
-            _ => return 0,
+            _ => return String::new(),
         };
         unsafe {
-            let param = to_wide_string("Duration");
+            let param = to_wide_string(parameter);
             let ptr = (syms.get_fn)(
                 self.handle,
                 stream_kind,
@@ -293,8 +306,7 @@ impl MediaInfoHandle {
                 INFO_TEXT,
                 0,
             );
-            let s = from_wide_ptr(ptr);
-            s.trim().parse::<u64>().unwrap_or(0)
+            from_wide_ptr(ptr)
         }
     }
 
@@ -314,12 +326,6 @@ impl Drop for MediaInfoHandle {
             }
         }
     }
-}
-
-/// 使用 MediaInfo_Inform 获取完整信息
-pub fn get_full_info(path: &Path) -> Option<String> {
-    let mi = MediaInfoHandle::open(path)?;
-    Some(mi.get_inform())
 }
 
 /// 检查 MediaInfo 是否可用

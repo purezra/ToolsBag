@@ -1,258 +1,229 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-import { Setting } from '@element-plus/icons-vue'
+import { computed } from 'vue'
+import { HomeFilled, Setting } from '@element-plus/icons-vue'
 import { useSettings } from '@core/hooks/useSettings'
-import type { Component } from 'vue'
-
-type Tool = {
-  key: string
-  name: string
-  tag: string
-  tagType: 'primary' | 'success' | 'info' | 'warning'
-  icon: Component
-}
+import { useTools } from '@core/hooks/useTools'
+import { HOME_KEY } from '@core/tools'
 
 defineProps<{
-  tools: Tool[]
-  activeToolKey: string
+  /** Expanded width state — rail width transitions via CSS */
+  expanded: boolean
 }>()
 
 const emit = defineEmits<{
-  (e: 'select', key: string): void
-  (e: 'openSettings'): void
-  (e: 'collapse-change', collapsed: boolean): void
+  (e: 'open-settings'): void
 }>()
 
 const { t } = useSettings()
+const { localizedTools, activeKey, goHome, selectTool } = useTools()
 
-const collapsed = ref(true)
+const items = computed(() =>
+  localizedTools.value.map((tool) => ({
+    key: tool.key,
+    name: tool.name,
+    tag: tool.tag,
+    icon: tool.icon,
+    accent: tool.accent
+  }))
+)
 
-const onMouseEnter = () => {
-  collapsed.value = false
-  emit('collapse-change', false)
+const isHome = computed(() => activeKey.value === HOME_KEY)
+
+const handleItemClick = (key: string) => {
+  selectTool(key)
 }
 
-const onMouseLeave = () => {
-  collapsed.value = true
-  emit('collapse-change', true)
+const handleHomeClick = () => {
+  goHome()
 }
 </script>
 
 <template>
-  <aside
-    class="sidebar"
-    :class="{ 'is-collapsed': collapsed }"
-    @mouseenter="onMouseEnter"
-    @mouseleave="onMouseLeave"
-  >
-    <div class="sidebar-brand">
-      <div class="brand-mark">TB</div>
-      <div class="brand-text">
-        <span class="brand-name">ToolsBag</span>
-        <span class="brand-sub">{{ t('精致的桌面工具盒') }}</span>
-      </div>
+  <aside class="nav-rail" :class="{ 'is-expanded': expanded }" :aria-label="t('工具导航')">
+    <div class="nav-rail__top">
+      <button
+        type="button"
+        class="nav-item nav-item--home"
+        :class="{ 'is-active': isHome }"
+        :aria-current="isHome ? 'page' : undefined"
+        :title="t('工具中心')"
+        @click="handleHomeClick"
+      >
+        <el-icon class="nav-item__icon" :size="18"><HomeFilled /></el-icon>
+        <span class="nav-item__label">{{ t('工具中心') }}</span>
+      </button>
     </div>
 
-    <nav class="sidebar-nav">
-      <div class="nav-section-label">{{ t('工具') }}</div>
+    <nav class="nav-rail__list" aria-label="tools">
       <button
-        v-for="tool in tools"
-        :key="tool.key"
+        v-for="item in items"
+        :key="item.key"
+        type="button"
         class="nav-item"
-        :class="{ 'is-active': activeToolKey === tool.key }"
-        @click="emit('select', tool.key)"
+        :class="{ 'is-active': activeKey === item.key }"
+        :aria-current="activeKey === item.key ? 'page' : undefined"
+        :title="item.name"
+        @click="handleItemClick(item.key)"
       >
-        <el-icon class="nav-item-icon" :size="18"><component :is="tool.icon" /></el-icon>
-        <span class="nav-item-label">{{ tool.name }}</span>
-        <el-tag
-          v-if="tool.tag"
-          class="nav-item-tag"
-          size="small"
-          round
-          effect="plain"
-          :type="tool.tagType"
-        >{{ tool.tag }}</el-tag>
+        <el-icon class="nav-item__icon" :size="18"><component :is="item.icon" /></el-icon>
+        <span class="nav-item__label">{{ item.name }}</span>
+        <span v-if="item.tag" class="nav-item__tag">{{ item.tag }}</span>
       </button>
     </nav>
 
-    <div class="sidebar-footer">
-      <button class="nav-item footer-item" @click="emit('openSettings')">
-        <el-icon class="nav-item-icon" :size="18"><Setting /></el-icon>
-        <span class="nav-item-label">{{ t('偏好设置') }}</span>
+    <div class="nav-rail__bottom">
+      <button
+        type="button"
+        class="nav-item nav-item--settings"
+        :title="t('偏好设置')"
+        @click="emit('open-settings')"
+      >
+        <el-icon class="nav-item__icon" :size="18"><Setting /></el-icon>
+        <span class="nav-item__label">{{ t('偏好设置') }}</span>
       </button>
     </div>
   </aside>
 </template>
 
 <style scoped>
-.sidebar {
-  position: fixed;
-  top: 0;
-  left: 0;
-  bottom: 0;
-  width: var(--sidebar-width);
-  z-index: 42;
-  display: flex;
-  flex-direction: column;
-  background: var(--bg-primary);
-  border-right: 1px solid var(--border-secondary);
-  overflow: hidden;
-  transition: width var(--duration-normal) var(--ease-out);
-}
-
-.sidebar.is-collapsed {
+.nav-rail {
   width: var(--sidebar-collapsed-width);
-}
-
-.sidebar-brand {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 18px 16px 14px;
   flex-shrink: 0;
-}
-
-.sidebar.is-collapsed .sidebar-brand {
-  justify-content: center;
-  padding: 18px 0 14px;
-}
-
-.brand-mark {
-  width: 36px;
-  height: 36px;
-  border-radius: var(--radius-md);
-  display: grid;
-  place-items: center;
-  background: var(--accent-gradient);
-  color: #fff;
-  font-weight: 800;
-  font-size: 13px;
-  flex-shrink: 0;
-  user-select: none;
-}
-
-.brand-text {
   display: flex;
   flex-direction: column;
-  min-width: 0;
-}
-
-.sidebar.is-collapsed .brand-text {
-  display: none;
-}
-
-.brand-name {
-  font-size: 15px;
-  font-weight: 700;
-  color: var(--text-primary);
-  line-height: 1.2;
-}
-
-.brand-sub {
-  font-size: 11px;
-  color: var(--text-muted);
-  line-height: 1.3;
-  white-space: nowrap;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-1);
+  background: var(--nav-rail-bg);
+  border-right: 1px solid var(--nav-rail-border);
+  transition: width 0.25s var(--ease-out);
   overflow: hidden;
-  text-overflow: ellipsis;
+}
+.nav-rail.is-expanded {
+  width: var(--sidebar-width);
 }
 
-.sidebar-nav {
+.nav-rail__top {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--nav-rail-border);
+}
+
+.nav-rail__list {
   flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 4px 10px;
+  padding: var(--space-2) 0;
+  scrollbar-width: thin;
 }
-
-.sidebar-nav::-webkit-scrollbar {
+.nav-rail__list::-webkit-scrollbar {
   width: 0;
 }
 
-.nav-section-label {
-  font-size: 10px;
-  font-weight: 700;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  padding: 8px 8px 6px;
-  user-select: none;
+.nav-rail__bottom {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--nav-rail-border);
 }
 
-.sidebar.is-collapsed .nav-section-label {
-  display: none;
-}
-
+/* ============ Nav item ============ */
 .nav-item {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--space-2);
+  height: 40px;
+  padding: 0 12px;
   width: 100%;
-  height: 38px;
-  padding: 0 10px;
   border: none;
-  border-radius: var(--radius-sm);
   background: transparent;
-  cursor: pointer;
   color: var(--text-secondary);
   font-size: 13px;
   font-weight: 500;
-  transition: all var(--duration-fast) var(--ease-out);
-  text-align: left;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--duration-fast) ease,
+              color var(--duration-fast) ease;
 }
-
-.sidebar.is-collapsed .nav-item {
-  justify-content: center;
-  padding: 0;
+.nav-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
-
 .nav-item:hover {
-  background: var(--accent-light);
-  color: var(--accent);
+  background: var(--nav-item-hover-bg);
+  color: var(--text-primary);
 }
 
+/* Active: soft background + inner left bar, never a saturated flood */
 .nav-item.is-active {
-  background: var(--accent-light);
-  color: var(--accent);
+  background: var(--nav-item-active-bg);
+  color: var(--nav-item-active-fg);
   font-weight: 600;
-  box-shadow: inset 3px 0 0 var(--accent);
+}
+.nav-item.is-active::before {
+  content: '';
+  position: absolute;
+  left: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 16px;
+  border-radius: var(--radius-pill);
+  background: var(--nav-item-active-bar);
+}
+.nav-item.is-active:hover {
+  background: var(--nav-item-active-bg);
 }
 
-.nav-item-icon {
+.nav-item__icon {
   flex-shrink: 0;
+  color: inherit;
 }
 
-.nav-item-label {
+.nav-item__label {
   flex: 1;
   min-width: 0;
-  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  opacity: 0;
+  transition: opacity 0.15s ease 0.05s;
+}
+.nav-rail.is-expanded .nav-item__label {
+  opacity: 1;
 }
 
-.sidebar.is-collapsed .nav-item-label {
-  display: none;
-}
-
-.nav-item-tag {
+.nav-item__tag {
   flex-shrink: 0;
-  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: var(--radius-pill);
+  background: var(--soft-badge-bg);
+  color: var(--soft-badge-fg);
+  font-size: 10px;
+  font-weight: 500;
+  opacity: 0;
+  transition: opacity 0.15s ease 0.05s;
+}
+.nav-rail.is-expanded .nav-item__tag {
+  opacity: 1;
 }
 
-.sidebar.is-collapsed .nav-item-tag {
-  display: none;
-}
-
-.sidebar-footer {
-  flex-shrink: 0;
-  padding: 8px 10px 12px;
-  border-top: 1px solid var(--border-secondary);
-}
-
-.footer-item {
-  color: var(--text-muted);
-}
-
-.footer-item:hover {
-  color: var(--text-primary);
+@media (prefers-reduced-motion: reduce) {
+  .nav-rail,
+  .nav-item,
+  .nav-item__label,
+  .nav-item__tag {
+    transition: none !important;
+  }
 }
 </style>

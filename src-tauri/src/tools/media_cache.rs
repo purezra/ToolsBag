@@ -5,10 +5,14 @@
 use once_cell::sync::OnceCell;
 use rusqlite::Connection;
 use std::path::Path;
-use std::sync::Mutex;
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Mutex,
+};
 
 /// 全局缓存连接（惰式初始化，Mutex 保护线程安全）
 static CACHE: OnceCell<Mutex<Connection>> = OnceCell::new();
+static CACHE_WRITES: AtomicUsize = AtomicUsize::new(0);
 
 /// 初始化缓存数据库。可显式指定 db 路径；若已初始化则跳过。
 pub fn init_cache(db_path: &Path) {
@@ -39,17 +43,22 @@ pub fn init_cache(db_path: &Path) {
 }
 
 /// 缓存 schema 版本：修复 duration 秒数丢失等问题后递增，使旧缓存自动失效
-const CACHE_SCHEMA_VERSION: i64 = 2;
+const CACHE_SCHEMA_VERSION: i64 = 4;
 
 /// 查询缓存：路径 + mtime + schema版本 匹配则返回缓存的 JSON 值
 pub fn get_cached_item(path: &str, mtime_ms: u64) -> Option<serde_json::Value> {
     let conn = CACHE.get()?;
     let guard = conn.lock().unwrap();
     let mut stmt = guard
-        .prepare("SELECT data FROM media_cache WHERE path = ?1 AND mtime_ms = ?2 AND schema_ver = ?3")
+        .prepare(
+            "SELECT data FROM media_cache WHERE path = ?1 AND mtime_ms = ?2 AND schema_ver = ?3",
+        )
         .ok()?;
     let data: String = stmt
-        .query_row(rusqlite::params![path, mtime_ms as i64, CACHE_SCHEMA_VERSION], |row| row.get(0))
+        .query_row(
+            rusqlite::params![path, mtime_ms as i64, CACHE_SCHEMA_VERSION],
+            |row| row.get(0),
+        )
         .ok()?;
     serde_json::from_str(&data).ok()
 }
@@ -95,5 +104,8 @@ pub fn set_cached_item(path: &str, mtime_ms: u64, data: &serde_json::Value) {
         log::error!("media_cache: 写入失败: {}", e);
     }
     drop(guard);
-    cleanup_cache(5000);
+    // 清理无需跟随每个并行探针执行；每 100 次写入检查一次即可。
+    if CACHE_WRITES.fetch_add(1, Ordering::Relaxed) % 100 == 99 {
+        cleanup_cache(5000);
+    }
 }

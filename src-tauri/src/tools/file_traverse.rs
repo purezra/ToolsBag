@@ -3,7 +3,7 @@ use crate::models::{
     MediaPreviewRequest, MediaPreviewResult, TraverseProblem, TraverseRequest, TraverseResult,
 };
 use crate::tools::{detect_media_type, mediainfo};
-use crate::utils::{emit_progress, ensure_dir, timestamped_log};
+use crate::utils::{emit_progress, timestamped_log};
 use rayon::prelude::*;
 use std::{
     collections::HashMap,
@@ -50,7 +50,7 @@ pub fn traverse_and_copy(app: AppHandle, req: TraverseRequest) -> Result<Travers
         .to_path_buf();
     let default_out = base_dir.join(format!("{input_name}_汇总"));
     let output_dir = req.output_dir.clone().unwrap_or(default_out);
-    ensure_dir(&output_dir).map_err(|e| e.to_string())?;
+    fs::create_dir_all(&output_dir).map_err(|e| e.to_string())?;
     let log_path = timestamped_log(&output_dir, "traverse_log");
 
     let min_size = req.min_size_mb.unwrap_or(0) * 1024 * 1024;
@@ -192,9 +192,9 @@ pub fn traverse_and_copy(app: AppHandle, req: TraverseRequest) -> Result<Travers
 
     // 媒体模式：创建 video/audio/image 目录
     if media_mode {
-        let _ = ensure_dir(&output_dir.join("video"));
-        let _ = ensure_dir(&output_dir.join("audio"));
-        let _ = ensure_dir(&output_dir.join("image"));
+        let _ = fs::create_dir_all(output_dir.join("video"));
+        let _ = fs::create_dir_all(output_dir.join("audio"));
+        let _ = fs::create_dir_all(output_dir.join("image"));
     }
 
     let group_map = if organize && !media_mode {
@@ -249,7 +249,7 @@ pub fn traverse_and_copy(app: AppHandle, req: TraverseRequest) -> Result<Travers
     if organize && !media_mode {
         if let Some(map) = &group_map {
             for grp in map.values() {
-                let _ = ensure_dir(&output_dir.join(grp));
+                let _ = fs::create_dir_all(output_dir.join(grp));
             }
         }
     }
@@ -261,7 +261,7 @@ pub fn traverse_and_copy(app: AppHandle, req: TraverseRequest) -> Result<Travers
         .par_iter()
         .for_each(|(_idx, src, ext, dest_str, new_name, size)| {
             let dest = PathBuf::from(dest_str);
-            let _ = ensure_dir(&dest.parent().unwrap_or_else(|| Path::new("")).to_path_buf());
+            let _ = fs::create_dir_all(dest.parent().unwrap_or_else(|| Path::new("")));
             let res = copy_fast(src, &dest);
             match res {
                 Ok(bytes) => {
@@ -438,19 +438,38 @@ pub fn traverse_and_copy(app: AppHandle, req: TraverseRequest) -> Result<Travers
 fn copy_fast(src: &Path, dest: &Path) -> Result<u64, String> {
     let mut reader =
         BufReader::with_capacity(64 * 1024, File::open(src).map_err(|e| e.to_string())?);
-    let mut writer =
-        BufWriter::with_capacity(64 * 1024, File::create(dest).map_err(|e| e.to_string())?);
+    // 先写入临时文件，复制完整后再原子重命名，避免中途失败时截断/破坏已存在的目标文件。
+    let tmp_path = dest.with_extension("tmp.__copying__");
+    let _ = std::fs::remove_file(&tmp_path);
+    let mut writer = BufWriter::with_capacity(
+        64 * 1024,
+        File::create(&tmp_path).map_err(|e| e.to_string())?,
+    );
     let mut total: u64 = 0;
     let mut buffer = [0u8; 64 * 1024];
     loop {
-        let n = reader.read(&mut buffer).map_err(|e| e.to_string())?;
+        let n = reader.read(&mut buffer).map_err(|e| {
+            let _ = std::fs::remove_file(&tmp_path);
+            e.to_string()
+        })?;
         if n == 0 {
             break;
         }
-        writer.write_all(&buffer[..n]).map_err(|e| e.to_string())?;
+        writer.write_all(&buffer[..n]).map_err(|e| {
+            let _ = std::fs::remove_file(&tmp_path);
+            e.to_string()
+        })?;
         total += n as u64;
     }
-    writer.flush().map_err(|e| e.to_string())?;
+    writer.flush().map_err(|e| {
+        let _ = std::fs::remove_file(&tmp_path);
+        e.to_string()
+    })?;
+    // 同目录内重命名；若失败（如跨卷或占用）回退为复制+删除。
+    if std::fs::rename(&tmp_path, dest).is_err() {
+        std::fs::copy(&tmp_path, dest).map_err(|e| e.to_string())?;
+        let _ = std::fs::remove_file(&tmp_path);
+    }
     Ok(total)
 }
 
@@ -521,36 +540,11 @@ fn matches_patterns(patterns: &[String], name: &str) -> bool {
     if patterns.is_empty() {
         return false;
     }
-    patterns.iter().any(|p| wildcard_match(p, name))
-}
-
-fn wildcard_match(pattern: &str, text: &str) -> bool {
-    wildcard_match_bytes(pattern.as_bytes(), text.as_bytes())
-}
-
-fn wildcard_match_bytes(pat: &[u8], text: &[u8]) -> bool {
-    let (mut pi, mut ti, mut star) = (0usize, 0usize, None::<usize>);
-    while ti < text.len() {
-        if pi < pat.len() && (pat[pi] == b'?' || pat[pi] == text[ti]) {
-            pi += 1;
-            ti += 1;
-        } else if pi < pat.len() && pat[pi] == b'*' {
-            star = Some(pi);
-            pi += 1;
-            if pi == pat.len() {
-                return true;
-            }
-        } else if let Some(s) = star {
-            pi = s + 1;
-            ti += 1;
-        } else {
-            return false;
-        }
-    }
-    while pi < pat.len() && pat[pi] == b'*' {
-        pi += 1;
-    }
-    pi == pat.len()
+    patterns.iter().any(|p| {
+        glob::Pattern::new(p)
+            .map(|pat| pat.matches(name))
+            .unwrap_or(false)
+    })
 }
 
 /// 媒体预览：扫描目录并获取所有媒体文件的元数据

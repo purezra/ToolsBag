@@ -17,6 +17,7 @@ const { t } = useSettings()
 const codebook = reactive(useCodebook())
 
 const activeTab = ref<'list' | 'add'>('list')
+const addFormKey = ref(0)
 const recycleTab = ref<'active' | 'recycle'>('active')
 const editDialogVisible = ref(false)
 const editingAccount = ref<Account | null>(null)
@@ -104,6 +105,8 @@ const handleSubmit = async (data: Omit<Account, 'id' | 'createdAt' | 'updatedAt'
   ElMessage.success(t('账号已保存'))
   activeTab.value = 'list'
   codebook.generatedPassword = ''
+  // 重置添加表单，避免下次进入时残留上次数据
+  addFormKey.value++
 }
 
 const handleEdit = (account: Account) => {
@@ -278,16 +281,20 @@ const handleChangePassword = async () => {
     ElMessage.error(t('两次输入不一致'))
     return
   }
-  await codebook.rotateMasterPassword(newPassword.value)
-  newPassword.value = ''
-  newPasswordConfirm.value = ''
-  changePwdDialogVisible.value = false
-  ElMessage.success(t('主密码已更新（仅重包裹设备密钥）'))
+  try {
+    await codebook.rotateMasterPassword(newPassword.value)
+    newPassword.value = ''
+    newPasswordConfirm.value = ''
+    changePwdDialogVisible.value = false
+    ElMessage.success(t('主密码已更新（仅重包裹设备密钥）'))
+  } catch (e: any) {
+    ElMessage.error(`${t('主密码更新失败')}：${e?.message || e}`)
+  }
 }
 </script>
 
 <template>
-  <div class="codebook-tool">
+  <div class="codebook-tool tool-page">
     <el-skeleton v-if="codebook.loading" animated :rows="6" style="padding: 16px" />
 
     <template v-else>
@@ -415,7 +422,7 @@ const handleChangePassword = async () => {
               <el-dropdown-item command="xlsx">{{ t('导出 XLSX') }}</el-dropdown-item>
               <el-dropdown-item command="vaultx">
                 <el-icon><Files /></el-icon>
-                <span style="margin-left:6px;">{{ t('导出 VaultX (.vaultx)') }}</span>
+                <span style="margin-left:6px;">{{ t('导出 VaultX (.zip)') }}</span>
               </el-dropdown-item>
             </el-dropdown-menu>
           </template>
@@ -429,7 +436,7 @@ const handleChangePassword = async () => {
               <el-dropdown-item command="json">{{ t('导入 JSON') }}</el-dropdown-item>
               <el-dropdown-item command="vaultx">
                 <el-icon><Files /></el-icon>
-                <span style="margin-left:6px;">{{ t('导入 VaultX (.vaultx)') }}</span>
+                <span style="margin-left:6px;">{{ t('导入 VaultX (.zip)') }}</span>
               </el-dropdown-item>
             </el-dropdown-menu>
           </template>
@@ -502,6 +509,7 @@ const handleChangePassword = async () => {
                       <span class="card-title">{{ t('账号信息') }}</span>
                     </template>
                     <AccountForm
+                      :key="addFormKey"
                       :config="codebook.config"
                       :generated-password="codebook.generatedPassword"
                       :all-names="codebook.allNames"
@@ -676,6 +684,7 @@ const handleChangePassword = async () => {
 
 <style scoped>
 .codebook-tool {
+  position: relative;
   height: 100%;
   display: flex;
   flex-direction: column;

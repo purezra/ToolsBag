@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core'
+export { formatBytes as formatFileSize } from '@core/utils/format'
 
 export type OutputFormat = 'auto' | 'jxl' | 'avif'
 export type CompressMode = 'lossless' | 'near_lossless' | 'lossy'
@@ -68,6 +69,7 @@ export interface CompressSummary {
   output_total_size: number
   compression_ratio: number
   zip_path?: string | null
+  zip_error?: string | null
   results: CompressResult[]
 }
 
@@ -76,13 +78,6 @@ export interface CompressProgress {
   total: number
   current_file: string
   phase: string
-}
-
-export function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`
-  return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`
 }
 
 export async function getLibjxlStatus(): Promise<LibjxlStatus> {

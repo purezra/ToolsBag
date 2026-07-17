@@ -15,6 +15,7 @@ export type VideoRow = BaseRow & {
   width?: number
   height?: number
   bitrateMbps?: number
+  arrivalTimeMs?: number
 }
 
 export type ImageRow = BaseRow & {
@@ -189,4 +190,14 @@ export type VideoInfoImportResponse = {
   total: number
   success: number
   failed: number
+}
+
+// ==================== 体检分析类型 ====================
+
+export type HealthSeverity = 'danger' | 'warning' | 'info'
+
+export type HealthIssue = {
+  severity: HealthSeverity
+  label: string
+  detail: string
 }

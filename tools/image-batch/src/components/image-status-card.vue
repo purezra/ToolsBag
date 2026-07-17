@@ -43,15 +43,15 @@ const emit = defineEmits<{
         <div class="tb-stat-label">页数</div>
       </div>
       <div v-if="props.resultInfo.pageSize" class="tb-stat-item">
-        <div class="tb-stat-value" style="font-size: 14px;">{{ props.resultInfo.pageSize }}</div>
+        <div class="tb-stat-value tb-stat-value--xs">{{ props.resultInfo.pageSize }}</div>
         <div class="tb-stat-label">页面尺寸</div>
       </div>
       <div class="tb-stat-item">
-        <div class="tb-stat-value" style="font-size: 16px;">{{ props.resultInfo.inputSize }}</div>
+        <div class="tb-stat-value tb-stat-value--sm">{{ props.resultInfo.inputSize }}</div>
         <div class="tb-stat-label">输入大小</div>
       </div>
       <div class="tb-stat-item">
-        <div class="tb-stat-value" style="font-size: 16px;">{{ props.resultInfo.outputSize }}</div>
+        <div class="tb-stat-value tb-stat-value--sm">{{ props.resultInfo.outputSize }}</div>
         <div class="tb-stat-label">输出大小</div>
       </div>
       <div class="tb-stat-item">
@@ -63,17 +63,17 @@ const emit = defineEmits<{
     </div>
 
     <!-- 输出路径 -->
-    <div class="tb-result-path" style="margin-top: 12px;">
+    <div class="result-path-row">
       <el-button text :icon="LinkIcon" size="small" @click="emit('openOutput', props.resultInfo!.path)">
         打开所在文件夹
       </el-button>
-      <span style="margin-left: 8px;">{{ props.resultInfo.path }}</span>
+      <span class="result-path-text">{{ props.resultInfo.path }}</span>
     </div>
   </div>
 
   <!-- 问题日志 -->
   <div v-if="props.problemLog && props.problemLog !== '暂无问题'" class="tb-section">
-    <div class="tb-section-title" style="color: var(--warning);">
+    <div class="tb-section-title is-warn">
       问题日志
       <el-tag size="small" type="warning">有异常</el-tag>
     </div>
@@ -87,14 +87,20 @@ const emit = defineEmits<{
   color: var(--text-secondary);
   font-size: 13px;
 }
-.flow-progress :deep(.el-progress-bar__inner) {
-  background: linear-gradient(120deg, #6dd5ed, #2193b0, #6dd5ed);
-  background-size: 200% 200%;
-  animation: flow-bar 1.2s linear infinite;
+/* Progress fill is handled globally by overrides.css (per-skin gradient);
+   no hardcoded gradient here. */
+.result-path-row {
+  margin-top: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-muted);
+  word-break: break-all;
 }
-@keyframes flow-bar {
-  0% { background-position: 0% 50%; }
-  100% { background-position: 200% 50%; }
+.tb-section-title.is-warn {
+  color: var(--warning);
 }
 .log-box {
   padding: 10px;
@@ -103,7 +109,7 @@ const emit = defineEmits<{
   background: var(--bg-tertiary);
   border: 1px solid var(--border-secondary);
   border-radius: var(--radius-sm);
-  font-family: 'JetBrains Mono', Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
   line-height: 1.5;
   color: var(--text-primary);

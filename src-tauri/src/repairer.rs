@@ -1,6 +1,6 @@
 use crate::detector::inspect_image;
 use crate::models::{RepairRequest, RepairResult};
-use crate::utils::{emit_progress, ensure_dir, timestamped_log};
+use crate::utils::{emit_progress, timestamped_log};
 use image::codecs::jpeg::JpegEncoder;
 use rayon::prelude::*;
 use std::path::PathBuf;
@@ -17,7 +17,7 @@ pub fn repair(app: AppHandle, req: RepairRequest) -> Result<RepairResult, String
         .output_dir
         .clone()
         .unwrap_or_else(|| input.join("_fixed"));
-    ensure_dir(&output_dir).map_err(|e| e.to_string())?;
+    std::fs::create_dir_all(&output_dir).map_err(|e| e.to_string())?;
     let log_path = timestamped_log(&output_dir, "repair_log");
 
     let mut files: Vec<PathBuf> = Vec::new();

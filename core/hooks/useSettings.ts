@@ -1,15 +1,21 @@
 import { computed, inject, provide, ref, watch } from 'vue'
 
 export type ThemeMode = 'light' | 'dark'
-export type ThemeSkin = 'modern'
 export type Appearance = 'light' | 'dark' | 'system'
 export type Locale = 'zh' | 'en'
 export type FontFamily = 'harmonyos' | 'custom'
+export type WatermarkMode = 'static' | 'tile' | 'float' | 'breath'
 
 const SETTINGS_KEY = Symbol('toolsbag-settings')
 const FONT_KEY = 'toolsbag-font'
 const CUSTOM_FONT_KEY = 'toolsbag-custom-font'
 const WATERMARK_KEY = 'toolsbag-watermark'
+const WATERMARK_MODE_KEY = 'toolsbag-watermark-mode'
+const WATERMARK_OPACITY_KEY = 'toolsbag-watermark-opacity'
+const WATERMARK_SCALE_KEY = 'toolsbag-watermark-scale'
+const SKIN_KEY = 'toolsbag-skin'
+const APPEARANCE_KEY = 'toolsbag-appearance'
+const LOCALE_KEY = 'toolsbag-locale'
 
 const enMessages = Object.fromEntries<string>([
   ['偏好设置', 'Preferences'],
@@ -81,6 +87,12 @@ const enMessages = Object.fromEntries<string>([
   ['语言', 'Language'],
   ['浅色模式', 'Light mode'],
   ['深色模式', 'Dark mode'],
+  ['界面主题', 'UI Theme'],
+  ['现代 Indigo', 'Modern Indigo'],
+  ['Geist 极简', 'Geist Minimal'],
+  ['Arc 玻璃', 'Arc Glass'],
+  ['切换主题', 'Switch theme'],
+  ['现代', 'Modern'],
   ['Smartisan 风格', 'Smartisan style'],
   ['Apple store ui', 'Apple Store UI'],
   ['Apple 风格', 'Apple style'],
@@ -383,6 +395,56 @@ const enMessages = Object.fromEntries<string>([
   ['页面', 'Page'],
   ['边距不能为负', 'Margin cannot be negative'],
   ['边距不能超过', 'Margin cannot exceed'],
+  // Shell / launcher / command bar
+  ['工具导航', 'Tool navigation'],
+  ['工具中心', 'Tool Center'],
+  ['搜索工具、命令或最近任务…', 'Search tools, commands or recent tasks…'],
+  ['搜索', 'Search'],
+  ['最近使用', 'Recent'],
+  ['全部工具', 'All tools'],
+  ['结果', 'Results'],
+  ['未找到匹配的工具', 'No matching tools found'],
+  ['打开', 'Open'],
+  ['ToolsBag 工具中心', 'ToolsBag Tool Center'],
+  ['精致克制的桌面工具盒 · 媒体探针 · 图片工坊 · 文件收割 · 密码册', 'Refined desktop toolkit · Media Probe · Image Workshop · File Harvester · Cipher Book'],
+  ['切换主题', 'Switch theme'],
+  ['偏好设置', 'Preferences'],
+  ['关于', 'About'],
+  ['折叠导航', 'Collapse nav'],
+  ['展开导航', 'Expand nav'],
+  ['界面主题', 'Interface theme'],
+  ['现代 Indigo', 'Modern Indigo'],
+  ['Geist 极简', 'Geist Minimal'],
+  ['Arc 玻璃', 'Arc Glass'],
+  ['极简专业', 'Minimal Pro'],
+  ['界面风格', 'UI style'],
+  ['工具水印', 'Tool watermark'],
+  ['开启后工具页面将显示极淡的图标水印', 'Show a faint icon watermark on tool pages'],
+  ['在工具页面叠加图标水印，可调模式与透明度', 'Overlay an icon watermark on tool pages; adjust mode and opacity'],
+  ['水印·静态', 'Static'],
+  ['水印·平铺', 'Tile'],
+  ['水印·漂浮', 'Float'],
+  ['水印·呼吸', 'Breath'],
+  ['透明度', 'Opacity'],
+  ['大小', 'Size'],
+  ['点击动画', 'Click animation'],
+  ['导出字体', 'Export font'],
+  ['查看关于', 'About ToolsBag'],
+  ['复制', 'Copy'],
+  ['版本', 'Version'],
+  ['技术栈', 'Tech stack'],
+  ['功能', 'Features'],
+  ['仓库', 'Repository'],
+  ['开源', 'Open source'],
+  ['为日常文件工作提供清晰、可靠的本地工具。', 'Clear, dependable local tools for everyday file work.'],
+  ['核心能力', 'Core capabilities'],
+  ['查看视频与图片元数据，筛选文件并批量整理命名。', 'Inspect video and image metadata, filter files, and organize names in batches.'],
+  ['批量转换、压缩图片，并完成常用的图片文档处理。', 'Convert and compress images in batches, with practical image document tools.'],
+  ['按类型快速遍历、归集和整理文件。', 'Quickly find, collect, and organize files by type.'],
+  ['生成密码，并在本地管理账号资料。', 'Generate passwords and manage account details locally.'],
+  ['本地优先', 'Local first'],
+  ['轻量运行', 'Lightweight'],
+  ['专注效率', 'Built for focus'],
 ])
 
 const messages: Record<Locale, Record<string, string>> = {
@@ -391,8 +453,10 @@ const messages: Record<Locale, Record<string, string>> = {
 }
 
 export const provideSettings = () => {
-  const appearance = ref<Appearance>('dark')
-  const skin = ref<ThemeSkin>('modern')
+  const appearance = ref<Appearance>((localStorage.getItem(APPEARANCE_KEY) as Appearance) || 'light')
+  // Only the Minimal Pro skin remains. This also migrates older saved skin choices.
+  localStorage.setItem(SKIN_KEY, 'minimal')
+  document.documentElement.setAttribute('data-skin', 'minimal')
 
   // System dark mode detection
   const systemPrefersDark = ref(window.matchMedia('(prefers-color-scheme: dark)').matches)
@@ -411,7 +475,7 @@ export const provideSettings = () => {
   const theme = computed<ThemeMode>(() => {
     return resolvedAppearance.value
   })
-  const locale = ref<Locale>('zh')
+  const locale = ref<Locale>((localStorage.getItem(LOCALE_KEY) as Locale) || 'zh')
 
   const t = (key: string, vars?: Record<string, string | number>) => {
     const base = locale.value === 'en' ? messages.en[key] ?? key : key
@@ -423,16 +487,14 @@ export const provideSettings = () => {
     appearance.value = val
   }
 
-  const setSkin = (val: ThemeSkin) => {
-    skin.value = val
-  }
-
   const setAppearance = (val: Appearance) => {
     appearance.value = val
+    localStorage.setItem(APPEARANCE_KEY, val)
   }
 
   const setLocale = (val: Locale) => {
     locale.value = val
+    localStorage.setItem(LOCALE_KEY, val)
   }
 
   watch(
@@ -560,18 +622,42 @@ export const provideSettings = () => {
   // Apply font on init
   applyFont(fontFamily.value)
 
-  // Watermark setting
-  const showWatermark = ref(localStorage.getItem(WATERMARK_KEY) !== 'false')
-  
+  // Watermark settings (default off, but visible when on)
+  const showWatermark = ref(localStorage.getItem(WATERMARK_KEY) === 'true')
+  const watermarkMode = ref<WatermarkMode>(
+    (localStorage.getItem(WATERMARK_MODE_KEY) as WatermarkMode) || 'static'
+  )
+  // ponytail: 透明度用百分比数值存储（2-30），默认 10；避免旧版 0.04 极淡看不到的坑
+  const watermarkOpacity = ref(Number(localStorage.getItem(WATERMARK_OPACITY_KEY)) || 10)
+  const watermarkScale = ref(Number(localStorage.getItem(WATERMARK_SCALE_KEY)) || 100)
+
   const setShowWatermark = (val: boolean) => {
     showWatermark.value = val
     localStorage.setItem(WATERMARK_KEY, val ? 'true' : 'false')
   }
 
-  const state = { 
-    theme, skin, appearance, setSkin, setAppearance, setTheme, locale, setLocale, t,
+  const setWatermarkMode = (val: WatermarkMode) => {
+    watermarkMode.value = val
+    localStorage.setItem(WATERMARK_MODE_KEY, val)
+  }
+
+  const setWatermarkOpacity = (val: number) => {
+    watermarkOpacity.value = val
+    localStorage.setItem(WATERMARK_OPACITY_KEY, String(val))
+  }
+
+  const setWatermarkScale = (val: number) => {
+    watermarkScale.value = val
+    localStorage.setItem(WATERMARK_SCALE_KEY, String(val))
+  }
+
+  const state = {
+    theme, appearance, setAppearance, setTheme, locale, setLocale, t,
     fontFamily, setFontFamily, customFontName, loadCustomFont, clearCustomFont,
-    showWatermark, setShowWatermark
+    showWatermark, setShowWatermark,
+    watermarkMode, setWatermarkMode,
+    watermarkOpacity, setWatermarkOpacity,
+    watermarkScale, setWatermarkScale
   }
   provide(SETTINGS_KEY, state)
   return state

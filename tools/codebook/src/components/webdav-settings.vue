@@ -113,8 +113,15 @@ async function handleSave() {
 }
 
 async function toggleSync() {
-  config.value.enabled = !config.value.enabled
-  await handleSave()
+  const prev = config.value.enabled
+  config.value.enabled = !prev
+  try {
+    await handleSave()
+  } catch (e: any) {
+    // 保存失败时回滚开关状态，避免 UI 与后端不一致
+    config.value.enabled = prev
+    console.error('同步设置保存失败:', e)
+  }
 }
 
 onMounted(() => {

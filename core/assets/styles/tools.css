@@ -1,0 +1,240 @@
+/* ============================================================
+   ToolsBag — unified tool-page layout system
+   Shared structure for every tool so spacing, cards, sections,
+   action bars and result panels stay consistent across tools.
+   Layout contract:
+     .tool-page            → root flex column (说明 / 参数 / 状态 / 结果)
+       .tool-page__header  → 工具说明区：标题 / 描述 / 关键能力
+       .tool-page__body    → 参数输入 + 执行状态 + 结果输出
+         .tool-panel       → 卡片化容器
+           .tool-section   → 区块
+           .tool-actions   → 操作条
+           .result-panel   → 结果输出区
+   ============================================================ */
+
+/* Entrance animation for tool pages */
+.tool-page-enter-active {
+  transition: opacity 0.2s ease, transform 0.2s var(--ease-out);
+}
+.tool-page-enter-from {
+  opacity: 0;
+  transform: translateY(6px);
+}
+
+/* ============ Tool page root ============ */
+.tool-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Optional header strip: title + description + capability meta */
+.tool-page__header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: var(--space-2) var(--space-2) var(--space-3);
+  flex-shrink: 0;
+}
+.tool-page__title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+.tool-page__title .el-icon {
+  color: var(--accent);
+  font-size: 16px;
+}
+.tool-page__desc {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin: 0;
+}
+.tool-page__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+/* Body holds the scrollable parameter/status/result stack */
+.tool-page__body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  overflow: auto;
+  padding-right: 2px;
+}
+
+/* ============ Panel ============ */
+.tool-panel {
+  background: var(--color-card);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--card-shadow);
+  padding: var(--card-padding);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.tool-panel--flush {
+  padding: 0;
+  overflow: hidden;
+}
+.tool-panel--body-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* ============ Section ============ */
+.tool-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.tool-section__title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: 0.01em;
+}
+.tool-section__title::before {
+  content: '';
+  flex-shrink: 0;
+  width: 3px;
+  height: 13px;
+  border-radius: var(--radius-pill);
+  background: var(--section-accent-bar, var(--accent));
+}
+.tool-section__hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+/* ============ Action bar ============ */
+.tool-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-secondary);
+  border-radius: var(--radius-md);
+}
+.tool-actions__hint {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.tool-actions--inline {
+  padding: 0;
+  background: transparent;
+  border: none;
+}
+
+/* ============ Result panel ============ */
+.result-panel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  background: var(--color-card);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--card-shadow);
+  overflow: hidden;
+}
+.result-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border-secondary);
+  flex-shrink: 0;
+}
+.result-panel__title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.result-panel__body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: var(--space-3) var(--space-4);
+}
+.result-panel--success {
+  border-color: transparent;
+  background: var(--success-light);
+}
+.result-panel--error {
+  border-color: transparent;
+  background: var(--danger-light);
+}
+
+/* ============ Soft badge — low-presence tag ============ */
+.tb-soft-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: var(--radius-pill);
+  background: var(--soft-badge-bg);
+  color: var(--soft-badge-fg);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  border: 1px solid transparent;
+}
+.tb-soft-badge--accent {
+  background: var(--accent-light);
+  color: var(--accent);
+}
+
+/* ============ Capability list (header meta) ============ */
+.tb-capability {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.tb-capability::before {
+  content: '';
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+.tb-capability--accent::before {
+  background: var(--accent);
+}
+
+/* ============ Reduced motion ============ */
+@media (prefers-reduced-motion: reduce) {
+  .tool-panel,
+  .result-panel,
+  .tool-actions {
+    transition: none !important;
+  }
+}

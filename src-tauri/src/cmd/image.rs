@@ -30,7 +30,7 @@ pub fn list_images(input_dir: PathBuf, recursive: bool) -> Result<Vec<FileEntry>
 }
 
 #[tauri::command]
-pub fn convert_tool3(app: AppHandle, req: Convert3Request) -> Result<Convert3Result, String> {
+pub fn convert_image_batch(app: AppHandle, req: Convert3Request) -> Result<Convert3Result, String> {
     image_batch::convert(app, req)
 }
 

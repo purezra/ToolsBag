@@ -1,0 +1,136 @@
+/* ============================================================
+   Dark-mode ambient layer — reduced glow for desktop-tool feel
+   ============================================================ */
+
+/* ============ Ambient background (all dark skins) ============ */
+[data-theme='dark'] body {
+  background: var(--bg-page);
+  color: var(--text-primary);
+}
+
+[data-theme='dark'] .app-shell {
+  background: transparent;
+}
+
+/* ============ Topbar (shared dark base) ============ */
+[data-theme='dark'] .app-topbar {
+  border-bottom: 1px solid var(--border-secondary);
+}
+
+[data-theme='dark'] .brand-mark {
+  background: var(--accent-gradient);
+}
+
+[data-theme='dark'] .brand-name {
+  color: var(--text-primary);
+}
+
+[data-theme='dark'] .app-content {
+  background: transparent;
+}
+
+/* ============ Live strip ============ */
+[data-theme='dark'] .live-strip {
+  background: var(--bg-tertiary);
+  border-color: var(--border-primary);
+  box-shadow: inset 0 0 0 1px var(--border-secondary);
+}
+
+[data-theme='dark'] .live-strip__label,
+[data-theme='dark'] .live-strip__count {
+  color: var(--accent);
+  background: var(--accent-light);
+}
+
+[data-theme='dark'] .live-strip__text {
+  color: var(--text-primary);
+}
+
+/* ============ Cards / panels (shared dark base) ============ */
+[data-theme='dark'] .quick-actions,
+[data-theme='dark'] .hero-card {
+  background: var(--color-card);
+  border: 1px solid var(--border-primary);
+}
+
+[data-theme='dark'] .floating-card {
+  background: var(--color-card);
+  color: var(--text-primary);
+  border: 1px solid var(--border-primary);
+}
+
+[data-theme='dark'] .setting-label {
+  color: var(--text-primary);
+}
+
+[data-theme='dark'] .setting-hint {
+  color: var(--text-muted);
+}
+
+[data-theme='dark'] .effect-options {
+  background: var(--bg-tertiary);
+}
+
+/* ============ Category chips ============ */
+[data-theme='dark'] .category-header {
+  color: var(--accent);
+}
+
+[data-theme='dark'] .category-item {
+  background: var(--bg-tertiary);
+  border-color: var(--border-primary);
+  color: var(--text-secondary);
+}
+
+[data-theme='dark'] .category-item:hover {
+  border-color: var(--accent);
+  color: var(--text-primary);
+}
+
+[data-theme='dark'] .category-item.active {
+  background: var(--accent);
+  color: var(--text-inverse);
+  border-color: var(--accent);
+}
+
+/* ============ Format panel ============ */
+[data-theme='dark'] .format-panel {
+  background: var(--bg-tertiary);
+  border-color: var(--accent);
+}
+
+[data-theme='dark'] .format-item {
+  background: var(--bg-secondary);
+  border-color: var(--border-primary);
+  color: var(--text-secondary);
+}
+
+[data-theme='dark'] .format-item:hover {
+  background: var(--accent-light);
+}
+
+[data-theme='dark'] .format-item.selected {
+  background: var(--accent-light);
+  border-color: var(--accent);
+}
+
+[data-theme='dark'] .password-display {
+  background: var(--bg-tertiary);
+  color: var(--success);
+}
+
+[data-theme='dark'] .preview-section {
+  background: var(--bg-secondary);
+  border-color: var(--accent);
+}
+
+[data-theme='dark'] .log-box,
+[data-theme='dark'] .result-card,
+[data-theme='dark'] .progress-card {
+  background: var(--color-card);
+  border-color: var(--border-primary);
+}
+
+[data-theme='dark'] .progress-msg {
+  color: var(--text-muted);
+}

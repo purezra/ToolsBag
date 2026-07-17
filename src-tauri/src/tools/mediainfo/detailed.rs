@@ -133,7 +133,10 @@ fn parse_general_info(streams: &[ParsedStream], precise_duration_ms: u64) -> Gen
 }
 
 /// 从 Video 段解析详细视频流
-fn parse_detailed_video_streams(streams: &[ParsedStream], precise_durations: &[u64]) -> Vec<DetailedVideoStream> {
+fn parse_detailed_video_streams(
+    streams: &[ParsedStream],
+    precise_durations: &[u64],
+) -> Vec<DetailedVideoStream> {
     streams
         .iter()
         .filter(|s| s.section == "Video")
@@ -196,8 +199,34 @@ fn parse_detailed_video_streams(streams: &[ParsedStream], precise_durations: &[u
         .collect()
 }
 
+fn fill_missing_video_core_fields<F>(streams: &mut [DetailedVideoStream], mut get: F)
+where
+    F: FnMut(usize, &str) -> String,
+{
+    for (index, stream) in streams.iter_mut().enumerate() {
+        if stream.width == 0 {
+            stream.width = parse_number(&get(index, "Width"));
+        }
+        if stream.height == 0 {
+            stream.height = parse_number(&get(index, "Height"));
+        }
+        if stream.codec.is_empty() {
+            stream.codec = get(index, "Format");
+        }
+        if stream.frame_rate.is_empty() {
+            stream.frame_rate = format_frame_rate(&get(index, "FrameRate"));
+        }
+        if stream.hdr_format.is_empty() {
+            stream.hdr_format = get(index, "HDR_Format");
+        }
+    }
+}
+
 /// 从 Audio 段解析详细音频流
-fn parse_detailed_audio_streams(streams: &[ParsedStream], precise_durations: &[u64]) -> Vec<DetailedAudioStream> {
+fn parse_detailed_audio_streams(
+    streams: &[ParsedStream],
+    precise_durations: &[u64],
+) -> Vec<DetailedAudioStream> {
     streams
         .iter()
         .filter(|s| s.section == "Audio")
@@ -294,10 +323,17 @@ pub fn get_detailed_video_meta(path: &Path) -> Option<DetailedVideoMeta> {
     // Collect precise per-stream durations via Get API
     let video_count = streams.iter().filter(|s| s.section == "Video").count();
     let audio_count = streams.iter().filter(|s| s.section == "Audio").count();
-    let video_precise: Vec<u64> = (0..video_count).map(|i| mi.get_stream_duration_ms(1, i)).collect();
-    let audio_precise: Vec<u64> = (0..audio_count).map(|i| mi.get_stream_duration_ms(2, i)).collect();
+    let video_precise: Vec<u64> = (0..video_count)
+        .map(|i| mi.get_stream_duration_ms(1, i))
+        .collect();
+    let audio_precise: Vec<u64> = (0..audio_count)
+        .map(|i| mi.get_stream_duration_ms(2, i))
+        .collect();
 
-    let video_streams = parse_detailed_video_streams(&streams, &video_precise);
+    let mut video_streams = parse_detailed_video_streams(&streams, &video_precise);
+    fill_missing_video_core_fields(&mut video_streams, |index, parameter| {
+        mi.get_stream_value(1, index, parameter)
+    });
     let audio_streams = parse_detailed_audio_streams(&streams, &audio_precise);
 
     // 始终使用 XML 解析字幕流（更可靠，且避免重复读取文件）
@@ -310,4 +346,33 @@ pub fn get_detailed_video_meta(path: &Path) -> Option<DetailedVideoMeta> {
         audio_streams,
         text_streams,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::fill_missing_video_core_fields;
+    use crate::models::DetailedVideoStream;
+
+    #[test]
+    fn fills_missing_core_fields_without_overwriting_valid_values() {
+        let mut streams = vec![DetailedVideoStream {
+            codec: "kept".to_string(),
+            ..Default::default()
+        }];
+
+        fill_missing_video_core_fields(&mut streams, |_, parameter| match parameter {
+            "Width" => "1280".to_string(),
+            "Height" => "720".to_string(),
+            "Format" => "AVC".to_string(),
+            "FrameRate" => "30.000".to_string(),
+            "HDR_Format" => "HDR10".to_string(),
+            _ => String::new(),
+        });
+
+        assert_eq!(streams[0].width, 1280);
+        assert_eq!(streams[0].height, 720);
+        assert_eq!(streams[0].codec, "kept");
+        assert_eq!(streams[0].frame_rate, "30");
+        assert_eq!(streams[0].hdr_format, "HDR10");
+    }
 }

@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, nextTick, reactive, ref, defineAsyncComponent, watch } from 'vue'
+import { computed, nextTick, onUnmounted, reactive, ref, defineAsyncComponent, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Plus, FolderAdd, Upload } from '@element-plus/icons-vue'
+import { Plus, FolderAdd, Upload, CircleCheckFilled, WarningFilled } from '@element-plus/icons-vue'
 import { useFileSelect } from '@core/hooks/useFileSelect'
 const MediaStatsPanel = defineAsyncComponent(() => import('./components/media-stats-panel.vue'))
 import MediaTablePanel from './components/media-table-panel.vue'
@@ -17,6 +17,9 @@ import type { PickKind } from '@core/api/common'
 const batch = reactive(useMediaBatch())
 const { t } = useSettings()
 const { pick } = useFileSelect()
+const formatElapsed = (milliseconds: number) => milliseconds < 1000
+  ? `${Math.round(milliseconds)} ms`
+  : `${(milliseconds / 1000).toFixed(2)} s`
 
 const viewMode = ref<'batch' | 'exhibition'>('batch')
 // 公共递归开关：两个视图共享
@@ -27,6 +30,7 @@ const importing = ref(false)
 // 元数据视图首次访问后才挂载，避免初始页就预加载大组件
 const exhibitionMounted = ref(false)
 const videoInfoRef = ref<InstanceType<typeof VideoInfoView> | null>(null)
+const benchmarkingDetailed = ref(false)
 
 // 视图切换：batch→exhibition 时，若展览视图无数据但重命名视图有视频，
 // 自动用重命名视图的路径发起详细提取（缓存命中则秒开）
@@ -35,7 +39,7 @@ watch(viewMode, async (v) => {
     exhibitionMounted.value = true
     await nextTick()
     const vi = videoInfoRef.value
-    if (vi && !vi.hasData()) {
+    if (vi && !vi.hasData() && !benchmarkingDetailed.value) {
       const videoPaths = batch.videoRows.map(r => r.path).filter(Boolean)
       if (videoPaths.length) {
         vi.importByBatchPaths(videoPaths)
@@ -78,6 +82,39 @@ const handleImport = async (kind: PickKind) => {
     recursive.value = batch.recursive
   }
 }
+
+declare global {
+  interface Window {
+    __TOOLSBAG_MEDIA_BENCHMARK__?: (paths: string[], mode: 'light' | 'detailed', recursive: boolean) => Promise<void>
+  }
+}
+
+// 开发环境性能入口：自动化复测可直接触发完整 UI 数据流，无需模拟鼠标点击。
+if (import.meta.env.DEV) {
+  window.__TOOLSBAG_MEDIA_BENCHMARK__ = async (paths, mode, isRecursive) => {
+    recursive.value = isRecursive
+    if (mode === 'light') {
+      viewMode.value = 'batch'
+      batch.recursive = isRecursive
+      await batch.importPaths(paths, 'folder')
+      return
+    }
+
+    benchmarkingDetailed.value = true
+    try {
+      viewMode.value = 'exhibition'
+      exhibitionMounted.value = true
+      await nextTick()
+      await videoInfoRef.value?.importByPaths(paths, isRecursive)
+    } finally {
+      benchmarkingDetailed.value = false
+    }
+  }
+}
+
+onUnmounted(() => {
+  if (import.meta.env.DEV) delete window.__TOOLSBAG_MEDIA_BENCHMARK__
+})
 
 const statsCardData = computed(() => ({
   basic: batch.basicStats,
@@ -194,19 +231,75 @@ const handleInspect = async (path: string) => {
         />
       </div>
 
-      <div v-if="batch.importSummary" class="import-summary">
-        <el-alert
-          :title="`${t('导入完成')}：${batch.importSummary}`"
-          :type="batch.failedItems.length ? 'warning' : 'success'"
-          :closable="false"
-          show-icon
+      <div
+        v-if="batch.importSummary"
+        class="import-summary"
+        :class="{ 'has-failures': batch.importSummary.failed > 0 }"
+        aria-live="polite"
+      >
+        <div class="import-summary__status">
+          <el-icon :size="20">
+            <WarningFilled v-if="batch.importSummary.failed > 0" />
+            <CircleCheckFilled v-else />
+          </el-icon>
+          <div>
+            <strong>{{ t('导入完成') }}</strong>
+            <span>{{ t('共处理') }} {{ batch.importSummary.success + batch.importSummary.failed }} {{ t('个文件') }}</span>
+          </div>
+        </div>
+
+        <div class="import-summary__metric is-success">
+          <span>{{ t('成功') }}</span>
+          <strong>{{ batch.importSummary.success }}</strong>
+        </div>
+        <div class="import-summary__metric" :class="{ 'is-failure': batch.importSummary.failed > 0 }">
+          <span>{{ t('失败') }}</span>
+          <strong>{{ batch.importSummary.failed }}</strong>
+        </div>
+
+        <div class="import-summary__formats">
+          <div class="format-group">
+            <span class="format-group__label">{{ t('视频') }}</span>
+            <el-tag
+              v-for="format in batch.importSummary.videoFormats"
+              :key="`video-${format.ext}`"
+              size="small"
+              effect="plain"
+            >
+              {{ format.ext.toUpperCase() }} <b>{{ format.count }}</b>
+            </el-tag>
+            <span v-if="!batch.importSummary.videoFormats.length" class="format-group__empty">{{ t('无') }}</span>
+          </div>
+          <div class="format-group">
+            <span class="format-group__label">{{ t('图片') }}</span>
+            <el-tag
+              v-for="format in batch.importSummary.imageFormats"
+              :key="`image-${format.ext}`"
+              size="small"
+              effect="plain"
+              type="info"
+            >
+              {{ format.ext.toUpperCase() }} <b>{{ format.count }}</b>
+            </el-tag>
+            <span v-if="!batch.importSummary.imageFormats.length" class="format-group__empty">{{ t('无') }}</span>
+          </div>
+        </div>
+
+        <div class="import-summary__timing" :title="t('本次导入的实测耗时')">
+          <span>{{ t('元数据') }} <b>{{ formatElapsed(batch.importSummary.metadataMs) }}</b></span>
+          <span>{{ t('界面显示') }} <b>{{ formatElapsed(batch.importSummary.displayMs) }}</b></span>
+          <span>{{ t('总计') }} <b>{{ formatElapsed(batch.importSummary.totalMs) }}</b></span>
+        </div>
+
+        <el-button
+          v-if="batch.importSummary.failed > 0"
+          size="small"
+          type="warning"
+          plain
+          @click="batch.showFailedDialog = true"
         >
-          <template #default>
-            <el-button v-if="batch.failedItems.length" size="small" type="primary" plain @click="batch.showFailedDialog = true">
-              {{ t('查看失败列表') }}（{{ batch.failedItems.length }}）
-            </el-button>
-          </template>
-        </el-alert>
+          {{ t('查看失败列表') }}
+        </el-button>
       </div>
 
       <el-row :gutter="12" class="panels">
@@ -224,6 +317,11 @@ const handleInspect = async (path: string) => {
               v-model:file-type-tab="batch.fileTypeTab"
               :table-videos="batch.tableVideos"
               :table-images="batch.tableImages"
+              :video-total-count="batch.videoRows.length"
+              :available-video-formats="batch.availableVideoFormats"
+              :video-filters="batch.videoFilters"
+              :selected-video-paths="batch.selectedVideoPaths"
+              :video-filter-missing-count="batch.videoFilterMissingCount"
               :visible-video-columns="batch.visibleVideoColumns"
               :visible-image-columns="batch.visibleImageColumns"
               :show-preview="batch.showPreview"
@@ -233,6 +331,10 @@ const handleInspect = async (path: string) => {
               @remove="batch.handleRemove"
               @copy="batch.copyName"
               @open="batch.openFolder"
+              @toggleVideoSelection="batch.toggleVideoSelection"
+              @toggleAllVideoSelection="batch.toggleAllVideoSelection"
+              @updateVideoFilter="batch.updateVideoFilter"
+              @resetVideoFilters="batch.resetVideoFilters"
               @sortChange="batch.handleTableSortChange"
               @inspect="handleInspect"
             />
@@ -254,6 +356,7 @@ const handleInspect = async (path: string) => {
               :visible-image-columns="batch.visibleImageColumns"
               :show-preview="batch.showPreview"
               :rename-safety-summary="batch.renameSafetySummary"
+              :can-apply-rename="batch.canApplyRename"
               :can-undo-rename="batch.canUndoRename"
               :undo-stack-depth="batch.undoStackDepth"
               @update:durationFormat="(val) => (batch.durationFormat = val)"
@@ -455,7 +558,121 @@ const handleInspect = async (path: string) => {
   margin: 4px 0;
 }
 .import-summary {
-  margin-bottom: 4px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 52px;
+  padding: 8px 12px;
+  border: 1px solid color-mix(in srgb, var(--success) 28%, var(--border-secondary));
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--success) 6%, var(--bg-primary));
+  flex-shrink: 0;
+}
+.import-summary.has-failures {
+  border-color: color-mix(in srgb, var(--warning) 34%, var(--border-secondary));
+  background: color-mix(in srgb, var(--warning) 7%, var(--bg-primary));
+}
+.import-summary__status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 150px;
+  color: var(--success);
+}
+.has-failures .import-summary__status {
+  color: var(--warning);
+}
+.import-summary__status > div {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.import-summary__status strong {
+  color: var(--text-primary);
+  font-size: 13px;
+}
+.import-summary__status span {
+  color: var(--text-muted);
+  font-size: 10px;
+}
+.import-summary__metric {
+  display: grid;
+  grid-template-columns: auto auto;
+  align-items: baseline;
+  gap: 5px;
+  min-width: 56px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.import-summary__timing {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-left: 12px;
+  border-left: 1px solid var(--border-secondary);
+  color: var(--text-muted);
+  font-size: 10px;
+  white-space: nowrap;
+}
+.import-summary__timing b {
+  margin-left: 4px;
+  color: var(--text-primary);
+  font-size: 11px;
+}
+.import-summary__metric strong {
+  color: var(--text-secondary);
+  font-size: 18px;
+  line-height: 1;
+}
+.import-summary__metric.is-success strong {
+  color: var(--success);
+}
+.import-summary__metric.is-failure strong {
+  color: var(--warning);
+}
+.import-summary__formats {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+  padding-left: 14px;
+  border-left: 1px solid var(--border-secondary);
+}
+.format-group {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+.format-group__label {
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 600;
+}
+.format-group__empty {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.format-group :deep(.el-tag) {
+  border-radius: var(--radius-sm);
+  font-variant-numeric: tabular-nums;
+}
+.format-group :deep(.el-tag b) {
+  margin-left: 3px;
+  font-weight: 700;
+}
+@media (max-width: 1080px) {
+  .import-summary {
+    flex-wrap: wrap;
+    gap: 8px 12px;
+  }
+  .import-summary__formats {
+    order: 2;
+    width: 100%;
+    padding: 6px 0 0;
+    border-top: 1px solid var(--border-secondary);
+    border-left: 0;
+  }
 }
 .flow-progress__bar :deep(.el-progress-bar__inner) {
   background: linear-gradient(90deg, #818CF8, #6366F1, #818CF8);

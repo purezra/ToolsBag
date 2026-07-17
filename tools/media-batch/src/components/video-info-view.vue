@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, shallowRef } from 'vue'
+import { computed, onMounted, onUnmounted, ref, shallowRef, watch } from 'vue'
 import { Grid, List, Filter, Download, Coin } from '@element-plus/icons-vue'
 import { listen } from '@tauri-apps/api/event'
 import { hasTauriRuntime } from '@core/utils/tauri'
@@ -9,6 +9,7 @@ import VideoInfoDetailCard from './video-info-detail-card.vue'
 import { useVideoInfoHealth } from '../composables/useVideoInfoHealth'
 import { useVideoInfoColumns } from '../composables/useVideoInfoColumns'
 import { useVideoInfoActions, type ExportFormat } from '../composables/useVideoInfoActions'
+import { paginateRows } from '../utils/media-utils'
 import type { DisplayLevel, VideoInfoItem } from '../types/media'
 import type { VideoRecordRow } from '../api/video-db'
 
@@ -32,6 +33,11 @@ const viewMode = ref<'card' | 'table'>('table')
 const emptyColMode = ref<'right' | 'hide'>('right')
 const highlightDiff = ref(false)
 const groupBy = ref<'none' | 'resolution' | 'resolutionTier' | 'orientation' | 'codec' | 'hdr' | 'bitDepth' | 'format' | 'frameRate'>('none')
+const RESULT_PAGE_SIZE = 50
+const resultPage = ref(1)
+const formatElapsed = (milliseconds: number) => milliseconds < 1000
+  ? `${Math.round(milliseconds)} ms`
+  : `${(milliseconds / 1000).toFixed(2)} s`
 
 // ==================== Composable: 体检 ====================
 const health = useVideoInfoHealth(items)
@@ -84,6 +90,7 @@ const actions = useVideoInfoActions(items, {
 })
 const {
   importing, importProgress,
+  lastImportTiming,
   saving, saveProgress, handleSaveToDb,
   handleClear, handleAddToRename,
   historyCount, openHistory, historyVisible,
@@ -94,6 +101,31 @@ const {
   outputModeDialogVisible, outputMode, confirmOutputMode, exportData,
   successCount, failedCount, refreshHistoryCount,
 } = actions
+
+const flatPagination = computed(() => paginateRows(flatTableData.value, resultPage.value, RESULT_PAGE_SIZE))
+const cardPagination = computed(() => paginateRows(filteredItems.value, resultPage.value, RESULT_PAGE_SIZE))
+const resultTotal = computed(() => viewMode.value === 'card' ? filteredItems.value.length : flatTableData.value.length)
+const pagedGroupedTableData = computed(() => {
+  let remainingStart = (flatPagination.value.page - 1) * RESULT_PAGE_SIZE
+  let remainingCount = RESULT_PAGE_SIZE
+  const pageGroups = []
+
+  for (const group of groupedTableData.value) {
+    if (remainingCount <= 0) break
+    if (remainingStart >= group.rows.length) {
+      remainingStart -= group.rows.length
+      continue
+    }
+    const rows = group.rows.slice(remainingStart, remainingStart + remainingCount)
+    pageGroups.push({ ...group, rows })
+    remainingCount -= rows.length
+    remainingStart = 0
+  }
+  return pageGroups
+})
+
+watch(flatTableData, () => { resultPage.value = 1 })
+watch([viewMode, groupBy], () => { resultPage.value = 1 })
 
 // ==================== 展开/收起 ====================
 const toggleExpand = (id: number) => {
@@ -263,11 +295,16 @@ defineExpose({
       <el-tag type="success" size="small">{{ t('成功') }} {{ successCount }}</el-tag>
       <el-tag v-if="failedCount" type="danger" size="small">{{ t('失败') }} {{ failedCount }}</el-tag>
       <span class="summary-text">{{ importSummary }}</span>
+      <span v-if="lastImportTiming" class="summary-timing">
+        {{ lastImportTiming.cached ? t('会话缓存') : t('元数据') }} {{ formatElapsed(lastImportTiming.metadataMs) }}
+        · {{ t('界面显示') }} {{ formatElapsed(lastImportTiming.displayMs) }}
+        · {{ t('总计') }} {{ formatElapsed(lastImportTiming.totalMs) }}
+      </span>
     </div>
 
     <!-- 卡片视图 -->
     <div v-if="viewMode === 'card' && items.length" class="card-list">
-      <div v-for="item in filteredItems" :key="item.id" class="health-card-wrapper">
+      <div v-for="item in cardPagination.rows" :key="item.id" class="health-card-wrapper">
         <div v-if="getHealthIssues(item.id).length" class="health-issues-row">
           <el-tag
             v-for="issue in getHealthIssues(item.id)"
@@ -314,7 +351,7 @@ defineExpose({
     <!-- 表格视图：无归类 -->
     <div v-else-if="viewMode === 'table' && groupBy === 'none'" class="table-wrapper" :ref="(el: any) => observeTableContainer(el?.$el || el)">
       <el-table
-        :data="flatTableData"
+        :data="flatPagination.rows"
         size="small"
         class="info-table"
         row-key="id"
@@ -326,7 +363,7 @@ defineExpose({
         <el-table-column width="60" align="center" resizable>
           <template #header><span>{{ t('序号') }}</span></template>
           <template #default="{ $index, row }">
-            <span :class="{ 'idx-success': row.status === 'success', 'idx-error': row.status !== 'success' }">{{ $index + 1 }}</span>
+            <span :class="{ 'idx-success': row.status === 'success', 'idx-error': row.status !== 'success' }">{{ (flatPagination.page - 1) * RESULT_PAGE_SIZE + $index + 1 }}</span>
           </template>
         </el-table-column>
 
@@ -426,7 +463,7 @@ defineExpose({
 
     <!-- 表格视图：按归类分组 -->
     <div v-else-if="viewMode === 'table'" class="grouped-table-wrapper" :ref="(el: any) => observeTableContainer(el?.$el || el)">
-      <div v-for="group in groupedTableData" :key="group.label" class="group-section">
+      <div v-for="group in pagedGroupedTableData" :key="group.label" class="group-section">
         <div class="group-header">
           <span class="group-label">{{ group.label }}</span>
           <el-tag size="small" type="info">{{ group.count }} {{ t('个') }}</el-tag>
@@ -541,6 +578,18 @@ defineExpose({
           </el-table-column>
         </el-table>
       </div>
+    </div>
+
+    <div v-if="resultTotal > RESULT_PAGE_SIZE" class="result-pagination">
+      <el-pagination
+        :current-page="flatPagination.page"
+        :page-size="RESULT_PAGE_SIZE"
+        :total="resultTotal"
+        layout="total, prev, pager, next"
+        small
+        background
+        @update:current-page="(page: number) => (resultPage = page)"
+      />
     </div>
 
     <!-- 入库进度 -->
@@ -750,6 +799,18 @@ defineExpose({
   word-break: break-all;
   white-space: normal;
   line-height: 1.5;
+}
+.result-pagination {
+  display: flex;
+  justify-content: flex-end;
+  padding: 2px 4px;
+  flex-shrink: 0;
+}
+.summary-timing {
+  margin-left: auto;
+  color: var(--text-muted);
+  font-size: 11px;
+  white-space: nowrap;
 }
 .name-wrap {
   display: inline-block;

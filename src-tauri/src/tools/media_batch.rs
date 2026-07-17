@@ -7,25 +7,61 @@ use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
-    fs::File,
-    io::BufReader,
+    fs::{File, OpenOptions},
+    io::{BufReader, Write},
     path::{Path, PathBuf},
     sync::atomic::{AtomicUsize, Ordering},
 };
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 use tauri_plugin_clipboard_manager::ClipboardExt;
 use tauri_plugin_dialog::DialogExt;
 use uuid::Uuid;
 use walkdir::WalkDir;
 
-#[cfg(target_os = "windows")]
-use std::os::windows::process::CommandExt;
-
-#[cfg(target_os = "windows")]
-const CREATE_NO_WINDOW: u32 = 0x08000000;
-
 const MAX_SCAN_FILES: usize = 50_000;
 const MAX_SCAN_DEPTH: usize = 32;
+
+#[derive(Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MediaPerformanceRecord {
+    mode: String,
+    input_count: usize,
+    total: usize,
+    success: usize,
+    failed: usize,
+    metadata_ms: f64,
+    display_ms: f64,
+    total_ms: f64,
+    cached: bool,
+}
+
+#[tauri::command]
+pub fn record_media_performance(
+    app: AppHandle,
+    record: MediaPerformanceRecord,
+) -> Result<String, String> {
+    let dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| error.to_string())?;
+    std::fs::create_dir_all(&dir).map_err(|error| error.to_string())?;
+    let path = dir.join("media-performance.jsonl");
+    let mut file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+        .map_err(|error| error.to_string())?;
+    let recorded_at_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|error| error.to_string())?
+        .as_millis();
+    let entry = serde_json::json!({
+        "recordedAtMs": recorded_at_ms,
+        "record": record,
+    });
+    writeln!(file, "{}", entry).map_err(|error| error.to_string())?;
+    Ok(path.to_string_lossy().to_string())
+}
 
 /// 解析 MediaInfo 输出的码率字符串（如 "10.0 Mbps"、"320 kb/s"）为 Mbps 数值
 fn parse_bitrate_to_mbps(s: &str) -> Option<f64> {
@@ -36,9 +72,7 @@ fn parse_bitrate_to_mbps(s: &str) -> Option<f64> {
     if let Some(rest) = s.strip_suffix("Mbps") {
         return rest.trim().parse::<f64>().ok();
     }
-    let (kb_suffix, kb_len) = if s.ends_with("kb/s") {
-        (true, 4)
-    } else if s.ends_with("Kbps") {
+    let (kb_suffix, kb_len) = if s.ends_with("kb/s") || s.ends_with("Kbps") {
         (true, 4)
     } else {
         (false, 0)
@@ -81,6 +115,7 @@ pub struct MediaItem {
     pub width: Option<u32>,
     pub height: Option<u32>,
     pub bitrate_mbps: Option<f64>,
+    pub arrival_time_ms: Option<u64>,
     pub device: Option<String>,
     pub taken_at: Option<String>,
     pub focal_length: Option<String>,
@@ -92,16 +127,6 @@ pub struct MediaItem {
 #[serde(rename_all = "camelCase")]
 pub struct MediaInfoStatus {
     pub available: bool,
-    pub path: Option<String>,
-}
-
-/// 外部工具状态
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ExternalToolStatus {
-    pub name: String,
-    pub available: bool,
-    pub version: Option<String>,
     pub path: Option<String>,
 }
 
@@ -235,6 +260,7 @@ fn import_media_inner(
                     width: None,
                     height: None,
                     bitrate_mbps: None,
+                    arrival_time_ms: None,
                     device: None,
                     taken_at: None,
                     focal_length: None,
@@ -353,16 +379,24 @@ fn build_format_counts(paths: &[PathBuf]) -> Vec<FormatCount> {
 fn build_media_item(idx: u64, path: &Path) -> AppResult<MediaItem> {
     let path_str = path.to_string_lossy().to_string();
     let md = std::fs::metadata(path)?;
+    let created_ms = md
+        .created()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_millis() as u64);
     let mtime_ms = md
         .modified()
         .ok()
         .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
         .map(|d| d.as_millis() as u64);
+    let arrival_time_ms = created_ms.into_iter().chain(mtime_ms).max();
 
-    // 缓存命中则直接返回
+    // 缓存命中则直接返回（覆盖缓存中的旧 id）
     if let Some(mtime) = mtime_ms {
         if let Some(cached) = media_cache::get_cached_item(&path_str, mtime) {
-            if let Ok(item) = serde_json::from_value::<MediaItem>(cached) {
+            if let Ok(mut item) = serde_json::from_value::<MediaItem>(cached) {
+                item.id = idx;
+                item.arrival_time_ms = arrival_time_ms;
                 return Ok(item);
             }
         }
@@ -389,6 +423,7 @@ fn build_media_item(idx: u64, path: &Path) -> AppResult<MediaItem> {
             width,
             height,
             bitrate_mbps: bitrate,
+            arrival_time_ms,
             device: None,
             taken_at: None,
             focal_length: None,
@@ -408,6 +443,7 @@ fn build_media_item(idx: u64, path: &Path) -> AppResult<MediaItem> {
             width,
             height,
             bitrate_mbps: None,
+            arrival_time_ms,
             device,
             taken_at,
             focal_length,
@@ -418,9 +454,9 @@ fn build_media_item(idx: u64, path: &Path) -> AppResult<MediaItem> {
 
     // 写入缓存
     if let Some(mtime) = mtime_ms {
-        serde_json::to_value(&item)
-            .ok()
-            .map(|v| media_cache::set_cached_item(&path_str, mtime, &v));
+        if let Ok(value) = serde_json::to_value(&item) {
+            media_cache::set_cached_item(&path_str, mtime, &value);
+        }
     }
 
     Ok(item)
@@ -433,7 +469,15 @@ fn probe_video(path: &Path) -> VideoProbeResult {
     }
     let meta = match mediainfo::get_video_meta(path) {
         Some(m) => m,
-        None => return (None, None, None, None, Some("MediaInfo 提取失败".to_string())),
+        None => {
+            return (
+                None,
+                None,
+                None,
+                None,
+                Some("MediaInfo 提取失败".to_string()),
+            )
+        }
     };
     let duration = if meta.duration_ms > 0 {
         Some(meta.duration_ms as f64 / 1000.0)
@@ -445,18 +489,31 @@ fn probe_video(path: &Path) -> VideoProbeResult {
     } else {
         None
     };
-    (
-        duration,
-        Some(meta.width),
-        Some(meta.height),
-        bitrate,
-        None,
-    )
+    (duration, Some(meta.width), Some(meta.height), bitrate, None)
 }
 
 /// 图片轻量提取：MediaInfo get_image_meta + kamadak-exif 补充 device/takenAt/focalLength
 fn probe_image(path: &Path) -> ImageProbeResult {
-    // 优先用 MediaInfo 获取 width/height
+    // 常见位图格式用纯 Rust image crate 直接读头部尺寸：无 FFI、无完整报告生成，
+    // 显著快于 MediaInfo，批量导入图片提速明显。HEIC/HEIF 等 image crate 无法解码
+    // 尺寸的格式回退到 MediaInfo。
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_ascii_lowercase())
+        .unwrap_or_default();
+    let image_crate_supported = matches!(
+        ext.as_str(),
+        "jpg" | "jpeg" | "png" | "gif" | "bmp" | "tiff" | "tif" | "webp"
+    );
+    if image_crate_supported {
+        if let Ok((w, h)) = image::image_dimensions(path) {
+            let (device, taken_at, focal_length) = read_exif(path);
+            return (Some(w), Some(h), device, taken_at, focal_length, None);
+        }
+    }
+
+    // MediaInfo（HEIC/HEIF 或上面读取失败时）
     if mediainfo::is_mediainfo_available() {
         if let Some(img_meta) = mediainfo::get_image_meta(path) {
             // 用 kamadak-exif 补充 EXIF 字段
@@ -568,55 +625,95 @@ fn import_detailed_video_info_inner(
         .par_iter()
         .enumerate()
         .map(|(idx, path)| {
-            let name = path
-                .file_name()
-                .map(|s| s.to_string_lossy().to_string())
-                .unwrap_or_else(|| "unknown".into());
+            let path_str = path.to_string_lossy().to_string();
             let md = std::fs::metadata(path).ok();
-            let size = md.map(|m| m.len()).unwrap_or(0);
+            let size = md.as_ref().map(|m| m.len()).unwrap_or(0);
+            let mtime_ms = md
+                .as_ref()
+                .and_then(|m| m.modified().ok())
+                .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|duration| duration.as_millis() as u64);
+            let cache_key = format!("detailed:{}", path_str);
 
-            let detail = mediainfo::get_detailed_video_meta(path);
+            let item = mtime_ms
+                .and_then(|mtime| media_cache::get_cached_item(&cache_key, mtime))
+                .and_then(|value| serde_json::from_value::<VideoInfoItem>(value).ok())
+                .map(|mut cached| {
+                    cached.id = idx as u64;
+                    cached
+                })
+                .unwrap_or_else(|| {
+                    let name = path
+                        .file_name()
+                        .map(|s| s.to_string_lossy().to_string())
+                        .unwrap_or_else(|| "unknown".into());
+                    let detail = mediainfo::get_detailed_video_meta(path)
+                        .or_else(|| mediainfo::get_detailed_video_meta(path));
 
-            // 从 detail 派生扁平字段
-            let (duration_sec, width, height, bitrate_mbps, codec, frame_rate) =
-                if let Some(ref d) = detail {
-                    let dur = if d.general.duration_ms > 0 {
-                        Some(d.general.duration_ms as f64 / 1000.0)
-                    } else {
-                        d.video_streams.first().and_then(|s| {
-                            if s.duration_ms > 0 { Some(s.duration_ms as f64 / 1000.0) } else { None }
-                        })
+                    // 从 detail 派生扁平字段
+                    let (duration_sec, width, height, bitrate_mbps, codec, frame_rate) =
+                        if let Some(ref d) = detail {
+                            let dur = if d.general.duration_ms > 0 {
+                                Some(d.general.duration_ms as f64 / 1000.0)
+                            } else {
+                                d.video_streams.first().and_then(|s| {
+                                    if s.duration_ms > 0 {
+                                        Some(s.duration_ms as f64 / 1000.0)
+                                    } else {
+                                        None
+                                    }
+                                })
+                            };
+                            let vs = d.video_streams.first();
+                            let br = parse_bitrate_to_mbps(&d.general.overall_bit_rate)
+                                .or_else(|| vs.and_then(|s| parse_bitrate_to_mbps(&s.bit_rate)));
+                            let fr = vs.and_then(|s| {
+                                if s.frame_rate.is_empty() || s.frame_rate == "-" {
+                                    None
+                                } else {
+                                    Some(s.frame_rate.clone())
+                                }
+                            });
+                            (
+                                dur,
+                                vs.map(|s| s.width),
+                                vs.map(|s| s.height),
+                                br,
+                                vs.map(|s| s.codec.clone()),
+                                fr,
+                            )
+                        } else {
+                            (None, None, None, None, None, None)
+                        };
+
+                    let item = VideoInfoItem {
+                        id: idx as u64,
+                        name,
+                        path: path_str.clone(),
+                        size,
+                        status: if detail.is_some() { "success" } else { "error" }.to_string(),
+                        reason: if detail.is_none() {
+                            Some("无法解析视频元数据".to_string())
+                        } else {
+                            None
+                        },
+                        detail,
+                        duration_sec,
+                        width,
+                        height,
+                        bitrate_mbps,
+                        codec,
+                        frame_rate,
                     };
-                    let vs = d.video_streams.first();
-                    let br = parse_bitrate_to_mbps(&d.general.overall_bit_rate)
-                        .or_else(|| vs.and_then(|s| parse_bitrate_to_mbps(&s.bit_rate)));
-                    let fr = vs.and_then(|s| {
-                        if s.frame_rate.is_empty() || s.frame_rate == "-" { None } else { Some(s.frame_rate.clone()) }
-                    });
-                    (dur, vs.map(|s| s.width), vs.map(|s| s.height), br, vs.map(|s| s.codec.clone()), fr)
-                } else {
-                    (None, None, None, None, None, None)
-                };
 
-            let item = VideoInfoItem {
-                id: idx as u64,
-                name,
-                path: path.to_string_lossy().to_string(),
-                size,
-                status: if detail.is_some() { "success" } else { "error" }.to_string(),
-                reason: if detail.is_none() {
-                    Some("无法解析视频元数据".to_string())
-                } else {
-                    None
-                },
-                detail,
-                duration_sec,
-                width,
-                height,
-                bitrate_mbps,
-                codec,
-                frame_rate,
-            };
+                    // 失败项不缓存，后续导入仍会重试解析。
+                    if item.status == "success" {
+                        if let (Some(mtime), Ok(value)) = (mtime_ms, serde_json::to_value(&item)) {
+                            media_cache::set_cached_item(&cache_key, mtime, &value);
+                        }
+                    }
+                    item
+                });
 
             let done = progress.fetch_add(1, Ordering::Relaxed) + 1;
             if done == total || done % 10 == 0 {
