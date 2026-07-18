@@ -436,7 +436,7 @@ fn unique_output_path(
     dir: &Path,
     stem: &str,
     ext: &str,
-    reserved: &mut HashSet<PathBuf>,
+    reserved: &mut HashSet<String>,
 ) -> PathBuf {
     for i in 0..10_000 {
         let file_name = if i == 0 {
@@ -445,7 +445,12 @@ fn unique_output_path(
             format!("{stem} ({i}).{ext}")
         };
         let p = dir.join(file_name);
-        if !p.exists() && reserved.insert(p.clone()) {
+        let key = if cfg!(windows) {
+            p.to_string_lossy().to_lowercase()
+        } else {
+            p.to_string_lossy().into_owned()
+        };
+        if !p.exists() && reserved.insert(key) {
             return p;
         }
     }
@@ -458,7 +463,7 @@ fn plan_outputs(
 ) -> Result<Vec<PlannedOutput>, String> {
     let out_dir = PathBuf::from(&config.output_dir);
     std::fs::create_dir_all(&out_dir).map_err(|e| format!("创建输出目录失败: {e}"))?;
-    let mut reserved = HashSet::<PathBuf>::new();
+    let mut reserved = HashSet::<String>::new();
     Ok(files
         .into_iter()
         .map(|input| {
@@ -966,4 +971,27 @@ pub async fn compress_images(
     })
     .await
     .map_err(|e| format!("task join error: {e}"))?
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[cfg(windows)]
+    #[test]
+    fn output_planning_avoids_case_insensitive_collisions() {
+        let dir = std::env::temp_dir().join(format!(
+            "toolsbag-output-plan-{}",
+            uuid::Uuid::new_v4()
+        ));
+        let mut reserved = HashSet::new();
+
+        let first = unique_output_path(&dir, "Photo", "jxl", &mut reserved);
+        let second = unique_output_path(&dir, "photo", "jxl", &mut reserved);
+
+        assert_ne!(
+            first.to_string_lossy().to_lowercase(),
+            second.to_string_lossy().to_lowercase()
+        );
+    }
 }

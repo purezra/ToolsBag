@@ -1,5 +1,5 @@
 ﻿<script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { listen } from '@tauri-apps/api/event'
 import { ElMessage } from 'element-plus'
 import { FolderOpened, Upload as UploadIcon, MagicStick, Document } from '@element-plus/icons-vue'
@@ -41,6 +41,15 @@ const noteVisible = ref(false)
 const noteContent = ref('')
 const noteLoading = ref(false)
 let unlistenProgress: (() => void) | null = null
+
+const invalidateImportedState = () => {
+  files.value = []
+  problemLog.value = ''
+  progress.value = null
+  resultInfo.value = null
+}
+
+watch([inputDir, recursive], invalidateImportedState)
 
 const pickFolder = async (target: 'input' | 'output') => {
   const paths = await pick('folder')
@@ -203,10 +212,7 @@ const showImportStats = () => {
 }
 
 const clearList = () => {
-  files.value = []
-  problemLog.value = ''
-  progress.value = null
-  resultInfo.value = null
+  invalidateImportedState()
   ElMessage.success(t('列表已清空'))
 }
 
@@ -244,17 +250,17 @@ onBeforeUnmount(() => {
   <div class="image-batch-tool">
     <!-- 顶部操作栏：路径输入 + 主操作 -->
     <div class="tb-toolbar image-batch-toolbar">
-      <el-input v-model="inputDir" :placeholder="t('选择包含图片的文件夹')" class="tb-toolbar__grow">
+      <el-input v-model="inputDir" :placeholder="t('选择包含图片的文件夹')" :disabled="listLoading || running" class="tb-toolbar__grow">
         <template #append>
-          <el-button :icon="FolderOpened" @click="pickFolder('input')">{{ t('浏览') }}</el-button>
+          <el-button :icon="FolderOpened" :disabled="listLoading || running" @click="pickFolder('input')">{{ t('浏览') }}</el-button>
         </template>
       </el-input>
-      <el-button :icon="UploadIcon" @click="pastePath">{{ t('粘贴') }}</el-button>
-      <el-checkbox v-model="recursive">{{ t('递归') }}</el-checkbox>
-      <el-button type="primary" :icon="MagicStick" :loading="listLoading" @click="importList">
+      <el-button :icon="UploadIcon" :disabled="listLoading || running" @click="pastePath">{{ t('粘贴') }}</el-button>
+      <el-checkbox v-model="recursive" :disabled="listLoading || running">{{ t('递归') }}</el-checkbox>
+      <el-button type="primary" :icon="MagicStick" :loading="listLoading" :disabled="running" @click="importList">
         {{ t('导入列表') }}
       </el-button>
-      <el-button type="success" :loading="running" @click="runConvert">{{ t('开始转换') }}</el-button>
+      <el-button type="success" :loading="running" :disabled="listLoading" @click="runConvert">{{ t('开始转换') }}</el-button>
       <el-button @click="clearList">{{ t('清空') }}</el-button>
       <span class="tb-toolbar__hint">
         <el-link type="info" :icon="Document" @click="openNote">{{ t('说明') }}</el-link>

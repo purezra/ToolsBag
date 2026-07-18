@@ -413,6 +413,7 @@ fn build_media_item(idx: u64, path: &Path) -> AppResult<MediaItem> {
     let item = if media_type == MediaType::Video {
         // 轻量提取：只取重命名需要的扁平字段
         let (duration, width, height, bitrate, err) = probe_video(path);
+        let status = if err.is_some() { "error" } else { "success" };
         MediaItem {
             id: idx,
             name,
@@ -427,12 +428,13 @@ fn build_media_item(idx: u64, path: &Path) -> AppResult<MediaItem> {
             device: None,
             taken_at: None,
             focal_length: None,
-            status: "success".to_string(),
+            status: status.to_string(),
             reason: err,
         }
     } else {
         // 图片：MediaInfo 轻量提取 + kamadak-exif 补充
         let (width, height, device, taken_at, focal_length, err) = probe_image(path);
+        let status = if err.is_some() { "error" } else { "success" };
         MediaItem {
             id: idx,
             name,
@@ -447,7 +449,7 @@ fn build_media_item(idx: u64, path: &Path) -> AppResult<MediaItem> {
             device,
             taken_at,
             focal_length,
-            status: "success".to_string(),
+            status: status.to_string(),
             reason: err,
         }
     };
@@ -798,4 +800,24 @@ pub async fn get_video_xml_markdown(path: String) -> Result<Option<String>, Stri
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn invalid_image_is_reported_as_failed_import() {
+        let path = std::env::temp_dir().join(format!(
+            "toolsbag-invalid-image-{}.png",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::write(&path, b"not an image").unwrap();
+
+        let item = build_media_item(0, &path).unwrap();
+
+        assert_eq!(item.status, "error");
+        assert!(item.reason.is_some());
+        let _ = std::fs::remove_file(path);
+    }
 }

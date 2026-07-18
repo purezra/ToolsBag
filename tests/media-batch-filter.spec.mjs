@@ -6,6 +6,7 @@ import * as mediaUtils from '../tools/media-batch/src/utils/media-utils.ts'
 const evaluate = mediaUtils.evaluateVideoFilter
 const splitMediaFormatCounts = mediaUtils.splitMediaFormatCounts
 const paginateRows = mediaUtils.paginateRows
+const buildDurationBuckets = mediaUtils.buildDurationBuckets
 const now = Date.UTC(2026, 6, 9, 12)
 
 const filters = (overrides = {}) => ({
@@ -124,4 +125,17 @@ test('paginates large media lists and clamps stale page numbers', () => {
     pageCount: 1,
     rows: [],
   })
+})
+
+test('counts videos over 60 minutes only in the 60min+ bucket', () => {
+  const buckets = buildDurationBuckets([60, 3599, 3600, 3700])
+
+  assert.equal(buckets.reduce((sum, bucket) => sum + bucket.count, 0), 4)
+  assert.deepEqual(buckets.at(-1), {
+    label: '60min+',
+    min: 3600,
+    max: Infinity,
+    count: 2,
+  })
+  assert.equal(buckets.some((bucket) => bucket.label === '60-65min'), false)
 })

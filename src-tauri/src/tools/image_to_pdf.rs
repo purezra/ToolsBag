@@ -27,8 +27,8 @@ use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::ffi::OsStr;
-use std::fs::File;
-use std::io::{BufReader, BufWriter, Cursor, Read};
+use std::fs::{File, OpenOptions};
+use std::io::{BufReader, BufWriter, Cursor, Read, Write};
 use std::path::{Path, PathBuf};
 use tauri::Emitter;
 use tiff::decoder::{Decoder as TiffDecoder, DecodingResult as TiffDecodingResult};
@@ -2053,6 +2053,50 @@ fn process_all(
     Ok((collected, processed_bytes, warnings))
 }
 
+fn sibling_work_path(output_path: &Path, marker: &str) -> PathBuf {
+    let name = output_path
+        .file_name()
+        .and_then(OsStr::to_str)
+        .unwrap_or("output.pdf");
+    output_path.with_file_name(format!(
+        ".{name}.{marker}-{}",
+        uuid::Uuid::new_v4()
+    ))
+}
+
+fn commit_output_file(temp_path: &Path, output_path: &Path) -> Result<(), String> {
+    if !output_path.exists() {
+        return std::fs::rename(temp_path, output_path).map_err(|error| {
+            let _ = std::fs::remove_file(temp_path);
+            format!("提交 PDF 失败: {error}")
+        });
+    }
+
+    let backup_path = sibling_work_path(output_path, "backup");
+    if let Err(error) = std::fs::rename(output_path, &backup_path) {
+        let _ = std::fs::remove_file(temp_path);
+        return Err(format!("备份原 PDF 失败: {error}"));
+    }
+
+    match std::fs::rename(temp_path, output_path) {
+        Ok(()) => {
+            let _ = std::fs::remove_file(backup_path);
+            Ok(())
+        }
+        Err(error) => {
+            let restore = std::fs::rename(&backup_path, output_path);
+            let _ = std::fs::remove_file(temp_path);
+            match restore {
+                Ok(()) => Err(format!("提交 PDF 失败，原文件已恢复: {error}")),
+                Err(restore_error) => Err(format!(
+                    "提交 PDF 失败且无法恢复原文件；备份保留在 {}: {error}; {restore_error}",
+                    backup_path.display()
+                )),
+            }
+        }
+    }
+}
+
 fn write_pdf(
     pages_per_image: &[Vec<PreparedPage>],
     output_path: &Path,
@@ -2098,10 +2142,30 @@ fn write_pdf(
     if let Some(parent) = output_path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
-    let file = File::create(output_path).map_err(|e| e.to_string())?;
+    let temp_path = sibling_work_path(output_path, "tmp");
+    let file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&temp_path)
+        .map_err(|e| e.to_string())?;
     let mut writer = BufWriter::new(file);
-    doc.save(&mut writer)
-        .map_err(|e| format!("保存PDF失败: {}", e))?;
+    if let Err(error) = doc
+        .save(&mut writer)
+        .map_err(|e| format!("保存PDF失败: {e}"))
+        .and_then(|_| writer.flush().map_err(|e| format!("刷新PDF失败: {e}")))
+        .and_then(|_| {
+            writer
+                .get_ref()
+                .sync_all()
+                .map_err(|e| format!("同步PDF失败: {e}"))
+        })
+    {
+        drop(writer);
+        let _ = std::fs::remove_file(temp_path);
+        return Err(error);
+    }
+    drop(writer);
+    commit_output_file(&temp_path, output_path)?;
 
     Ok(std::fs::metadata(output_path).map(|m| m.len()).unwrap_or(0))
 }
@@ -2976,5 +3040,24 @@ mod tests {
         // 1080x1350 竖图 → 非长图
         let portrait = sample_image(1080, 1350);
         assert!(!portrait.is_long_image);
+    }
+
+    #[test]
+    fn completed_temp_pdf_replaces_existing_output() {
+        let dir = std::env::temp_dir().join(format!(
+            "toolsbag-pdf-commit-{}",
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let output = dir.join("output.pdf");
+        let temp = dir.join("output.tmp");
+        std::fs::write(&output, b"old pdf").unwrap();
+        std::fs::write(&temp, b"new pdf").unwrap();
+
+        commit_output_file(&temp, &output).unwrap();
+
+        assert_eq!(std::fs::read(&output).unwrap(), b"new pdf");
+        assert!(!temp.exists());
+        let _ = std::fs::remove_dir_all(dir);
     }
 }

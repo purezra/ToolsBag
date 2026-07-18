@@ -470,6 +470,7 @@ const DistCard = defineComponent({
 const pathInput = ref('')
 const recursive = ref(false)
 const analysis = ref<FolderAnalysis | null>(null)
+const analysisSourceKey = ref('')
 const previewData = ref<PreviewData | null>(null)
 const loading = ref(false)
 const generating = ref(false)
@@ -517,7 +518,10 @@ const marginError = computed(() => {
 })
 
 const canGenerate = computed(
-  () => analysis.value && analysis.value.images.length > 0 && !marginError.value,
+  () => analysis.value
+    && analysisSourceKey.value === `${pathInput.value.trim()}\u0000${recursive.value}`
+    && analysis.value.images.length > 0
+    && !marginError.value,
 )
 
 const progressPercent = computed(() => {
@@ -726,6 +730,7 @@ async function analyzeFolderAction() {
   if (!p) return
 
   loading.value = true
+  analysisSourceKey.value = ''
   result.value = null
   thumbnails.value.clear()
   loadingThumbnails.value.clear()
@@ -742,6 +747,7 @@ async function analyzeFolderAction() {
       settings.value.fixedOrientation = analysis.value.suggested_orientation as FixedOrientation
     }
     await updatePreview()
+    analysisSourceKey.value = `${pathInput.value.trim()}\u0000${recursive.value}`
   } catch (e: any) {
     ElMessage.error(t('分析失败') + ': ' + (e?.message || e))
     analysis.value = null

@@ -48,6 +48,8 @@ export const IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'tiff', 'we
 
 export type MediaFormatCount = { ext: string; count: number }
 
+export type DurationBucket = { label: string; min: number; max: number; count: number }
+
 export const splitMediaFormatCounts = (formatCounts: MediaFormatCount[]) => {
   const sorted = [...formatCounts].sort((a, b) => b.count - a.count || a.ext.localeCompare(b.ext))
   return {
@@ -66,6 +68,27 @@ export const paginateRows = <T>(rows: T[], requestedPage: number, pageSize: numb
     pageCount,
     rows: rows.slice(start, start + safePageSize),
   }
+}
+
+export const buildDurationBuckets = (durations: number[]): DurationBucket[] => {
+  const stepSeconds = 5 * 60
+  const valid = durations.filter((duration) => Number.isFinite(duration) && duration >= 0)
+  const maxShortDuration = Math.min(valid.reduce((max, duration) => Math.max(max, duration), 0), 3600)
+  const steps = Math.max(1, Math.ceil(maxShortDuration / stepSeconds))
+  const buckets = Array.from({ length: steps }, (_, index) => {
+    const min = index * stepSeconds
+    const max = min + stepSeconds
+    return {
+      label: `${index * 5}-${(index + 1) * 5}min`,
+      min,
+      max,
+      count: valid.filter((duration) => duration >= min && duration < max).length,
+    }
+  }).filter(({ count }) => count > 0)
+
+  const longCount = valid.filter((duration) => duration >= 3600).length
+  if (longCount > 0) buckets.push({ label: '60min+', min: 3600, max: Infinity, count: longCount })
+  return buckets
 }
 
 const durationMultiplier: Record<DurationUnit, number> = {

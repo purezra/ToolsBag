@@ -7,6 +7,7 @@ import { openParentDir, pathExists, renamePath } from '@core/api/common'
 import { formatBytes, formatDuration, type DurationFormat } from '@core/utils/format'
 import {
   compareByOrder,
+  buildDurationBuckets,
   evaluateVideoFilter,
   splitMediaFormatCounts,
   VIDEO_EXTENSIONS,
@@ -449,37 +450,8 @@ const useMediaBatchImpl = () => {
   })
 
   const durationBuckets = computed(() => {
-    const STEP_SECONDS = 5 * 60
     const successVideos = videoRows.value.filter((item) => item.status === 'success')
-    const maxDuration = successVideos.reduce((acc, item) => Math.max(acc, item.durationSec || 0), 0)
-    const steps = Math.max(1, Math.ceil(maxDuration / STEP_SECONDS))
-
-    const ranges = Array.from({ length: steps }, (_, idx) => {
-      const min = idx * STEP_SECONDS
-      const max = min + STEP_SECONDS
-      return {
-        label: `${idx * 5}-${(idx + 1) * 5}min`,
-        min,
-        max
-      }
-    })
-
-    const buckets = ranges
-      .map((range) => ({
-        ...range,
-        count: successVideos.filter((item) => {
-          const duration = item.durationSec || 0
-          return duration >= range.min && duration < range.max
-        }).length
-      }))
-      .filter((range) => range.count > 0)
-
-    const longCount = successVideos.filter((item) => (item.durationSec || 0) >= 3600).length
-    if (longCount > 0) {
-      buckets.push({ label: '60min+', min: 3600, max: Infinity, count: longCount })
-    }
-
-    return buckets
+    return buildDurationBuckets(successVideos.map((item) => item.durationSec || 0))
   })
 
   const moveField = (list: RenameField[], index: number, direction: 'up' | 'down') => {
