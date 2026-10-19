@@ -59,13 +59,30 @@ npm run tauri:build
 - Node.js 18+
 - Rust 1.77+
 - Tauri CLI 2.x
-- Windows 开发需将 `MediaInfo.dll` 放在项目根目录（编译期嵌入运行时依赖，见下）
+- Windows 开发需要两个本地二进制（编译期嵌入，见下）：
+  - 仓库根目录的 `MediaInfo.dll`
+  - `src-tauri/bin/libjxl/cjxl.exe`
+
+两者体积较大且许可证各异，未纳入版本库，新克隆的仓库需手动准备，否则 `cargo check` / `cargo build` 会在 `build.rs` 阶段失败并给出下载地址。
 
 ## 打包与分发
 
-`npm run tauri:build` 会把前端产物、`MediaInfo.dll`（编译期 `include_bytes!` 嵌入，
-运行时释放到 `%TEMP%`）和 `bin/libjxl/cjxl.exe` 一起打进单个可执行文件，
+`npm run tauri:build` 会把前端产物、`MediaInfo.dll` 和 `bin/libjxl/cjxl.exe`
+（两者均在编译期用 `include_bytes!` 嵌入，运行时释放到 `%TEMP%`）一起打进单个可执行文件，
 产物 `ToolsBag.exe` **双击即可运行**，不需要额外安装或拷贝 DLL。
+
+### 准备本地二进制
+
+```bash
+# 1) MediaInfo.dll —— 放到仓库根目录（与 package.json 同级）
+#    来源：https://mediaarea.net/en/MediaInfo/Download/Windows（选 64 位 DLL 包）
+
+# 2) cjxl.exe —— 放到 src-tauri/bin/libjxl/
+#    来源：https://github.com/libjxl/libjxl/releases 的 jxl-x64-windows-static.zip
+```
+
+`src-tauri/build.rs` 会在开始编译前检查这两个文件，缺失时直接报错并打印上述下载地址，
+避免只看到一句编译器层面的 `couldn't read file`。
 
 ## 项目结构
 
@@ -86,6 +103,7 @@ toolsbag1/
 ├── docs/               # 项目文档
 ├── exe/                # 打包输出目录
 ├── src-tauri/          # Rust 后端
+│   ├── bin/libjxl/     # cjxl.exe（本地准备，不入库）
 │   ├── src/
 │   │   ├── cmd/        # Tauri 命令层
 │   │   ├── models/     # 数据结构
