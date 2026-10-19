@@ -422,10 +422,7 @@ fn prepare_pages(
 
     // 多页 TIFF 处理
     if matches!(format, Some(ImageFormat::Tiff)) {
-        match handle_multipage_tiff(path, warnings) {
-            Ok(list) => return Ok(list),
-            Err(e) => return Err(e),
-        }
+        return handle_multipage_tiff(path, warnings);
     }
 
     let (data, filter, color_space, bits, smask, rotated_90_or_270) = if jpeg_rgb {

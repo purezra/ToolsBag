@@ -126,11 +126,7 @@ pub fn inspect_image(path: &Path) -> (bool, Vec<String>) {
     let has_alpha = color.has_alpha();
     let bits_pp = color.bits_per_pixel() as u32;
     let channels = color.channel_count() as u32;
-    let bits_per_channel = if channels > 0 {
-        bits_pp / channels
-    } else {
-        bits_pp
-    };
+    let bits_per_channel = bits_pp.checked_div(channels).unwrap_or(bits_pp);
     let (w, h) = img.dimensions();
     if has_alpha {
         reasons.push("包含透明通道".into());

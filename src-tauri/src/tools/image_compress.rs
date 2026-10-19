@@ -980,10 +980,8 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn output_planning_avoids_case_insensitive_collisions() {
-        let dir = std::env::temp_dir().join(format!(
-            "toolsbag-output-plan-{}",
-            uuid::Uuid::new_v4()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("toolsbag-output-plan-{}", uuid::Uuid::new_v4()));
         let mut reserved = HashSet::new();
 
         let first = unique_output_path(&dir, "Photo", "jxl", &mut reserved);

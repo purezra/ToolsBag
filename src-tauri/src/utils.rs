@@ -15,8 +15,7 @@ pub fn timestamped_log(dir: &Path, prefix: &str) -> PathBuf {
 
 const PROGRESS_MIN_INTERVAL: Duration = Duration::from_millis(80);
 
-static PROGRESS_LAST_EMIT: Mutex<Option<HashMap<(String, Uuid), Instant>>> =
-    Mutex::new(None);
+static PROGRESS_LAST_EMIT: Mutex<Option<HashMap<(String, Uuid), Instant>>> = Mutex::new(None);
 
 pub fn emit_progress(
     app: &AppHandle,

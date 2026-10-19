@@ -116,15 +116,11 @@ pub fn get_video_meta(path: &Path) -> Option<VideoMeta> {
             } else if in_general_section {
                 // General section
                 match key {
-                    "Overall bit rate" => {
-                        if bitrate_raw == 0 {
-                            bitrate_raw = parse_bitrate(value);
-                        }
+                    "Overall bit rate" if bitrate_raw == 0 => {
+                        bitrate_raw = parse_bitrate(value);
                     }
-                    "Duration" => {
-                        if duration_ms_text == 0 {
-                            duration_ms_text = parse_duration_to_ms(value);
-                        }
+                    "Duration" if duration_ms_text == 0 => {
+                        duration_ms_text = parse_duration_to_ms(value);
                     }
                     _ => {}
                 }
@@ -249,15 +245,11 @@ pub fn get_audio_meta(path: &Path) -> Option<AudioMeta> {
             } else if in_general_section {
                 // General section
                 match key {
-                    "Overall bit rate" => {
-                        if bitrate_raw == 0 {
-                            bitrate_raw = parse_bitrate(value);
-                        }
+                    "Overall bit rate" if bitrate_raw == 0 => {
+                        bitrate_raw = parse_bitrate(value);
                     }
-                    "Duration" => {
-                        if duration_ms_text == 0 {
-                            duration_ms_text = parse_duration_to_ms(value);
-                        }
+                    "Duration" if duration_ms_text == 0 => {
+                        duration_ms_text = parse_duration_to_ms(value);
                     }
                     _ => {}
                 }
@@ -323,22 +315,19 @@ pub fn get_image_meta(path: &Path) -> Option<ImageMeta> {
                         width = parse_number(value);
                     }
                 }
-                "Height" => {
-                    if height == 0 {
-                        height = parse_number(value);
-                    }
+                "Height" if height == 0 => {
+                    height = parse_number(value);
                 }
-                "Format" => {
+                "Format"
                     if format.is_empty()
                         && (in_image_section
                             || value.contains("JPEG")
                             || value.contains("PNG")
                             || value.contains("GIF")
                             || value.contains("BMP")
-                            || value.contains("WebP"))
-                    {
-                        format = value.to_string();
-                    }
+                            || value.contains("WebP")) =>
+                {
+                    format = value.to_string();
                 }
                 _ => {}
             }
