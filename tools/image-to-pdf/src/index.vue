@@ -21,8 +21,11 @@
           </el-button>
         </template>
       </el-input>
-      <el-checkbox v-model="recursive" :disabled="loading" @change="onRecursiveChange">
+      <el-checkbox v-model="recursive" :disabled="loading || generating || batchMode" @change="onRecursiveChange">
         {{ t('递归') }}
+      </el-checkbox>
+      <el-checkbox v-model="batchMode" :disabled="loading || generating" @change="onBatchModeChange">
+        {{ t('批量：每子文件夹一份 PDF') }}
       </el-checkbox>
       <el-button
         type="success"
@@ -30,15 +33,21 @@
         @click="generatePdfAction"
         :disabled="generating || !canGenerate"
         :loading="generating"
-      >{{ generating ? t('生成中') : t('合成 PDF') }}</el-button>
+      >{{ generating ? t('生成中') : (batchMode ? t('批量合成 PDF') : t('合成 PDF')) }}</el-button>
       <span v-if="analysis" class="pdf-toolbar__hint">
         {{ analysis.images.length }} {{ t('张') }} · {{ formatFileSize(analysis.total_size) }}
+      </span>
+      <span v-else-if="batchItems?.length" class="pdf-toolbar__hint">
+        {{ batchItems.length }} {{ t('个子文件夹') }} · {{ batchTotalImages }} {{ t('张') }} · {{ formatFileSize(batchTotalSize) }}
       </span>
     </div>
 
     <!-- 实际扫描路径 / 自动切换提示 -->
     <p v-if="analysis?.auto_switched_from_file" class="hint is-warn toolbar-hint">
       {{ t('检测到的是文件路径，已自动切换为其所在目录并按非递归扫描') }}
+    </p>
+    <p v-if="batchMode && batchItems?.length" class="hint toolbar-hint">
+      {{ t('批量模式：一级子文件夹各合并为一份 PDF（内部递归），根目录图片单独一份') }}
     </p>
     <p v-if="analysis" class="hint toolbar-hint">
       {{ t('实际扫描') }}：{{ analysis.effective_path }}
@@ -49,7 +58,7 @@
     <div v-if="progress" class="progress-container">
       <el-progress :percentage="progressPercent" :text-inside="true" :stroke-width="18" />
       <div class="progress-text">
-        {{ progress.phase }}: {{ progress.current }} / {{ progress.total }}
+        {{ progress.phase }}: {{ progressValue }}
         <span v-if="progress.current_file" class="current-file">— {{ shortFileName(progress.current_file) }}</span>
       </div>
     </div>
@@ -80,8 +89,8 @@
       </div>
     </div>
 
-    <!-- 页面设置（可折叠，默认收起；仅分析后显示） -->
-    <div v-if="analysis" class="tb-collapse">
+    <!-- 页面设置（可折叠，默认收起；分析后显示，批量模式同样适用） -->
+    <div v-if="analysis || (batchMode && batchItems?.length)" class="tb-collapse">
       <el-collapse>
         <el-collapse-item>
           <template #title>
@@ -189,32 +198,53 @@
               </div>
             </div>
           </div>
+
+          <div class="setting-group">
+            <label>{{ t('色彩处理') }}</label>
+            <el-radio-group v-model="settings.colorMode" size="small">
+              <el-radio-button label="preserve">{{ t('保真（内嵌 ICC）') }}</el-radio-button>
+              <el-radio-button label="to_srgb">{{ t('兼容（统一转 sRGB）') }}</el-radio-button>
+            </el-radio-group>
+            <p class="hint" v-if="settings.colorMode === 'preserve'">
+              {{ t('有 ICC 的原样内嵌进 PDF，无 ICC 按 sRGB 解释，广色域照片色彩最准') }}
+            </p>
+            <p class="hint" v-else>
+              {{ t('把像素真正换算到 sRGB 再编码，各查看器表现一致；超出 sRGB 的颜色会被裁剪') }}
+            </p>
+          </div>
+
+          <div class="setting-group" v-if="settings.colorMode === 'preserve'">
+            <el-checkbox v-model="settings.embedIcc">{{ t('嵌入 ICC 色彩配置') }}</el-checkbox>
+            <p class="hint">
+              {{ t('含 ICC 色彩配置（如广色域照片）的图片，将把 ICC 内嵌到 PDF，确保色彩正确显示') }}
+            </p>
+          </div>
         </el-collapse-item>
       </el-collapse>
     </div>
 
-    <!-- 分析结果（可折叠，默认展开；仅分析后显示） -->
-    <div v-if="analysis" class="tb-collapse">
+    <!-- 分析结果（可折叠，默认展开；单文件夹模式或批量模式汇总后显示） -->
+    <div v-if="displayAnalysis" class="tb-collapse">
       <el-collapse v-model="analysisCollapse">
         <el-collapse-item name="analysis">
           <template #title>
             {{ t('图片分析结果') }}
-            <el-tag type="success" effect="plain" size="small" class="collapse-tag">{{ analysis.images.length }} {{ t('张') }}</el-tag>
+            <el-tag type="success" effect="plain" size="small" class="collapse-tag">{{ displayAnalysis.images.length }} {{ t('张') }}</el-tag>
           </template>
 
           <div class="stats-row">
             <div class="stat">
               <span class="label">{{ t('总数量') }}</span>
-              <span class="value">{{ analysis.images.length }}</span>
+              <span class="value">{{ displayAnalysis.images.length }}</span>
             </div>
             <div class="stat">
               <span class="label">{{ t('总大小') }}</span>
-              <span class="value">{{ formatFileSize(analysis.total_size) }}</span>
+              <span class="value">{{ formatFileSize(displayAnalysis.total_size) }}</span>
             </div>
             <div class="stat">
               <span class="label">{{ t('建议方向') }}</span>
               <span class="value suggestion">
-                {{ FIXED_ORIENTATION_NAMES[analysis.suggested_orientation as FixedOrientation] || analysis.suggested_orientation }}
+                {{ batchMode ? t('批量') : (FIXED_ORIENTATION_NAMES[displayAnalysis.suggested_orientation as FixedOrientation] || displayAnalysis.suggested_orientation) }}
               </span>
             </div>
           </div>
@@ -231,15 +261,15 @@
     </div>
 
     <!-- 跳过的文件（可折叠，仅异常时显示） -->
-    <div v-if="analysis?.skipped?.length" class="tb-collapse">
+    <div v-if="displayAnalysis?.skipped?.length" class="tb-collapse">
       <el-collapse>
         <el-collapse-item>
           <template #title>
             {{ t('跳过的文件') }}
-            <el-tag type="warning" effect="plain" size="small" class="collapse-tag">{{ analysis.skipped.length }} {{ t('个') }}</el-tag>
+            <el-tag type="warning" effect="plain" size="small" class="collapse-tag">{{ displayAnalysis.skipped.length }} {{ t('个') }}</el-tag>
           </template>
           <div class="skipped-list">
-            <div v-for="sf in analysis.skipped" :key="sf.path" class="skipped-row">
+            <div v-for="sf in displayAnalysis.skipped" :key="sf.path" class="skipped-row">
               <span class="skipped-ext">.{{ sf.ext }}</span>
               <span class="skipped-reason">{{ sf.reason }}</span>
               <span class="skipped-name" :title="sf.path">{{ shortFileName(sf.path) }}</span>
@@ -249,8 +279,63 @@
       </el-collapse>
     </div>
 
+    <!-- 批量列表面板（批量模式分析后显示，替代预览） -->
+    <main v-if="batchMode && batchItems?.length" class="preview-panel batch-panel">
+      <header class="preview-toolbar">
+        <span class="tool-label">{{ t('按子文件夹合并') }}</span>
+        <span class="page-info">
+          {{ batchItems.length }} {{ t('项') }} · {{ batchTotalImages }} {{ t('张') }} · {{ formatFileSize(batchTotalSize) }}
+        </span>
+        <div class="tool-group spacer"></div>
+        <el-tooltip
+          effect="dark"
+          :content="t('默认不覆盖：输出目录已有同名 PDF 时自动加序号，避免替换掉上一次的产出')"
+          placement="bottom"
+        >
+          <el-checkbox v-model="settings.overwriteBatch" size="small">
+            {{ t('覆盖同名 PDF') }}
+          </el-checkbox>
+        </el-tooltip>
+        <span v-if="batchResults" class="page-info">
+          {{ batchSuccessCount }} / {{ batchItems.length }} {{ t('成功') }}
+        </span>
+      </header>
+      <div class="batch-list">
+        <div
+          v-for="(item, i) in batchItems"
+          :key="item.path"
+          class="batch-row"
+          :class="{ done: batchResults?.[i]?.success, failed: batchResults?.[i] && !batchResults[i].success }"
+        >
+          <span class="batch-idx">{{ i + 1 }}</span>
+          <span class="batch-name" :title="item.path">{{ item.name }}</span>
+          <span class="batch-count">{{ item.analysis.images.length }} {{ t('张') }} · {{ formatFileSize(item.analysis.total_size) }}</span>
+          <el-tag v-if="item.analysis.skipped.length" type="warning" size="small" effect="plain">
+            {{ t('跳过') }} {{ item.analysis.skipped.length }}
+          </el-tag>
+          <span class="batch-status">
+            <template v-if="batchResults?.[i]">
+              <el-tag :type="batchResults[i].success ? 'success' : 'danger'" size="small">
+                {{ batchResults[i].success ? t('已生成') : t('失败') }}
+              </el-tag>
+              <template v-if="batchResults[i].success">
+                <span class="batch-file" :title="batchResults[i].output_path">
+                  {{ batchResults[i].name }}.pdf · {{ formatFileSize(batchResults[i].result?.file_size || 0) }}
+                </span>
+                <span v-if="batchResults[i].result?.warnings?.length" class="hint is-warn">
+                  {{ t('已跳过') }} {{ batchResults[i].result.warnings.length }} {{ t('个文件') }}
+                </span>
+              </template>
+              <span v-else class="batch-error" :title="batchResults[i].error">{{ batchResults[i].error }}</span>
+            </template>
+            <span v-else class="hint">{{ t('待生成') }}</span>
+          </span>
+        </div>
+      </div>
+    </main>
+
     <!-- 预览面板（全宽） -->
-    <main class="preview-panel" v-if="previewData">
+    <main class="preview-panel" v-else-if="previewData">
       <header class="preview-toolbar">
         <div class="tool-group">
           <span class="tool-label">{{ t('网格') }}</span>
@@ -402,8 +487,10 @@ import { hasTauriRuntime } from '@core/utils/tauri'
 import { useSettings } from '@core/hooks/useSettings'
 import {
   analyzeFolderForPdf,
+  analyzeSubfoldersForPdf,
   calculatePreviewLayout,
   generatePdf as apiGeneratePdf,
+  generatePdfBatch as apiGeneratePdfBatch,
   getImageThumbnail,
   formatFileSize,
   PAGE_SIZE_NAMES,
@@ -417,10 +504,15 @@ import {
   type PageMode,
   type MergeMode,
   type FolderAnalysis,
+  type BatchItemAnalysis,
+  type BatchGenerationResult,
+  type BatchItemEvent,
+  type ColorMode,
   type PreviewData,
   type LayoutResult,
   type GenerationProgress,
   type GenerationResult,
+  type PdfConfig,
 } from './api/image-to-pdf'
 
 const { t } = useSettings()
@@ -469,7 +561,10 @@ const DistCard = defineComponent({
 
 const pathInput = ref('')
 const recursive = ref(false)
+const batchMode = ref(false)
 const analysis = ref<FolderAnalysis | null>(null)
+const batchItems = ref<BatchItemAnalysis[] | null>(null)
+const batchResults = ref<BatchGenerationResult[] | null>(null)
 const analysisSourceKey = ref('')
 const previewData = ref<PreviewData | null>(null)
 const loading = ref(false)
@@ -500,6 +595,9 @@ const settings = ref({
   mergeMode: 'lossless' as 'lossless' | 'portable',
   maxSizeRatio: DEFAULT_LOSSLESS_MAX_RATIO,
   portableTargetRatio: DEFAULT_PORTABLE_TARGET_RATIO,
+  embedIcc: true,
+  colorMode: 'preserve' as ColorMode,
+  overwriteBatch: false,
 })
 
 // ==================== Computed ====================
@@ -517,16 +615,82 @@ const marginError = computed(() => {
   return ''
 })
 
-const canGenerate = computed(
-  () => analysis.value
-    && analysisSourceKey.value === `${pathInput.value.trim()}\u0000${recursive.value}`
-    && analysis.value.images.length > 0
-    && !marginError.value,
+// 批量模式：把各子文件夹的分析结果汇总成一份，供统计/警告/跳过文件面板复用
+const aggregatedAnalysis = computed<FolderAnalysis | null>(() => {
+  const items = batchItems.value
+  if (!batchMode.value || !items?.length) return null
+  const sum = (pick: (a: FolderAnalysis) => number) =>
+    items.reduce((acc, it) => acc + (pick(it.analysis) || 0), 0)
+  const buckets = new Map<string, { label: string; count: number; min_long_edge: number }>()
+  for (const it of items) {
+    for (const b of it.analysis.resolution_buckets) {
+      const cur = buckets.get(b.label) ?? { label: b.label, count: 0, min_long_edge: b.min_long_edge }
+      cur.count += b.count
+      buckets.set(b.label, cur)
+    }
+  }
+  const portrait = sum((a) => a.portrait_count)
+  const landscape = sum((a) => a.landscape_count)
+  return {
+    images: items.flatMap((it) => it.analysis.images),
+    effective_path: pathInput.value.trim(),
+    recursive: true,
+    auto_switched_from_file: false,
+    portrait_count: portrait,
+    landscape_count: landscape,
+    square_count: sum((a) => a.square_count),
+    suggested_orientation: portrait > landscape ? 'portrait' : landscape > portrait ? 'landscape' : 'auto',
+    total_size: sum((a) => a.total_size),
+    resolution_buckets: [...buckets.values()].sort((a, b) => a.min_long_edge - b.min_long_edge),
+    skipped: items.flatMap((it) => it.analysis.skipped),
+    apng_count: sum((a) => a.apng_count),
+    webp_animated_count: sum((a) => a.webp_animated_count || 0),
+    bit16_count: sum((a) => a.bit16_count),
+    gamma_count: sum((a) => a.gamma_count),
+    icc_count: sum((a) => a.icc_count || 0),
+    icc_v4_count: sum((a) => a.icc_v4_count || 0),
+    long_image_count: sum((a) => a.long_image_count || 0),
+  }
+})
+
+// 面板统一读这个：单文件夹模式是本体，批量模式是汇总
+const displayAnalysis = computed<FolderAnalysis | null>(
+  () => analysis.value ?? aggregatedAnalysis.value
+)
+
+const canGenerate = computed(() => {
+  const key = `${pathInput.value.trim()}\u0000${recursive.value}\u0000${batchMode.value}`
+  if (batchMode.value) {
+    return !!batchItems.value?.length && analysisSourceKey.value === key && !marginError.value
+  }
+  return !!analysis.value?.images.length && analysisSourceKey.value === key && !marginError.value
+})
+
+const batchTotalImages = computed(() =>
+  batchItems.value?.reduce((s, it) => s + it.analysis.images.length, 0) || 0
+)
+
+const batchTotalSize = computed(() =>
+  batchItems.value?.reduce((s, it) => s + it.analysis.total_size, 0) || 0
+)
+
+const batchSuccessCount = computed(
+  () => (batchResults.value ?? []).filter((r) => r?.success).length
 )
 
 const progressPercent = computed(() => {
   if (!progress.value || progress.value.total === 0) return 0
   return Math.round((progress.value.current / progress.value.total) * 100)
+})
+
+// 进度数值展示：写入文件阶段按字节格式化，其余阶段按数量
+const progressValue = computed(() => {
+  const p = progress.value
+  if (!p) return ''
+  if (p.phase.includes('正在写入文件')) {
+    return `${formatFileSize(p.current)} / ${formatFileSize(p.total)}`
+  }
+  return `${p.current} / ${p.total}`
 })
 
 // Chart palette resolves to per-skin CSS variables so colors adapt to light/dark
@@ -537,8 +701,8 @@ const PALETTE = [
 ]
 
 const orientationRows = computed<DistRow[]>(() => {
-  if (!analysis.value) return []
-  const a = analysis.value
+  const a = displayAnalysis.value
+  if (!a) return []
   const total = a.images.length || 1
   const rows: DistRow[] = []
   const items: [string, string, number, string][] = [
@@ -553,10 +717,11 @@ const orientationRows = computed<DistRow[]>(() => {
 })
 
 const formatRows = computed<DistRow[]>(() => {
-  if (!analysis.value) return []
+  const a = displayAnalysis.value
+  if (!a) return []
   const counts: Record<string, number> = {}
-  for (const img of analysis.value.images) counts[img.format] = (counts[img.format] || 0) + 1
-  const total = analysis.value.images.length || 1
+  for (const img of a.images) counts[img.format] = (counts[img.format] || 0) + 1
+  const total = a.images.length || 1
   const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1])
   return sorted.map(([fmt, count], i) => ({
     key: fmt,
@@ -568,9 +733,10 @@ const formatRows = computed<DistRow[]>(() => {
 })
 
 const resolutionRows = computed<DistRow[]>(() => {
-  if (!analysis.value) return []
-  const total = analysis.value.images.length || 1
-  return analysis.value.resolution_buckets
+  const a = displayAnalysis.value
+  if (!a) return []
+  const total = a.images.length || 1
+  return a.resolution_buckets
     .slice()
     .reverse()
     .map((b, i) => ({
@@ -583,11 +749,14 @@ const resolutionRows = computed<DistRow[]>(() => {
 })
 
 const metaWarnings = computed<string[]>(() => {
-  if (!analysis.value) return []
+  const a = displayAnalysis.value as any
+  if (!a) return []
   const warns: string[] = []
-  const a = analysis.value as any
   if (a.apng_count > 0) {
     warns.push(`${a.apng_count} ${t('张 APNG（动画 PNG），PDF 仅取首帧')}`)
+  }
+  if (a.webp_animated_count > 0) {
+    warns.push(`${a.webp_animated_count} ${t('张动画 WebP，PDF 仅取首帧')}`)
   }
   if (a.bit16_count > 0) {
     warns.push(`${a.bit16_count} ${t('张 16-bit PNG，已降为 8-bit（视觉通常无明显影响，非严格无损）')}`)
@@ -595,11 +764,30 @@ const metaWarnings = computed<string[]>(() => {
   if (a.gamma_count > 0) {
     warns.push(`${a.gamma_count} ${t('张含非 sRGB gamma 信息，可能轻微偏色')}`)
   }
-  if (a.icc_count > 0) {
-    warns.push(`${a.icc_count} ${t('张含 ICC 色彩配置，PDF 未内嵌 ICC，广色域图可能偏色')}`)
+  if (a.icc_count > 0 && settings.value.colorMode === 'to_srgb') {
+    warns.push(`${a.icc_count} ${t('张含 ICC 色彩配置，将统一转换到 sRGB 后再编码')}`)
+  } else if (a.icc_count > 0) {
+    if (settings.value.embedIcc) {
+      warns.push(`${a.icc_count} ${t('张含 ICC 色彩配置，将内嵌到 PDF（广色域正确渲染）')}`)
+    } else {
+      warns.push(`${a.icc_count} ${t('张含 ICC 色彩配置，已关闭内嵌，广色域图可能偏色')}`)
+    }
+  }
+  const adobeRgbNoIcc = a.images.filter((i: any) => !i.has_icc && i.exif_color_space === 'adobe_rgb').length
+  if (adobeRgbNoIcc > 0) {
+    if (settings.value.colorMode === 'to_srgb') {
+      warns.push(`${adobeRgbNoIcc} ${t('张相机直出 Adobe RGB（仅 EXIF 标记），已按 Adobe RGB 转换到 sRGB')}`)
+    } else {
+      warns.push(settings.value.embedIcc
+        ? `${adobeRgbNoIcc} ${t('张相机直出 Adobe RGB（仅 EXIF 标记，无内嵌 ICC），已按 Adobe RGB 处理')}`
+        : `${adobeRgbNoIcc} ${t('张相机直出 Adobe RGB（仅 EXIF 标记，无内嵌 ICC），已关闭内嵌，可能偏色')}`)
+    }
+  }
+  if (a.icc_v4_count > 0) {
+    warns.push(`${a.icc_v4_count} ${t('张使用 ICC v4 配置，部分老旧阅读器支持较差；若发现偏色可改用兼容模式')}`)
   }
   if (a.long_image_count > 0) {
-    warns.push(`${a.long_image_count} ${t('张长图（长宽比>5:1），可能生成超长页面，建议开启分页或缩放')}`)
+    warns.push(`${a.long_image_count} ${t('张长图（长宽比>5:1），原图大小模式下将等比缩放以适配 PDF 页面 200 英寸上限')}`)
   }
   return warns
 })
@@ -628,16 +816,25 @@ interface FileListRow {
 }
 
 const fileListRows = computed<FileListRow[]>(() => {
-  if (!analysis.value) return []
-  return analysis.value.images.map((img, idx) => {
+  const a = displayAnalysis.value
+  if (!a) return []
+  return a.images.map((img, idx) => {
     const isSquare = Math.abs(img.width - img.height) <= Math.max(img.width, img.height) * 0.05
     const orientation = isSquare ? t('方图') : img.height > img.width ? t('竖图') : t('横图')
     const flags: string[] = []
     if (img.has_alpha) flags.push('Alpha')
     if (img.is_apng) flags.push('APNG首帧')
+    if (img.is_animated_webp) flags.push('WebP动画首帧')
     if (img.bit_depth && img.bit_depth > 8) flags.push(`${img.bit_depth}-bit→8-bit`)
     if (img.has_gamma) flags.push('Gamma')
     if (img.is_grayscale) flags.push('灰度')
+    if (!img.has_icc && img.exif_color_space === 'adobe_rgb') flags.push('EXIF:AdobeRGB')
+    if (img.exif_color_space === 'uncalibrated') flags.push('EXIF:未校准')
+    if (img.has_icc) {
+      const name = img.icc_profile && img.icc_profile !== 'ICC (embedded)' ? img.icc_profile : 'ICC'
+      flags.push(img.icc_version === 4 ? `${name} (v4)` : name)
+    }
+    if (img.icc_version === 4) flags.push('ICCv4')
     return {
       index: idx + 1,
       name: shortFileName(img.path),
@@ -698,6 +895,18 @@ function buildPageMode(): PageMode {
   return { fixed: { orientation: settings.value.fixedOrientation } }
 }
 
+function buildPdfConfig(outputPath: string): PdfConfig {
+  return {
+    page_size: settings.value.pageSize,
+    page_mode: buildPageMode(),
+    margin: settings.value.margin,
+    output_path: outputPath,
+    merge_mode: buildMergeMode(),
+    embed_icc: settings.value.embedIcc,
+    color_mode: settings.value.colorMode,
+  }
+}
+
 function buildMergeMode(): MergeMode {
   if (settings.value.mergeMode === 'lossless') {
     return { lossless: { max_size_ratio: settings.value.maxSizeRatio } }
@@ -721,6 +930,10 @@ function onRecursiveChange() {
   if (analysis.value) analyzeFolderAction()
 }
 
+function onBatchModeChange() {
+  if (pathInput.value.trim()) analyzeFolderAction()
+}
+
 function onPageModeChange() {
   updatePreview()
 }
@@ -732,25 +945,43 @@ async function analyzeFolderAction() {
   loading.value = true
   analysisSourceKey.value = ''
   result.value = null
+  batchResults.value = null
   thumbnails.value.clear()
   loadingThumbnails.value.clear()
   gridPageIndex.value = 0
   waterfallLimit.value = 60
 
   try {
-    analysis.value = await analyzeFolderForPdf(p, recursive.value)
-    if (analysis.value.auto_switched_from_file) {
-      pathInput.value = analysis.value.effective_path
-      recursive.value = false
+    if (batchMode.value) {
+      // 批量模式：一级子文件夹各一份 PDF
+      const items = await analyzeSubfoldersForPdf(p)
+      batchItems.value = items
+      analysis.value = null
+      previewData.value = null
+      if (items.some((it) => it.analysis.auto_switched_from_file)) {
+        const first = items.find((it) => it.analysis.auto_switched_from_file)
+        if (first) pathInput.value = first.analysis.effective_path
+      }
+      analysisSourceKey.value = `${pathInput.value.trim()}\u0000${recursive.value}\u0000${batchMode.value}`
+    } else {
+      // 单文件夹模式
+      batchItems.value = null
+      analysis.value = await analyzeFolderForPdf(p, recursive.value)
+      if (analysis.value.auto_switched_from_file) {
+        pathInput.value = analysis.value.effective_path
+        recursive.value = false
+      }
+      if (analysis.value.suggested_orientation) {
+        settings.value.fixedOrientation = analysis.value.suggested_orientation as FixedOrientation
+      }
+      await updatePreview()
+      analysisSourceKey.value = `${pathInput.value.trim()}\u0000${recursive.value}\u0000${batchMode.value}`
     }
-    if (analysis.value.suggested_orientation) {
-      settings.value.fixedOrientation = analysis.value.suggested_orientation as FixedOrientation
-    }
-    await updatePreview()
-    analysisSourceKey.value = `${pathInput.value.trim()}\u0000${recursive.value}`
   } catch (e: any) {
     ElMessage.error(t('分析失败') + ': ' + (e?.message || e))
     analysis.value = null
+    batchItems.value = null
+    previewData.value = null
   } finally {
     loading.value = false
   }
@@ -954,7 +1185,49 @@ watch(waterfallLimit, () => {
 // ---- Generate ----
 
 async function generatePdfAction() {
-  if (!analysis.value || !canGenerate.value) return
+  if (!canGenerate.value) return
+
+  // 批量模式：选输出目录，每个子文件夹生成一份 PDF
+  if (batchMode.value) {
+    if (!batchItems.value?.length) return
+    const dir = await open({
+      directory: true,
+      multiple: false,
+      title: t('选择 PDF 输出目录'),
+    })
+    if (!dir || typeof dir !== 'string') return
+
+    generating.value = true
+    progress.value = null
+    result.value = null
+    // 先置空数组：列表立即显示「待生成」，随后由 pdf_batch_item 逐条点亮
+    batchResults.value = []
+    try {
+      const results = await apiGeneratePdfBatch(
+        batchItems.value,
+        buildPdfConfig(''),
+        dir,
+        settings.value.overwriteBatch,
+      )
+      batchResults.value = results
+      const ok = results.filter((r) => r.success).length
+      const failed = results.length - ok
+      if (failed === 0) {
+        ElMessage.success(t('批量生成完成') + `: ${ok} ${t('份')}`)
+      } else {
+        ElMessage.warning(t('批量生成完成，部分失败') + `: ${ok} ${t('成功')} / ${failed} ${t('失败')}`)
+      }
+    } catch (e: any) {
+      ElMessage.error(t('批量生成失败') + ': ' + (e?.message || e))
+    } finally {
+      generating.value = false
+      progress.value = null
+    }
+    return
+  }
+
+  // 单文件夹模式：选保存路径
+  if (!analysis.value) return
   const savePath = await save({
     title: t('保存 PDF'),
     defaultPath: 'output.pdf',
@@ -967,13 +1240,7 @@ async function generatePdfAction() {
   result.value = null
 
   try {
-    result.value = await apiGeneratePdf(analysis.value.images, {
-      page_size: settings.value.pageSize,
-      page_mode: buildPageMode(),
-      margin: settings.value.margin,
-      output_path: savePath,
-      merge_mode: buildMergeMode(),
-    })
+    result.value = await apiGeneratePdf(analysis.value.images, buildPdfConfig(savePath))
   } catch (e: any) {
     result.value = {
       success: false, output_path: '', file_size: 0, original_total_size: 0,
@@ -989,16 +1256,23 @@ async function generatePdfAction() {
 // ---- Lifecycle ----
 
 let unlistenProgress: (() => void) | null = null
+let unlistenBatchItem: (() => void) | null = null
 
 onMounted(async () => {
   if (!hasTauriRuntime()) return
   unlistenProgress = await listen<GenerationProgress>('pdf_progress', (e) => {
     progress.value = e.payload
   })
+  // 批量模式：每完成一份就点亮对应行，不必等整批跑完
+  unlistenBatchItem = await listen<BatchItemEvent>('pdf_batch_item', (e) => {
+    if (!batchResults.value) batchResults.value = []
+    batchResults.value[e.payload.index] = e.payload.item
+  })
 })
 
 onBeforeUnmount(() => {
   unlistenProgress?.()
+  unlistenBatchItem?.()
   stopAutoPlay()
   thumbnails.value.clear()
 })
@@ -1397,5 +1671,90 @@ onBeforeUnmount(() => {
   display: flex;
   justify-content: center;
   margin: 16px 0 8px;
+}
+
+/* ============================ Batch list ============================ */
+
+.batch-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.batch-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-tertiary);
+  font-size: 12px;
+  flex-wrap: wrap;
+}
+
+.batch-row.done {
+  background: var(--success-light);
+}
+
+.batch-row.failed {
+  background: var(--danger-light);
+}
+
+.batch-idx {
+  flex-shrink: 0;
+  min-width: 22px;
+  height: 22px;
+  line-height: 22px;
+  text-align: center;
+  border-radius: 11px;
+  background: var(--accent);
+  color: var(--text-inverse);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.batch-name {
+  font-weight: 600;
+  color: var(--text-primary);
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.batch-count {
+  color: var(--text-muted);
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+.batch-status {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 160px;
+  justify-content: flex-end;
+}
+
+.batch-file {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.batch-error {
+  font-size: 11px;
+  color: var(--danger);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 </style>

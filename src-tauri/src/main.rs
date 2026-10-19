@@ -235,8 +235,10 @@ fn main() {
             cmd::webdav_stop_polling,
             // Tool5: Image to PDF
             image_to_pdf::analyze_folder_for_pdf,
+            image_to_pdf::analyze_subfolders_for_pdf,
             image_to_pdf::calculate_preview_layout,
             image_to_pdf::generate_pdf,
+            image_to_pdf::generate_pdf_batch,
             image_to_pdf::get_image_thumbnail,
             // Tool6: Image Compress
             image_compress::get_libjxl_status,

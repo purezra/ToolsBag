@@ -34,7 +34,6 @@ chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1.10", features = ["v4", "serde"] }
 infer = "0.13"
 lopdf = "0.27"
-printpdf = "0.7"
 # JPEG XL 编码：纯 Rust，VarDCT(有损)+Modular(无损) 双模。许可证 AGPL-3.0 OR 商业（项目开源，AGPL 可接受）。
 # 启用 parallel feature 以支持单图内多线程编码（与外层 rayon 池协作）。
 jxl-encoder = { version = "0.3.1", features = ["parallel"] }
@@ -71,3 +70,9 @@ opt-level = 3
 # 单代码生成单元换取更充分的跨函数优化（编译变慢，运行更快）
 codegen-units = 1
 panic = "abort"
+
+[profile.fast-release]
+inherits = "release"
+opt-level = 2
+lto = "off"
+codegen-units = 16

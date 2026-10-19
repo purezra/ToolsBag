@@ -27,6 +27,8 @@ export interface ImageAnalysis {
   has_alpha: boolean
   /** 是否为 APNG（含动画帧，PDF 只取首帧） */
   is_apng: boolean
+  /** 是否为动画 WebP（含动画帧，PDF 只取首帧） */
+  is_animated_webp?: boolean
   /** 是否为灰度图（可优化为 DeviceGray 色彩空间） */
   is_grayscale: boolean
   /** 原始位深（8 或 16），16-bit PNG 会被降采样到 8-bit */
@@ -41,8 +43,12 @@ export interface ImageAnalysis {
   frame_count?: number
   /** 是否含 ICC 色彩配置（iCCP 或 JPEG APP2 ICC） */
   has_icc?: boolean
-  /** ICC 配置描述（如 "sRGB", "ICC (embedded)" 等） */
+  /** ICC 配置描述（如 "sRGB", "Adobe RGB (1998)" 等） */
   icc_profile?: string
+  /** ICC 主版本号（4 = ICC v4，部分老旧 PDF 阅读器支持较差） */
+  icc_version?: number
+  /** EXIF ColorSpace 标记："srgb" / "adobe_rgb" / "uncalibrated"，无标记为 undefined */
+  exif_color_space?: string
   /** 是否为长图（长宽比 > 5:1，可能生成超长页面） */
   is_long_image?: boolean
 }
@@ -76,14 +82,27 @@ export interface FolderAnalysis {
   skipped: SkippedFile[]
   /** APNG 文件数（PDF 只取首帧，动画丢失） */
   apng_count: number
+  /** 动画 WebP 文件数（PDF 只取首帧，动画丢失） */
+  webp_animated_count?: number
   /** 16-bit PNG 文件数（降采样到 8-bit，精度有损） */
   bit16_count: number
   /** 含 gamma 信息的文件数（PDF 不内嵌 ICC/gamma，可能有轻微色偏） */
   gamma_count: number
   /** 含 ICC 色彩配置的文件数（广色域图片可能有偏色） */
   icc_count?: number
+  /** ICC v4 profile 文件数（老旧阅读器支持较差，建议用兼容模式） */
+  icc_v4_count?: number
   /** 长图文件数（长宽比 > 5:1，可能生成超长页面） */
   long_image_count?: number
+}
+
+// 批量模式（按子文件夹合并）的单项
+export interface BatchItemAnalysis {
+  /** 文件夹名（PDF 文件名的基础） */
+  name: string
+  /** 文件夹绝对路径 */
+  path: string
+  analysis: FolderAnalysis
 }
 
 // 图片布局信息
@@ -120,7 +139,14 @@ export interface PdfConfig {
   margin: number
   output_path: string
   merge_mode: MergeMode
+  /** 是否内嵌 ICC 色彩配置（默认开启） */
+  embed_icc?: boolean
+  /** 色彩处理模式：preserve = 保真（内嵌 ICC）；to_srgb = 兼容（统一转 sRGB） */
+  color_mode?: ColorMode
 }
+
+/** 色彩处理模式 */
+export type ColorMode = 'preserve' | 'to_srgb'
 
 // 生成进度
 export interface GenerationProgress {
@@ -146,12 +172,28 @@ export interface GenerationResult {
   error?: string
 }
 
+// 批量生成结果（每个子文件夹一项）
+export interface BatchGenerationResult {
+  /** 实际使用的 PDF 文件名（不含 .pdf，可能已被净化/去重） */
+  name: string
+  /** 输出文件绝对路径 */
+  output_path: string
+  success: boolean
+  result?: GenerationResult
+  error?: string
+}
+
 /** 分析文件夹中的图片 */
 export async function analyzeFolderForPdf(
   folderPath: string,
   recursive: boolean = false
 ): Promise<FolderAnalysis> {
   return await invoke('analyze_folder_for_pdf', { folderPath, recursive })
+}
+
+/** 批量模式：扫描一级子文件夹，每个含图片的子文件夹一个分析项（内部递归） */
+export async function analyzeSubfoldersForPdf(folderPath: string): Promise<BatchItemAnalysis[]> {
+  return await invoke('analyze_subfolders_for_pdf', { folderPath })
 }
 
 /** 计算预览布局 */
@@ -175,6 +217,31 @@ export async function generatePdf(
   config: PdfConfig
 ): Promise<GenerationResult> {
   return await invoke('generate_pdf', { images, config })
+}
+
+/** 批量生成过程中逐条推送的事件负载（事件名：pdf_batch_item） */
+export interface BatchItemEvent {
+  /** 对应 analyzeSubfoldersForPdf 返回数组中的下标 */
+  index: number
+  item: BatchGenerationResult
+}
+
+/**
+ * 批量生成：每个子文件夹一份 PDF，输出到指定目录，以子文件夹名命名。
+ * `overwriteExisting` 为 false（默认）时，输出目录里已有同名 PDF 会自动加序号，不会覆盖。
+ */
+export async function generatePdfBatch(
+  items: BatchItemAnalysis[],
+  config: PdfConfig,
+  outputDir: string,
+  overwriteExisting = false
+): Promise<BatchGenerationResult[]> {
+  return await invoke('generate_pdf_batch', {
+    items,
+    config,
+    outputDir,
+    overwriteExisting,
+  })
 }
 
 /** 获取图片缩略图（base64 JPEG） */
