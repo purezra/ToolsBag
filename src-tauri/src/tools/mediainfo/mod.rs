@@ -72,13 +72,60 @@ pub fn get_mediainfo_path() -> Option<String> {
     MEDIAINFO_PATH.get()?.lock().ok()?.clone()
 }
 
+/// 内嵌的 MediaInfo.dll（编译期嵌入，运行时释放到临时目录）。
+/// 仅 Windows 平台嵌入；这样打包出来的就是一个可双击直接运行的单文件 exe，
+/// 不需要在 exe 旁边再放一份 8MB 的 DLL。其它平台走磁盘候选。
+#[cfg(target_os = "windows")]
+const EMBEDDED_MEDIAINFO_DLL: &[u8] = include_bytes!("../../../../MediaInfo.dll");
+
+/// 将内嵌的 MediaInfo.dll 释放到 `%TEMP%`，原子写入避免多进程竞态。
+/// 返回释放后的路径；非 Windows 或释放失败时返回 None（此时回退到磁盘候选路径）。
+fn released_mediainfo_path() -> Option<PathBuf> {
+    #[cfg(target_os = "windows")]
+    {
+        let target = std::env::temp_dir().join(format!(
+            "toolsbag_mediainfo_{}.dll",
+            env!("CARGO_PKG_VERSION")
+        ));
+        // 已存在且大小一致：直接复用（跨进程共享，避免每次启动重复写 8MB）
+        if let Ok(meta) = std::fs::metadata(&target) {
+            if meta.len() == EMBEDDED_MEDIAINFO_DLL.len() as u64 {
+                return Some(target);
+            }
+        }
+        let staging = std::env::temp_dir().join(format!(
+            "toolsbag_mediainfo_{}_{}.dll",
+            env!("CARGO_PKG_VERSION"),
+            std::process::id()
+        ));
+        if std::fs::write(&staging, EMBEDDED_MEDIAINFO_DLL).is_ok() {
+            // 目标已存在时 rename 会失败（Windows）——说明别的进程已经释放好了
+            let _ = std::fs::rename(&staging, &target);
+        }
+        let _ = std::fs::remove_file(&staging);
+        if target.exists() {
+            Some(target)
+        } else {
+            None
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        None
+    }
+}
+
 /// 查找 MediaInfo 动态库的候选路径（纯运行期加载，不编译期嵌入）
 ///
-/// 解析顺序：Tauri 资源目录 → 可执行文件目录 → 工作目录 → 系统 PATH。
-/// 打包时由 tauri.conf.json 的 bundle.resources 将 MediaInfo.dll 带入资源目录；
-/// 开发时把 DLL 放到 src-tauri/MediaInfo.dll 或系统 PATH 即可（该文件不入库）。
+/// 解析顺序：内嵌释放路径 → Tauri 资源目录 → 可执行文件目录 → 工作目录 → 系统 PATH。
+/// 开发时把 DLL 放到仓库根目录或 src-tauri/ 即可（该文件不入库）。
 fn mediainfo_library_candidates() -> Vec<PathBuf> {
     let mut candidates = Vec::new();
+
+    // 优先：编译期内嵌、运行时释放到 %TEMP% 的那份（单文件 exe 场景）
+    if let Some(released) = released_mediainfo_path() {
+        candidates.push(released);
+    }
 
     // Tauri 资源目录（打包时 bundle.resources 的目标位置）
     if let Some(res_dir) = RESOURCE_DIR.get() {
