@@ -469,7 +469,7 @@
     </main>
 
     <main v-else class="preview-panel placeholder-panel">
-      <div class="placeholder-empty">
+      <div class="placeholder-empty ink-empty">
         <p>{{ t('选择文件夹后将在此处预览') }}</p>
         <p class="hint">{{ t('支持 JPG/PNG/WebP/TIFF/BMP/GIF/TGA/DDS/PNM/QOI/HDR/ICO 等位图格式混合合并') }}</p>
       </div>

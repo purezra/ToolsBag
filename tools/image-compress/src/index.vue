@@ -205,7 +205,7 @@
           </template>
         </el-auto-resizer>
       </div>
-      <div v-else class="empty-hint" v-loading="importing">
+      <div v-else class="empty-hint ink-empty" v-loading="importing">
         <p v-if="!pendingPaths.length">{{ t('选择图片或文件夹后点击导入') }}</p>
       </div>
     </section>

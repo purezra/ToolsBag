@@ -1,0 +1,173 @@
+/* ============================================================
+   ToolsBag — Ink & paper accents (hand-drawn hints)
+   Pure CSS only: no images, no fonts, no data URIs, no deps.
+   Everything is derived from the existing role tokens so it
+   follows light / dark automatically.
+   ============================================================ */
+
+:root {
+  /* Sketch line colours — always a wash of the current text colour */
+  --ink-line: color-mix(in srgb, var(--text-primary) 20%, transparent);
+  --ink-line-strong: color-mix(in srgb, var(--text-primary) 32%, transparent);
+  --ink-line-soft: color-mix(in srgb, var(--text-primary) 12%, transparent);
+
+  /* Paper grain strength (used as an opacity multiplier) */
+  --ink-grain: 0.05;
+
+  /* Hand-drawn geometry */
+  --ink-wobble: -0.35deg;
+  --ink-frame-radius: 14px 10px 15px 11px / 11px 15px 10px 14px;
+}
+
+/* Dark surfaces: the same wash reads much brighter, so ease it off. */
+:root[data-theme='dark'],
+html.dark {
+  --ink-line: color-mix(in srgb, var(--text-primary) 18%, transparent);
+  --ink-line-strong: color-mix(in srgb, var(--text-primary) 28%, transparent);
+  --ink-line-soft: color-mix(in srgb, var(--text-primary) 10%, transparent);
+  --ink-grain: 0.03;
+}
+
+/* ============ Paper grain ============ */
+/* Three coprime dot grids stacked behind the content — reads as paper
+   tooth up close, as nothing at arm's length. */
+.ink-paper,
+.ink-empty {
+  position: relative;
+  isolation: isolate;
+}
+
+.ink-paper::before,
+.ink-empty::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: var(--ink-grain);
+  border-radius: inherit;
+  background-image:
+    radial-gradient(circle at 1px 1px, var(--text-primary) 0.75px, transparent 1.1px),
+    radial-gradient(circle at 2px 1px, var(--text-primary) 0.6px, transparent 1px),
+    radial-gradient(circle at 1px 2px, var(--text-primary) 0.5px, transparent 0.9px);
+  background-size: 7px 7px, 11px 11px, 13px 13px;
+  background-position: 0 0, 3px 5px, 6px 2px;
+}
+
+/* ============ Hand-drawn frame ============ */
+.ink-frame {
+  box-sizing: border-box;
+  border: 1px dashed var(--ink-line);
+  border-radius: var(--ink-frame-radius);
+  outline: 1px solid var(--ink-line-soft);
+  outline-offset: 2px;
+}
+
+/* Version badge inside a sketch frame: drop the pill fill so the two
+   shapes never read as a card inside a card. */
+.ink-frame > .tb-soft-badge {
+  background: transparent;
+  border-color: transparent;
+}
+
+/* ============ Hand-drawn underline ============ */
+.ink-underline,
+.ink-empty .tb-empty-text,
+.ink-empty .empty-title,
+.ink-empty.empty-hint > p,
+.ink-empty.placeholder-empty > p:first-child {
+  position: relative;
+}
+
+.ink-underline::after,
+.ink-empty .tb-empty-text::after,
+.ink-empty .empty-title::after,
+.ink-empty.empty-hint > p::after,
+.ink-empty.placeholder-empty > p:first-child::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  bottom: -4px;
+  width: min(72%, 200px);
+  height: 1px;
+  border-radius: 1px;
+  pointer-events: none;
+  transform: rotate(var(--ink-wobble));
+  transform-origin: left center;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    var(--ink-line-strong) 14%,
+    var(--ink-line-strong) 74%,
+    var(--ink-line-soft) 92%,
+    transparent 100%
+  );
+}
+
+/* Centred titles (empty states) get a centred stroke. */
+.ink-empty .tb-empty-text::after,
+.ink-empty .empty-title::after,
+.ink-empty.empty-hint > p::after,
+.ink-empty.placeholder-empty > p:first-child::after {
+  left: 50%;
+  width: min(88%, 160px);
+  transform: translateX(-50%) rotate(var(--ink-wobble));
+  transform-origin: center;
+}
+
+/* ============ Hand-drawn rule ============ */
+/* Drop-in replacement for a hairline border-bottom. */
+.ink-rule {
+  position: relative;
+  border-bottom: none;
+}
+
+.ink-rule::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 1px;
+  pointer-events: none;
+  transform: rotate(calc(var(--ink-wobble) / 8));
+  transform-origin: left center;
+  background-image: repeating-linear-gradient(
+    90deg,
+    var(--ink-line-strong) 0 5px,
+    transparent 5px 9px,
+    var(--ink-line-soft) 9px 11px,
+    transparent 11px 19px
+  );
+}
+
+/* ============ Tilt (decorative bits only) ============ */
+.ink-tilt {
+  transform: rotate(var(--ink-wobble));
+}
+
+/* ============ Empty states ============ */
+/* Icon area becomes a sketchy placeholder box. */
+.ink-empty :is(.tb-empty-icon, .empty-icon) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 14px;
+  border: 1px dashed var(--ink-line);
+  border-radius: var(--ink-frame-radius);
+  background: color-mix(in srgb, var(--text-primary) 3%, transparent);
+  transform: rotate(var(--ink-wobble));
+}
+
+/* Text-only empty states have no icon: draw a small placeholder box. */
+.ink-empty.empty-hint > p::before,
+.ink-empty.placeholder-empty > p:first-child::before {
+  content: '';
+  display: block;
+  width: 34px;
+  height: 26px;
+  margin: 0 auto 12px;
+  border: 1px dashed var(--ink-line);
+  border-radius: var(--ink-frame-radius);
+  transform: rotate(var(--ink-wobble));
+}

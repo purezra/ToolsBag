@@ -383,7 +383,7 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <div v-else-if="!listLoading" class="tb-empty">
+      <div v-else-if="!listLoading" class="tb-empty ink-empty">
         <el-icon class="tb-empty-icon" :size="40"><FolderOpened /></el-icon>
         <div class="tb-empty-text">{{ t('暂无文件') }}</div>
         <div class="tb-empty-hint">{{ t('点击上方导入列表开始') }}</div>

@@ -6,6 +6,7 @@ import './assets/styles/style.css'
 import './assets/styles/theme-dark.css'
 import './assets/styles/skin-minimal.css'
 import 'element-plus/theme-chalk/dark/css-vars.css'
+import './assets/styles/ink.css'
 import App from './App.vue'
 
 // Element Plus 由 unplugin 自动按需引入，无需手动 import

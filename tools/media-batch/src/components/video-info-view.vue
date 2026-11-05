@@ -606,7 +606,7 @@ defineExpose({
     </div>
 
     <!-- 空状态 -->
-    <div v-if="!items.length && !importing" class="empty-state">
+    <div v-if="!items.length && !importing" class="empty-state ink-empty">
       <div class="empty-icon">🎬</div>
       <p class="empty-title">{{ t('导入视频文件以查看详细信息') }}</p>
       <p class="empty-desc">{{ t('支持文件夹导入或粘贴路径，可选择是否递归遍历子目录') }}</p>

@@ -248,6 +248,16 @@
   opacity: 0.7;
 }
 
+/* Hand-drawn variant — the sketch itself lives in ink.css, this only
+   rebalances the spacing/contrast around the framed icon. */
+.tb-empty.ink-empty {
+  padding-block: 36px 44px;
+}
+.tb-empty.ink-empty .tb-empty-icon {
+  opacity: 0.72;
+  margin-bottom: 14px;
+}
+
 /* ============ Status Dot ============ */
 .tb-status-dot {
   display: inline-flex;
