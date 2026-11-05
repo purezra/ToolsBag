@@ -16,7 +16,8 @@ export default defineConfig({
       '@media-batch': path.resolve(__dirname, '../tools/media-batch/src'),
       '@image-to-pdf': path.resolve(__dirname, '../tools/image-to-pdf/src'),
       '@image-compress': path.resolve(__dirname, '../tools/image-compress/src'),
-      '@image-tools': path.resolve(__dirname, '../tools/image-tools/src')
+      '@image-tools': path.resolve(__dirname, '../tools/image-tools/src'),
+      '@tilepress': path.resolve(__dirname, '../tools/tilepress/src')
     }
   },
   build: {
@@ -24,9 +25,12 @@ export default defineConfig({
     rollupOptions: {
       input: path.resolve(__dirname, '../index.html'),
       output: {
+        // Only pin Vue itself. Element Plus components are auto-imported
+        // per component and ECharts is imported from echarts/core, so forcing
+        // their package entries into manual chunks would pull the whole
+        // library into the binary.
         manualChunks: {
-          'vue-vendor': ['vue', 'element-plus'],
-          'echarts-vendor': ['echarts']
+          'vue-vendor': ['vue']
         }
       }
     },

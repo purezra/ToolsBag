@@ -165,8 +165,19 @@ pub fn set_resource_dir(path: PathBuf) {
 
 /// 内嵌的 libjxl/cjxl.exe（编译期嵌入，运行时释放到临时目录）。
 /// 仅 Windows 平台嵌入；其它平台走磁盘候选（dev/已安装环境）。
+/// build.rs 会先把 cjxl.exe deflate 压缩，体积从 4.7MB 降到约 2.0MB。
 #[cfg(target_os = "windows")]
-const EMBEDDED_CJXL_EXE: &[u8] = include_bytes!("../../bin/libjxl/cjxl.exe");
+const EMBEDDED_CJXL_EXE_DEFLATE: &[u8] =
+    include_bytes!(concat!(env!("OUT_DIR"), "/cjxl.exe.deflate"));
+
+#[cfg(target_os = "windows")]
+fn decompress_cjxl_exe() -> std::io::Result<Vec<u8>> {
+    use flate2::read::DeflateDecoder;
+    use std::io::Read;
+    let mut out = Vec::new();
+    DeflateDecoder::new(EMBEDDED_CJXL_EXE_DEFLATE).read_to_end(&mut out)?;
+    Ok(out)
+}
 
 /// 将内嵌的 cjxl.exe 释放到 `%TEMP%\toolsbag_cjxl.exe`，原子写入避免多进程竞态。
 /// 返回释放后的路径；dev/非 Windows 或释放失败时返回 None。
@@ -182,7 +193,8 @@ fn released_cjxl_path() -> Option<PathBuf> {
         // 原子写入：先写进程级临时文件，再 rename 到目标名
         let staging =
             std::env::temp_dir().join(format!("toolsbag_cjxl_{}.exe", std::process::id()));
-        if std::fs::write(&staging, EMBEDDED_CJXL_EXE).is_ok() {
+        let exe = decompress_cjxl_exe().ok()?;
+        if std::fs::write(&staging, &exe).is_ok() {
             // rename 目标已存在时会失败（Windows），不影响——说明别的进程已释放
             let _ = std::fs::rename(&staging, &target);
         }

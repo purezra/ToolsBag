@@ -75,8 +75,19 @@ pub fn get_mediainfo_path() -> Option<String> {
 /// 内嵌的 MediaInfo.dll（编译期嵌入，运行时释放到临时目录）。
 /// 仅 Windows 平台嵌入；这样打包出来的就是一个可双击直接运行的单文件 exe，
 /// 不需要在 exe 旁边再放一份 8MB 的 DLL。其它平台走磁盘候选。
+/// build.rs 会先把 DLL deflate 压缩，体积从 8.3MB 降到约 3.5MB。
 #[cfg(target_os = "windows")]
-const EMBEDDED_MEDIAINFO_DLL: &[u8] = include_bytes!("../../../../MediaInfo.dll");
+const EMBEDDED_MEDIAINFO_DLL_DEFLATE: &[u8] =
+    include_bytes!(concat!(env!("OUT_DIR"), "/mediainfo.dll.deflate"));
+
+#[cfg(target_os = "windows")]
+fn decompress_mediainfo_dll() -> std::io::Result<Vec<u8>> {
+    use flate2::read::DeflateDecoder;
+    use std::io::Read;
+    let mut out = Vec::new();
+    DeflateDecoder::new(EMBEDDED_MEDIAINFO_DLL_DEFLATE).read_to_end(&mut out)?;
+    Ok(out)
+}
 
 /// 将内嵌的 MediaInfo.dll 释放到 `%TEMP%`，原子写入避免多进程竞态。
 /// 返回释放后的路径；非 Windows 或释放失败时返回 None（此时回退到磁盘候选路径）。
@@ -87,18 +98,18 @@ fn released_mediainfo_path() -> Option<PathBuf> {
             "toolsbag_mediainfo_{}.dll",
             env!("CARGO_PKG_VERSION")
         ));
-        // 已存在且大小一致：直接复用（跨进程共享，避免每次启动重复写 8MB）
-        if let Ok(meta) = std::fs::metadata(&target) {
-            if meta.len() == EMBEDDED_MEDIAINFO_DLL.len() as u64 {
-                return Some(target);
-            }
+        // 已存在：直接复用（跨进程共享，避免每次启动重复解压写入）
+        // 目标是原子 rename 的产物，存在即完整。
+        if target.exists() {
+            return Some(target);
         }
         let staging = std::env::temp_dir().join(format!(
             "toolsbag_mediainfo_{}_{}.dll",
             env!("CARGO_PKG_VERSION"),
             std::process::id()
         ));
-        if std::fs::write(&staging, EMBEDDED_MEDIAINFO_DLL).is_ok() {
+        let dll = decompress_mediainfo_dll().ok()?;
+        if std::fs::write(&staging, &dll).is_ok() {
             // 目标已存在时 rename 会失败（Windows）——说明别的进程已经释放好了
             let _ = std::fs::rename(&staging, &target);
         }

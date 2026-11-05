@@ -12,7 +12,8 @@
       "@media-batch/*": ["tools/media-batch/src/*"],
       "@image-to-pdf/*": ["tools/image-to-pdf/src/*"],
       "@image-compress/*": ["tools/image-compress/src/*"],
-      "@image-tools/*": ["tools/image-tools/src/*"]
+      "@image-tools/*": ["tools/image-tools/src/*"],
+      "@tilepress/*": ["tools/tilepress/src/*"]
     },
 
     /* Linting */
