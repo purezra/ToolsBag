@@ -46,14 +46,14 @@ export const toolDefinitions: ToolDefinition[] = [
   },
   {
     key: 'image-tools',
-    name: '图片工坊',
-    desc: '集中处理图片批量操作、AVIF/JXL 压缩转换与图片合成 PDF',
+    name: '图像套件',
+    desc: '批量处理、AVIF/JXL 压缩转换、图片转 PDF 与多页拼版印刷',
     tag: 'Suite',
     tagType: 'success',
     icon: Picture,
     iconImage: '/assets/tool2.webp',
     accent: 'linear-gradient(135deg, #43e97b, #38f9d7)',
-    meta: '批量处理 · AVIF/JXL · 图片转PDF'
+    meta: '批量处理 · 压缩转换 · 图片转PDF · 拼版印刷'
   },
   {
     key: 'file-traverse',

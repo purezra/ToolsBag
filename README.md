@@ -13,6 +13,7 @@
 | **图片工具** | 图片格式转换、缩放、裁剪等常用操作 |
 | **文件收割** | 多线程高速文件复制，按格式过滤与分类，支持媒体预览 |
 | **密码册** | Argon2id + AES-256-GCM 加密的密码保险箱，支持 WebDAV 多设备同步 |
+| **图像套件 · 拼版印刷** | 把文件夹里的图片密集拼贴成多页 PDF（切分树 + 模拟退火），也可整页导出 WebP/AVIF；支持 A4/A3、边距/间距、逐页张数与 DPI 上限。拼版印刷现为「图像套件」的第四个标签页 |
 
 ## 技术栈
 
@@ -20,6 +21,13 @@
 - **后端**：Rust + Tauri 2
 - **构建**：Vite 7
 - **加密**：Argon2id / AES-256-GCM / HMAC-SHA256 / Ed25519
+
+## 界面与主题
+
+亮色 / 暗色主题基于 Material 3 动态取色（种子色 `#007AFF`，ColorStyle.vivid）生成完整的 role token，
+视觉风格对齐 FlClash：无边框卡片、分层表面（page / card / block / inset）、连续圆角、iOS 分组设置列表
+与填充式分段控件。所有颜色、圆角、阴影都通过 `core/assets/styles/skin-minimal.css` 中的 CSS 变量下发，
+工具模块只引用 `var(--*)` 令牌，新增组件时请沿用同一套变量以保持两种模式一致。
 
 ## 开发
 
@@ -68,8 +76,21 @@ npm run tauri:build
 ## 打包与分发
 
 `npm run tauri:build` 会把前端产物、`MediaInfo.dll` 和 `bin/libjxl/cjxl.exe`
-（两者均在编译期用 `include_bytes!` 嵌入，运行时释放到 `%TEMP%`）一起打进单个可执行文件，
-产物 `ToolsBag.exe` **双击即可运行**，不需要额外安装或拷贝 DLL。
+一起打进单个可执行文件，产物 `ToolsBag.exe` **双击即可运行**，不需要额外安装或拷贝 DLL。
+这两个二进制会由 `src-tauri/build.rs` 在编译期先做 deflate 压缩再 `include_bytes!`
+（8.3MB → 3.5MB、4.7MB → 2.0MB），运行时首次使用时解压到 `%TEMP%`。
+
+### 便携版自更新
+
+设置 →「应用更新」支持软件内检查、下载和重启更新，流程与 magpie 类似：
+
+1. 读取 GitHub Releases 最新版本（`purezra/ToolsBag`，资产名固定为 `ToolsBag-Portable.exe`）；
+2. 在应用内下载到 `%TEMP%`，显示进度；
+3. 下载完成后出现「重启更新」，点击后由 `self-replace` 替换当前 exe 并重启。
+
+发布新版本时：提升 `package.json` / `src-tauri/Cargo.toml` / `tauri.conf.json` 的版本号，
+构建 `app.exe` 并重命名为 `ToolsBag-Portable.exe`，创建 GitHub Release（tag 形如 `v0.2.1`），
+把 exe 作为资产上传即可。若 GitHub 返回资产 `digest`，下载后会校验 SHA-256。
 
 ### 准备本地二进制
 
@@ -96,7 +117,8 @@ toolsbag1/
 │   ├── image-compress/ # 图片压缩
 │   ├── image-tools/    # 图片工具
 │   ├── file-traverse/  # 文件收割
-│   └── codebook/       # 密码册
+│   ├── codebook/       # 密码册
+│   └── tilepress/      # 拼版印刷（UI 与样式整体收敛到 .tilepress-root）
 ├── config/             # Vite + TypeScript 配置
 ├── public/             # 静态资源
 ├── build/              # 前端生产构建产物
@@ -104,6 +126,7 @@ toolsbag1/
 ├── exe/                # 打包输出目录
 ├── src-tauri/          # Rust 后端
 │   ├── bin/libjxl/     # cjxl.exe（本地准备，不入库）
+│   ├── engines/tilepress/ # 拼版引擎（独立 path crate，保持原项目代码）
 │   ├── src/
 │   │   ├── cmd/        # Tauri 命令层
 │   │   ├── models/     # 数据结构

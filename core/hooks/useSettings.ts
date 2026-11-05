@@ -4,15 +4,10 @@ export type ThemeMode = 'light' | 'dark'
 export type Appearance = 'light' | 'dark' | 'system'
 export type Locale = 'zh' | 'en'
 export type FontFamily = 'harmonyos' | 'custom'
-export type WatermarkMode = 'static' | 'tile' | 'float' | 'breath'
 
 const SETTINGS_KEY = Symbol('toolsbag-settings')
 const FONT_KEY = 'toolsbag-font'
 const CUSTOM_FONT_KEY = 'toolsbag-custom-font'
-const WATERMARK_KEY = 'toolsbag-watermark'
-const WATERMARK_MODE_KEY = 'toolsbag-watermark-mode'
-const WATERMARK_OPACITY_KEY = 'toolsbag-watermark-opacity'
-const WATERMARK_SCALE_KEY = 'toolsbag-watermark-scale'
 const SKIN_KEY = 'toolsbag-skin'
 const APPEARANCE_KEY = 'toolsbag-appearance'
 const LOCALE_KEY = 'toolsbag-locale'
@@ -23,6 +18,7 @@ const enMessages = Object.fromEntries<string>([
   ['精致的桌面工具盒', 'Delicate desktop toolkit'],
   ['轻盈而克制的触感', 'Lightweight yet restrained tactility'],
   ['媒体探针', 'Media Probe'],
+  ['图像套件', 'Image Suite'],
   ['图片工坊', 'Image Workshop'],
   ['提取视频/图片元数据，批量整理命名，并输出视频体检报告', 'Extract video/image metadata, organize names in batch, and export video health reports'],
   ['元数据提取 · 视频体检 · 批量整理', 'Metadata extraction · Video health check · Batch organize'],
@@ -357,7 +353,6 @@ const enMessages = Object.fromEntries<string>([
   ['快', 'Fast'],
   ['中', 'Medium'],
   ['慢', 'Slow'],
-  ['工具水印', 'Tool Watermark'],
   ['加载更多', 'Load more'],
   ['已加载全部', 'All loaded'],
   // Image-to-PDF translations
@@ -413,9 +408,25 @@ const enMessages = Object.fromEntries<string>([
   ['未找到匹配的工具', 'No matching tools found'],
   ['打开', 'Open'],
   ['ToolsBag 工具中心', 'ToolsBag Tool Center'],
-  ['精致克制的桌面工具盒 · 媒体探针 · 图片工坊 · 文件收割 · 密码册', 'Refined desktop toolkit · Media Probe · Image Workshop · File Harvester · Cipher Book'],
+  ['精致克制的桌面工具盒 · 媒体探针 · 图像套件 · 文件收割 · 密码册', 'Refined desktop toolkit · Media Probe · Image Suite · File Harvester · Cipher Book'],
+  ['拼版印刷', 'Imposition'],
+  ['把文件夹里的图片密集拼贴成多页 PDF，也可导出整页 WebP/AVIF', 'Tile a folder of images into dense multi-page PDFs, or export full pages as WebP/AVIF'],
+  ['智能拼贴 · 多页 PDF · WebP/AVIF', 'Smart tiling · Multi-page PDF · WebP/AVIF'],
   ['切换主题', 'Switch theme'],
   ['偏好设置', 'Preferences'],
+  ['应用更新', 'App update'],
+  ['当前版本', 'Current version'],
+  ['检查更新', 'Check for updates'],
+  ['检查是否有新版本', 'Check whether a new version is available'],
+  ['仅桌面端可用', 'Available in the desktop app only'],
+  ['正在检查更新…', 'Checking for updates…'],
+  ['已是最新版本', "You're up to date"],
+  ['发现新版本', 'New version available'],
+  ['正在下载…', 'Downloading…'],
+  ['下载完成，点击重启更新', 'Download complete. Restart to update.'],
+  ['更新失败', 'Update failed'],
+  ['下载更新', 'Download update'],
+  ['重启更新', 'Restart to update'],
   ['关于', 'About'],
   ['折叠导航', 'Collapse nav'],
   ['展开导航', 'Expand nav'],
@@ -425,15 +436,6 @@ const enMessages = Object.fromEntries<string>([
   ['Arc 玻璃', 'Arc Glass'],
   ['极简专业', 'Minimal Pro'],
   ['界面风格', 'UI style'],
-  ['工具水印', 'Tool watermark'],
-  ['开启后工具页面将显示极淡的图标水印', 'Show a faint icon watermark on tool pages'],
-  ['在工具页面叠加图标水印，可调模式与透明度', 'Overlay an icon watermark on tool pages; adjust mode and opacity'],
-  ['水印·静态', 'Static'],
-  ['水印·平铺', 'Tile'],
-  ['水印·漂浮', 'Float'],
-  ['水印·呼吸', 'Breath'],
-  ['透明度', 'Opacity'],
-  ['大小', 'Size'],
   ['点击动画', 'Click animation'],
   ['导出字体', 'Export font'],
   ['查看关于', 'About ToolsBag'],
@@ -446,6 +448,7 @@ const enMessages = Object.fromEntries<string>([
   ['为日常文件工作提供清晰、可靠的本地工具。', 'Clear, dependable local tools for everyday file work.'],
   ['核心能力', 'Core capabilities'],
   ['查看视频与图片元数据，筛选文件并批量整理命名。', 'Inspect video and image metadata, filter files, and organize names in batches.'],
+  ['批量处理、压缩转换图片，并完成转 PDF 与多页拼版印刷。', 'Process and compress images in batches, convert them to PDF, and impose multi-page sheets.'],
   ['批量转换、压缩图片，并完成常用的图片文档处理。', 'Convert and compress images in batches, with practical image document tools.'],
   ['按类型快速遍历、归集和整理文件。', 'Quickly find, collect, and organize files by type.'],
   ['生成密码，并在本地管理账号资料。', 'Generate passwords and manage account details locally.'],
@@ -904,8 +907,8 @@ export const provideSettings = () => {
   const customFontName = ref<string>(localStorage.getItem(CUSTOM_FONT_KEY) || '')
 
   const fontFamilyMap: Record<FontFamily, string> = {
-    'harmonyos': "'HarmonyOS Sans SC', -apple-system, 'SF Pro Display', 'Segoe UI', sans-serif",
-    'custom': `'Custom Font', 'HarmonyOS Sans SC', -apple-system, sans-serif`
+    'harmonyos': "'Segoe UI Variable Text', 'Segoe UI', -apple-system, 'SF Pro Text', 'PingFang SC', 'Microsoft YaHei', sans-serif",
+    'custom': `'Custom Font', 'Segoe UI Variable Text', 'Segoe UI', -apple-system, 'PingFang SC', sans-serif`
   }
 
   const applyFont = (font: FontFamily) => {
@@ -1003,42 +1006,9 @@ export const provideSettings = () => {
   // Apply font on init
   applyFont(fontFamily.value)
 
-  // Watermark settings (default off, but visible when on)
-  const showWatermark = ref(localStorage.getItem(WATERMARK_KEY) === 'true')
-  const watermarkMode = ref<WatermarkMode>(
-    (localStorage.getItem(WATERMARK_MODE_KEY) as WatermarkMode) || 'static'
-  )
-  // ponytail: 透明度用百分比数值存储（2-30），默认 10；避免旧版 0.04 极淡看不到的坑
-  const watermarkOpacity = ref(Number(localStorage.getItem(WATERMARK_OPACITY_KEY)) || 10)
-  const watermarkScale = ref(Number(localStorage.getItem(WATERMARK_SCALE_KEY)) || 100)
-
-  const setShowWatermark = (val: boolean) => {
-    showWatermark.value = val
-    localStorage.setItem(WATERMARK_KEY, val ? 'true' : 'false')
-  }
-
-  const setWatermarkMode = (val: WatermarkMode) => {
-    watermarkMode.value = val
-    localStorage.setItem(WATERMARK_MODE_KEY, val)
-  }
-
-  const setWatermarkOpacity = (val: number) => {
-    watermarkOpacity.value = val
-    localStorage.setItem(WATERMARK_OPACITY_KEY, String(val))
-  }
-
-  const setWatermarkScale = (val: number) => {
-    watermarkScale.value = val
-    localStorage.setItem(WATERMARK_SCALE_KEY, String(val))
-  }
-
   const state = {
     theme, appearance, setAppearance, setTheme, locale, setLocale, t,
-    fontFamily, setFontFamily, customFontName, loadCustomFont, clearCustomFont,
-    showWatermark, setShowWatermark,
-    watermarkMode, setWatermarkMode,
-    watermarkOpacity, setWatermarkOpacity,
-    watermarkScale, setWatermarkScale
+    fontFamily, setFontFamily, customFontName, loadCustomFont, clearCustomFont
   }
   provide(SETTINGS_KEY, state)
   return state

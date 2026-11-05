@@ -19,8 +19,8 @@ const capabilities = [
   },
   {
     index: '02',
-    name: '图片工坊',
-    description: '批量转换、压缩图片，并完成常用的图片文档处理。'
+    name: '图像套件',
+    description: '批量处理、压缩转换图片，并完成转 PDF 与多页拼版印刷。'
   },
   {
     index: '03',

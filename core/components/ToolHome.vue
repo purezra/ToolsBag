@@ -49,7 +49,7 @@ const sortedTools = computed(() => {
       <div class="tool-home__hero-text">
         <h1 class="tool-home__title">{{ t('ToolsBag 工具中心') }}</h1>
         <p class="tool-home__subtitle">
-          {{ t('精致克制的桌面工具盒 · 媒体探针 · 图片工坊 · 文件收割 · 密码册') }}
+          {{ t('精致克制的桌面工具盒 · 媒体探针 · 图像套件 · 文件收割 · 密码册') }}
         </p>
       </div>
       <div class="tool-home__hero-badge">
@@ -123,7 +123,7 @@ const sortedTools = computed(() => {
   height: 100%;
   min-height: 0;
   overflow-y: auto;
-  padding: var(--space-5) var(--space-6);
+  padding: 4px 4px 24px;
 }
 
 /* ============ Hero ============ */
@@ -136,26 +136,26 @@ const sortedTools = computed(() => {
 }
 .tool-home__title {
   margin: 0;
-  font-size: 22px;
+  font-size: 28px;
+  line-height: 34px;
   font-weight: 700;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.03em;
   color: var(--text-primary);
 }
 .tool-home__subtitle {
   margin: 6px 0 0;
-  font-size: 13px;
+  font-size: 15px;
+  line-height: 20px;
   color: var(--text-secondary);
-  line-height: 1.5;
 }
 
 /* ============ Section titles ============ */
 .tool-home__section-title {
   margin: 0 0 var(--space-3);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
-  color: var(--text-muted);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  color: var(--text-secondary);
+  letter-spacing: 0;
 }
 
 /* ============ Recent chips ============ */
@@ -171,23 +171,21 @@ const sortedTools = computed(() => {
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  height: 28px;
-  padding: 0 12px;
-  border: 1px solid var(--home-card-border);
+  height: 32px;
+  padding: 0 14px;
+  border: none;
   border-radius: var(--radius-pill);
-  background: var(--home-card-bg);
+  background: var(--surface-block);
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 500;
   cursor: pointer;
-  transition: border-color var(--duration-fast) ease,
-              color var(--duration-fast) ease,
-              background var(--duration-fast) ease;
+  transition: color var(--duration-fast) var(--ease-standard),
+              background var(--duration-fast) var(--ease-standard);
 }
 .recent-chip:hover {
-  border-color: var(--accent);
-  color: var(--accent);
-  background: var(--accent-light);
+  color: var(--text-primary);
+  background: var(--surface-inset);
 }
 .recent-chip:focus-visible {
   outline: 2px solid var(--accent);
@@ -207,8 +205,8 @@ const sortedTools = computed(() => {
 }
 .tool-home__grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: var(--space-3);
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--space-4);
 }
 
 /* ============ Tool card ============ */
@@ -217,20 +215,18 @@ const sortedTools = computed(() => {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
-  padding: var(--space-4);
+  padding: 18px;
   text-align: left;
   background: var(--home-card-bg);
-  border: 1px solid var(--home-card-border);
-  border-radius: var(--radius-card);
+  border: none;
+  border-radius: 20px;
   box-shadow: var(--card-shadow);
   cursor: pointer;
   transition: transform 0.2s var(--ease-out),
-              border-color var(--duration-fast) ease,
-              box-shadow var(--duration-fast) ease;
+              box-shadow var(--duration-normal) var(--ease-standard);
 }
 .tool-card:hover {
   transform: translateY(-2px);
-  border-color: var(--accent);
   box-shadow: var(--home-card-hover-shadow);
 }
 .tool-card:active {
@@ -248,24 +244,24 @@ const sortedTools = computed(() => {
 }
 /* Icon: small gradient tile — never a large saturated flood */
 .tool-card__icon {
-  width: 36px;
-  height: 36px;
-  border-radius: var(--radius-md);
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
   display: grid;
   place-items: center;
   color: #fff;
   flex-shrink: 0;
-  box-shadow: var(--shadow-xs);
+  box-shadow: none;
 }
 .tool-card__tag {
   display: inline-flex;
   align-items: center;
-  height: 18px;
-  padding: 0 7px;
+  height: 20px;
+  padding: 0 8px;
   border-radius: var(--radius-pill);
   background: var(--soft-badge-bg);
   color: var(--soft-badge-fg);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 500;
 }
 
@@ -277,14 +273,14 @@ const sortedTools = computed(() => {
 }
 .tool-card__name {
   margin: 0;
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 600;
   color: var(--text-primary);
   letter-spacing: -0.01em;
 }
 .tool-card__desc {
   margin: 0;
-  font-size: 12px;
+  font-size: 13px;
   color: var(--text-secondary);
   line-height: 1.5;
   display: -webkit-box;

@@ -36,12 +36,13 @@
 
 <script setup lang="ts">
 import { computed, defineAsyncComponent, ref, type Component } from 'vue'
-import { Brush, Document, Picture } from '@element-plus/icons-vue'
+import { Brush, Document, Files, Picture } from '@element-plus/icons-vue'
 import { useSettings } from '@core/hooks/useSettings'
 
 const ImageBatchTool = defineAsyncComponent(() => import('@image-batch/index.vue'))
 const ImageCompressTool = defineAsyncComponent(() => import('@image-compress/index.vue'))
 const ImageToPdfTool = defineAsyncComponent(() => import('@image-to-pdf/index.vue'))
+const TilepressTool = defineAsyncComponent(() => import('@tilepress/index.vue'))
 
 type ImageToolTab = {
   key: string
@@ -74,6 +75,13 @@ const tabs: ImageToolTab[] = [
     desc: '高确定性图片合并 PDF，支持边距、多尺寸与预览',
     icon: Document,
     component: ImageToPdfTool,
+  },
+  {
+    key: 'tilepress',
+    name: '拼版印刷',
+    desc: '把文件夹图片密集拼贴成多页 PDF，也可整页导出 WebP/AVIF',
+    icon: Files,
+    component: TilepressTool,
   },
 ]
 
