@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { onMounted, ref, watch } from 'vue'
 import { Setting, InfoFilled, Fold, Expand } from '@element-plus/icons-vue'
+import { getCurrentWindow } from '@tauri-apps/api/window'
 
 import { provideSettings } from './hooks/useSettings'
 import { useTools } from './hooks/useTools'
+import { hasTauriRuntime } from './utils/tauri'
 import { toolComponentMap, HOME_KEY } from './tools'
 
 import ErrorBoundary from './components/ErrorBoundary.vue'
@@ -13,7 +15,7 @@ import NavRail from './components/NavRail.vue'
 import CommandSearch from './components/CommandSearch.vue'
 import ToolHome from './components/ToolHome.vue'
 
-const { t } = provideSettings()
+const { t, theme } = provideSettings()
 const { activeKey, isHome, activeTool, goHome } = useTools(t)
 
 /** Remember the rail state so a collapsed sidebar stays collapsed on restart. */
@@ -30,6 +32,35 @@ const toggleNav = () => {
 const handleBrandClick = () => {
   goHome()
 }
+
+/* ------------------------------------------------------------------
+   Native window chrome.
+   1. The title-bar icon is cleared on the Rust side at startup
+      (src-tauri/src/main.rs): WM_SETICON/ICON_SMALL gets a fully
+      transparent 32x32 RGBA bitmap, so the taskbar / Alt+Tab icon
+      (ICON_BIG, from the exe resource) keeps the otter.
+   2. setTheme() flips the title bar to match the in-app light/dark theme.
+   Desktop-only; must never break startup in a plain browser.
+   ------------------------------------------------------------------ */
+const syncNativeTheme = async () => {
+  if (!hasTauriRuntime()) return
+  try {
+    await getCurrentWindow().setTheme(theme.value)
+  } catch (err) {
+    console.warn('[ToolsBag] failed to set window theme', err)
+  }
+}
+
+onMounted(() => {
+  void syncNativeTheme()
+})
+
+watch(theme, (val) => {
+  if (!hasTauriRuntime()) return
+  getCurrentWindow()
+    .setTheme(val)
+    .catch((err) => console.warn('[ToolsBag] failed to set window theme', err))
+})
 </script>
 
 <template>

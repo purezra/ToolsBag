@@ -150,6 +150,15 @@ fn main() {
 
     tauri::Builder::default()
         .setup(|app| {
+            // Windows 原生标题栏默认显示应用图标；换成全透明小图标，
+            // 只影响标题栏（ICON_SMALL），任务栏/Alt+Tab 仍沿用 exe 图标。
+            #[cfg(target_os = "windows")]
+            if let Some(win) = app.get_webview_window("main") {
+                let blank_icon = tauri::image::Image::new_owned(vec![0u8; 32 * 32 * 4], 32, 32);
+                if let Err(e) = win.set_icon(blank_icon) {
+                    log::warn!("清除标题栏图标失败: {e}");
+                }
+            }
             if let Ok(res_dir) = app.path().resource_dir() {
                 tools::mediainfo::set_resource_dir(res_dir.clone());
                 image_compress::set_resource_dir(res_dir);
