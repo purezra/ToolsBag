@@ -1,0 +1,40 @@
+[package]
+name = "tilepress"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+# 默认关闭 NASM 汇编优化：ToolsBag 构建环境不要求安装 NASM。
+# 需要 AVIF 极限性能时，可显式启用 `--features avif-simd`。
+default = []
+avif-simd = ["ravif/asm"]
+
+[lib]
+name = "tilepress"
+path = "src/lib.rs"
+
+[[bin]]
+name = "tilepress"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+rand = "0.8"
+flate2 = "1"
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp", "bmp", "gif", "tiff", "avif"] }
+zune-jpeg = "0.5.15"
+fast_image_resize = "6.1.0"
+jpeg-encoder = "0.7.1"
+rayon = "1.12.0"
+num_cpus = "1.17.0"
+base64 = "0.23.1"
+crossbeam-channel = "0.5.17"
+serde_json = "1.0.154"
+ravif = { version = "0.13", default-features = false, features = ["threading"] }
+webp = { version = "0.2.6", default-features = false }
+rgb = "0.8.53"
+imgref = "1.12.3"
+
+[target."cfg(windows)".dependencies]
+windows-sys = { version = "0.61.2", features = ["Win32_System_Threading"] }

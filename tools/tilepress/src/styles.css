@@ -1,0 +1,1158 @@
+/* 布局与组件样式：只引用 dracula.css 里的变量 */
+
+.tilepress-root .app {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ---------- 顶栏（仅保留状态胶囊，标题由外层 ToolsBag 顶栏承担） ---------- */
+.tilepress-root .topbar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 0 2px 12px;
+  background: transparent;
+  border-bottom: none;
+}
+
+.tilepress-root .top-meta {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+}
+
+.tilepress-root .pill {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 10px;
+  font-size: 11.5px;
+  color: var(--comment);
+  background: var(--bg-alt);
+  border: 1px solid transparent;
+  border-radius: 999px;
+}
+
+.tilepress-root .pill.ok {
+  color: var(--green);
+  background: var(--success-light, rgba(52, 199, 89, 0.12));
+}
+
+.tilepress-root .stage-pill {
+  color: var(--brand);
+  background: var(--brand-soft);
+  font-family: var(--mono);
+}
+
+/* ---------- 通用 ---------- */
+.tilepress-root .mono {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.tilepress-root .muted {
+  color: var(--comment);
+  font-size: 12px;
+}
+
+.tilepress-root .hint {
+  margin: 6px 0 0;
+  font-size: 11.5px;
+  color: var(--comment);
+  line-height: 1.55;
+}
+
+.tilepress-root .hint.warn {
+  color: var(--orange);
+}
+
+.tilepress-root .error {
+  margin: 12px 0 0;
+  padding: 9px 11px;
+  border: 1px solid var(--red);
+  border-radius: var(--radius);
+  background: var(--bg-alt);
+  color: var(--red);
+  font-size: 11.5px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.tilepress-root .error.floating {
+  position: absolute;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  max-width: 80%;
+  margin: 0;
+  z-index: 20;
+}
+
+/* ---------- 按钮 / 输入 ---------- */
+.tilepress-root .btn {
+  flex: none;
+  height: 34px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-button, 12px);
+  background: var(--bg);
+  color: var(--fg);
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease, filter 0.12s ease;
+}
+
+.tilepress-root .btn:hover:not(:disabled) {
+  background: var(--bg-hover, rgba(24, 28, 35, 0.06));
+  border-color: var(--border-strong, var(--line));
+}
+
+.tilepress-root .btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.tilepress-root .btn.primary {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: #fff;
+  font-weight: 600;
+}
+
+.tilepress-root .btn.primary:hover:not(:disabled) {
+  background: var(--brand);
+  filter: brightness(1.06);
+}
+
+.tilepress-root .btn.ghost {
+  background: transparent;
+  border-color: var(--line);
+}
+
+.tilepress-root .btn.danger {
+  background: transparent;
+  border-color: var(--red);
+  color: var(--red);
+}
+
+.tilepress-root .btn.big {
+  height: 32px;
+  padding: 0 22px;
+  font-size: 13px;
+}
+
+.tilepress-root .link {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: var(--cyan);
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.tilepress-root .link:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+.tilepress-root .link:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.tilepress-root .field {
+  margin: 0 0 10px;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.tilepress-root .field > label, .tilepress-root .field > legend, .tilepress-root .label-row label {
+  display: block;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--comment);
+  margin-bottom: 4px;
+  padding: 0;
+}
+
+.tilepress-root .label-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.tilepress-root .field-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.tilepress-root .field-grid.three {
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 8px;
+}
+
+.tilepress-root .hint.tight {
+  margin: -4px 0 10px;
+  font-size: 11px;
+}
+
+.tilepress-root .row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.tilepress-root .path {
+  flex: 1;
+  min-width: 0;
+  height: 34px;
+  line-height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-alt);
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--comment);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tilepress-root .num {
+  display: inline-flex;
+  align-items: center;
+  height: 34px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg);
+  overflow: hidden;
+}
+
+.tilepress-root .num:focus-within {
+  border-color: var(--brand);
+}
+
+.tilepress-root .num input {
+  width: 90px;
+  height: 100%;
+  border: 0;
+  outline: none;
+  padding: 0 4px 0 10px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  background: transparent;
+}
+
+.tilepress-root .num input:disabled {
+  color: var(--comment);
+  background: var(--bg-alt);
+}
+
+.tilepress-root .num span {
+  padding-right: 10px;
+  font-size: 11px;
+  color: var(--comment);
+  white-space: nowrap;
+}
+
+.tilepress-root .select {
+  width: 100%;
+  height: 34px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--fg);
+  outline: none;
+}
+
+.tilepress-root .switch {
+  display: flex !important;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px !important;
+  color: var(--fg) !important;
+  font-weight: 500;
+  margin-bottom: 8px !important;
+  cursor: pointer;
+}
+
+.tilepress-root .switch input {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--brand);
+}
+
+/* 分段选择 */
+.tilepress-root .segmented {
+  display: grid;
+  gap: 6px;
+}
+
+.tilepress-root .segmented.four {
+  grid-template-columns: repeat(4, 1fr);
+}
+
+.tilepress-root .segmented.two {
+  grid-template-columns: 1fr 1fr;
+}
+
+.tilepress-root .segmented.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
+.tilepress-root .segmented.inline {
+  display: flex;
+  gap: 4px;
+}
+
+.tilepress-root .segmented label, .tilepress-root .quality-grid label {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 5px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg);
+  cursor: pointer;
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+
+.tilepress-root .segmented label:hover, .tilepress-root .quality-grid label:hover {
+  border-color: var(--comment);
+}
+
+.tilepress-root .segmented label.active, .tilepress-root .quality-grid label.active {
+  border-color: var(--brand);
+  background: var(--brand-soft);
+}
+
+.tilepress-root .segmented input, .tilepress-root .quality-grid input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.tilepress-root .segmented.inline label {
+  padding: 5px 11px;
+}
+
+.tilepress-root .seg-title {
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--fg);
+}
+
+.tilepress-root .seg-sub {
+  font-size: 10px;
+  color: var(--comment);
+  white-space: nowrap;
+}
+
+.tilepress-root .segmented.four .seg-sub {
+  font-size: 9.5px;
+}
+
+.tilepress-root .quality-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+
+/* 长宽比直方图 */
+.tilepress-root .hist {
+  margin: 14px 0 0;
+  padding: 10px 0 0;
+  border-top: 1px solid var(--line);
+}
+
+.tilepress-root .hist-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 11px;
+  color: var(--comment);
+  margin-bottom: 8px;
+}
+
+.tilepress-root .hist-peak {
+  color: var(--brand);
+  font-weight: 600;
+}
+
+.tilepress-root .hist-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 74px;
+}
+
+.tilepress-root .hist-bar {
+  flex: 1;
+  min-height: 2px;
+  background: var(--line);
+  border-radius: 1px 1px 0 0;
+  transition: background 0.12s ease;
+}
+
+.tilepress-root .hist-bar.peak {
+  background: var(--brand);
+}
+
+.tilepress-root .hist-axis {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  color: var(--comment);
+  margin-top: 4px;
+}
+
+/* ---------- 面板 ---------- */
+.tilepress-root .panel {
+  background: var(--bg);
+  border: none;
+  border-radius: var(--radius-card);
+  box-shadow: var(--card-shadow);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.tilepress-root .panel-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 13px 16px;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.tilepress-root .panel-head h2 {
+  margin: 0;
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+}
+
+.tilepress-root .panel-body {
+  padding: 14px 16px 18px;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+/* ---------- 参数页 ---------- */
+.tilepress-root .workspace {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.tilepress-root .workspace-body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 380px;
+  gap: 14px;
+  padding: 12px 0 14px;
+  overflow: hidden;
+}
+
+/* 主要参数与导出设置并排展示，次级统计按需展开。 */
+.tilepress-root .section-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin: 14px 0 10px; }
+.tilepress-root .section-heading h3 { margin: 0; font-size: 14px; font-weight: 650; }
+.tilepress-root .section-heading > span { font-size: 11px; color: var(--comment); }
+.tilepress-root .params .field > label, .tilepress-root .params .field > legend, .tilepress-root .params .label-row label, .tilepress-root .overview .field > label, .tilepress-root .overview .field > legend { color: var(--fg); font-weight: 500; }
+.tilepress-root .params .num { width: 100%; }
+.tilepress-root .params .num input { min-width: 0; width: 100%; font-size: 16px; font-variant-numeric: tabular-nums; }
+.tilepress-root .params .segmented label, .tilepress-root .overview .segmented label { padding: 9px 10px; gap: 4px; }
+.tilepress-root .segmented label.active::after, .tilepress-root .quality-grid label.active::after {
+  content: "✓"; position: absolute; right: 7px; top: 5px; color: var(--brand); font-size: 11px;
+}
+.tilepress-root .segmented label.active .seg-title { padding-right: 10px; }
+.tilepress-root .params .seg-sub, .tilepress-root .overview .seg-sub { white-space: normal; line-height: 1.45; }
+.tilepress-root .overview .quality-grid { grid-template-columns: 1fr 1fr; }
+.tilepress-root .overview .quality-grid .seg-sub { white-space: normal; line-height: 1.45; }
+.tilepress-root .overview .quality-grid label { padding: 8px; gap: 4px; }
+.tilepress-root .quality-explanation { padding: 11px 12px; margin: 10px 0 16px; border-radius: var(--radius); background: var(--bg-alt); }
+.tilepress-root .quality-explanation b { font-size: 12px; color: var(--brand); }
+.tilepress-root .quality-explanation p { margin: 5px 0 0; font-size: 11.5px; line-height: 1.6; color: var(--fg); opacity: .8; }
+.tilepress-root .advanced-settings, .tilepress-root .image-statistics { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+.tilepress-root .advanced-settings summary, .tilepress-root .image-statistics summary { cursor: pointer; font-size: 12px; color: var(--fg); }
+.tilepress-root .advanced-settings summary span { color: var(--comment); margin-left: 8px; font-size: 11px; }
+.tilepress-root .advanced-body { padding-top: 14px; }
+.tilepress-root .image-statistics .stat-grid { margin-top: 12px; }
+.tilepress-root .footer-output { color: var(--fg); }
+.tilepress-root .export-summary { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.tilepress-root .export-summary b { color: var(--brand); font-size: 13px; }
+.tilepress-root .export-summary span { font-size: 11px; color: var(--fg); opacity: .75; white-space: nowrap; }
+.tilepress-root .overview .big-stat { margin-top: 6px; }
+.tilepress-root .overview .preview-note { margin-top: 14px; }
+.tilepress-root button:active:not(:disabled) { transform: translateY(1px); }
+
+.tilepress-root .footer-bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 12px 0 0;
+  border-top: 1px solid var(--line-soft);
+  background: transparent;
+}
+
+.tilepress-root .footer-info {
+  display: flex;
+  gap: 16px;
+  color: var(--comment);
+  font-size: 12px;
+}
+
+/* 概览卡片 */
+.tilepress-root .big-stat {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.tilepress-root .big-stat b {
+  font-size: 42px;
+  line-height: 1;
+  color: var(--yellow);
+  font-variant-numeric: tabular-nums;
+}
+
+.tilepress-root .big-stat span {
+  color: var(--comment);
+}
+
+.tilepress-root .big-stat em {
+  margin-left: auto;
+  font-style: normal;
+  color: var(--cyan);
+  font-size: 12px;
+}
+
+.tilepress-root .stat-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px;
+  margin-top: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--line);
+  overflow: hidden;
+}
+
+.tilepress-root .stat-grid > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 11px;
+  background: var(--bg-alt);
+  font-size: 12px;
+}
+
+.tilepress-root .stat-grid span {
+  color: var(--comment);
+}
+
+.tilepress-root .stat-grid b {
+  color: var(--fg);
+  font-variant-numeric: tabular-nums;
+}
+
+.tilepress-root .estimate {
+  margin-top: 14px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-alt);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.tilepress-root .estimate > span {
+  color: var(--comment);
+  font-size: 12px;
+}
+
+.tilepress-root .estimate > b {
+  color: var(--yellow);
+  font-size: 22px;
+}
+
+.tilepress-root .preview-note {
+  margin-top: 16px;
+  color: var(--comment);
+  line-height: 1.6;
+}
+
+.tilepress-root .preview-note h3 {
+  margin: 0 0 6px;
+  font-size: 12px;
+  color: var(--fg);
+}
+
+.tilepress-root .preview-note p {
+  margin: 0;
+  font-size: 12px;
+}
+
+/* ---------- 居中任务卡片 ---------- */
+.tilepress-root .center-stage {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 26px;
+  overflow-y: auto;
+}
+
+.tilepress-root .task-card {
+  width: min(760px, 100%);
+  background: var(--bg);
+  border: none;
+  border-radius: var(--radius-card);
+  box-shadow: var(--card-shadow);
+  padding: 26px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.tilepress-root .task-card h2 {
+  margin: 0;
+  font-size: 19px;
+}
+
+.tilepress-root .task-sub {
+  margin: 0;
+  color: var(--comment);
+  font-size: 11.5px;
+  word-break: break-all;
+}
+
+.tilepress-root .stat-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--line);
+  overflow: hidden;
+}
+
+.tilepress-root .stat-row > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 9px 11px;
+  background: var(--bg);
+}
+
+.tilepress-root .stat-row span {
+  font-size: 10.5px;
+  color: var(--comment);
+}
+
+.tilepress-root .stat-row b {
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  color: var(--fg);
+}
+
+.tilepress-root .task-card > .btn {
+  align-self: flex-start;
+}
+
+/* ---------- 进度条 ---------- */
+.tilepress-root .progress-track {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--line);
+  overflow: hidden;
+}
+
+.tilepress-root .progress-track.big {
+  height: 12px;
+}
+
+.tilepress-root .progress-track.slim {
+  height: 5px;
+  flex: 1;
+}
+
+.tilepress-root .progress-bar {
+  height: 100%;
+  width: 0;
+  border-radius: 999px;
+  background: var(--brand);
+  transition: width 0.16s linear;
+}
+
+.tilepress-root .progress-bar.complete {
+  background: var(--green);
+}
+
+.tilepress-root .progress-line {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--fg);
+}
+
+.tilepress-root .progress-line .mono {
+  color: var(--yellow);
+}
+
+/* ---------- 空闲页 ---------- */
+.tilepress-root .idle-card {
+  width: min(560px, 100%);
+  padding: 42px 38px;
+  background: var(--bg);
+  border-radius: var(--radius-card);
+  box-shadow: var(--card-shadow);
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+
+.tilepress-root .idle-card h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.tilepress-root .idle-card .muted {
+  line-height: 1.7;
+}
+
+.tilepress-root .idle-card .btn.big {
+  width: auto;
+  min-width: 0;
+  margin-top: 6px;
+}
+
+/* Empty-state icon: plain line glyph, same language as the other tools. */
+.tilepress-root .idle-mark {
+  display: grid;
+  place-items: center;
+  color: var(--comment);
+  opacity: 0.55;
+}
+
+.tilepress-root .path-note {
+  margin-top: 10px;
+  font-size: 10.5px;
+  color: var(--comment);
+  word-break: break-all;
+}
+
+/* ---------- 预览 ---------- */
+.tilepress-root .preview-stage {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-alt);
+}
+
+.tilepress-root .preview-stage:fullscreen {
+  width: 100vw;
+  height: 100vh;
+  background: var(--bg-alt);
+}
+
+.tilepress-root .preview-toolbar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 14px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--line);
+  z-index: 5;
+}
+
+.tilepress-root .page-indicator {
+  color: var(--yellow);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.tilepress-root .toolbar-mid {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.tilepress-root .prewarm-strip {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 7px 14px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--line);
+  font-size: 11.5px;
+  color: var(--comment);
+}
+
+.tilepress-root .prewarm-strip.done {
+  color: var(--green);
+  justify-content: space-between;
+}
+
+.tilepress-root .prewarm-text {
+  display: flex;
+  gap: 10px;
+  white-space: nowrap;
+}
+
+.tilepress-root .prewarm-text .mono {
+  color: var(--orange);
+}
+
+.tilepress-root .preview-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 22px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 22px;
+}
+
+.tilepress-root .page-card {
+  width: min(760px, 92%);
+  flex: none;
+  position: relative;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm, 8px);
+  box-shadow: var(--shadow-sm, 0 1px 2px rgba(16, 18, 24, 0.05), 0 4px 12px rgba(16, 18, 24, 0.05));
+  overflow: hidden;
+}
+
+.tilepress-root .page-card img, .tilepress-root .swipe-page img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.tilepress-root .page-placeholder {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-alt);
+  color: var(--comment);
+  font-size: 12px;
+}
+
+.tilepress-root .page-no {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--bg-alt);
+  color: var(--comment);
+  font-size: 10.5px;
+}
+
+.tilepress-root .preview-swipe {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  padding: 18px;
+  overflow: hidden;
+  touch-action: pan-y;
+}
+
+.tilepress-root .swipe-page {
+  position: relative;
+  height: calc(100% - 4px);
+  max-height: 100%;
+  max-width: calc(100% - 140px);
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm, 8px);
+  box-shadow: var(--shadow-sm, 0 1px 2px rgba(16, 18, 24, 0.05), 0 4px 12px rgba(16, 18, 24, 0.05));
+  overflow: hidden;
+}
+
+.tilepress-root .nav-btn {
+  flex: none;
+  width: 46px;
+  height: 46px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--fg);
+  font-size: 26px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.tilepress-root .nav-btn:hover:not(:disabled) {
+  border-color: var(--brand);
+  color: var(--brand);
+}
+
+.tilepress-root .nav-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+/* ---------- 完成页 ---------- */
+.tilepress-root .done-card {
+  text-align: center;
+  align-items: center;
+}
+
+.tilepress-root .done-icon {
+  width: 54px;
+  height: 54px;
+  border-radius: 999px;
+  border: 2px solid var(--green);
+  color: var(--green);
+  font-size: 28px;
+  line-height: 50px;
+}
+
+.tilepress-root .done-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+  justify-content: center;
+}
+
+/* ---------- 窄窗口 ---------- */
+@media (max-width: 980px) {
+  .tilepress-root .workspace-body {
+    grid-template-columns: 1fr;
+    overflow-y: auto;
+  }
+
+  .tilepress-root .params .panel-body, .tilepress-root .overview .panel-body {
+    overflow: visible;
+  }
+
+  .tilepress-root .segmented.four {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .tilepress-root .stat-row {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .tilepress-root .toolbar-mid {
+    justify-content: flex-start;
+  }
+}
+
+/* 逐页张数编辑 */
+.tilepress-root .plan-edit {
+  margin-top: 6px;
+}
+.tilepress-root .plan-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+.tilepress-root .plan-tag {
+  color: var(--comment);
+  font-size: 11px;
+  margin-right: 2px;
+}
+.tilepress-root .plan-in {
+  width: 42px;
+  padding: 3px 4px;
+  font-size: 12px;
+  text-align: center;
+  background: var(--bg-alt);
+  color: var(--fg);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+.tilepress-root .plan-in:focus {
+  outline: none;
+  border-color: var(--brand);
+}
+.tilepress-root .plan-auto {
+  min-width: 34px;
+  padding: 3px 6px;
+  font-size: 12px;
+  text-align: center;
+  color: var(--green);
+  background: var(--success-light, rgba(52, 199, 89, 0.12));
+  border: 1px dashed rgba(52, 199, 89, 0.45);
+  border-radius: 4px;
+}
+.tilepress-root .plan-auto.bad {
+  color: var(--red);
+  background: var(--danger-light, rgba(255, 59, 48, 0.12));
+  border-color: rgba(255, 59, 48, 0.45);
+}
+
+/* 推荐方案卡片 */
+.tilepress-root .rec-box {
+  margin: 2px 0 6px;
+  padding: 6px 8px;
+  background: var(--bg-alt);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+.tilepress-root .rec-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11px;
+  color: var(--comment);
+  margin-bottom: 4px;
+}
+.tilepress-root .rec-limits {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+.tilepress-root .lim-in {
+  width: 46px;
+  padding: 2px 4px;
+  font-size: 11px;
+  text-align: center;
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+.tilepress-root .lim-in:focus { outline: none; border-color: var(--brand); }
+.tilepress-root .rec-opt {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--fg);
+  border: 1px solid transparent;
+}
+.tilepress-root .rec-opt:hover { background: var(--brand-soft); }
+.tilepress-root .rec-opt.active {
+  border-color: var(--brand);
+  background: var(--brand-soft);
+}
+.tilepress-root .rec-opt input { display: none; }
+.tilepress-root .rec-name { color: var(--brand); min-width: 46px; }
+.tilepress-root .rec-nums { font-family: ui-monospace, monospace; }
+.tilepress-root .rec-meta { margin-left: auto; color: var(--comment); font-size: 11px; }
+
+.tilepress-root .hint.tight.warn { color: var(--orange); }
+
+/* 过滤图片 */
+.tilepress-root .filter-box {
+  margin: 2px 0 6px;
+  padding: 6px 8px;
+  background: var(--bg-alt);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+.tilepress-root .filter-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11px;
+  color: var(--comment);
+  margin-bottom: 5px;
+}
+.tilepress-root .filter-stat { color: var(--green); font-size: 11px; }
+.tilepress-root .filter-stat.dim { color: var(--comment); }
+.tilepress-root .filter-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: 4px;
+  font-size: 11px;
+  color: var(--fg);
+}
+.tilepress-root .filter-label { color: var(--comment); min-width: 62px; }
+.tilepress-root .lim-in.wide { width: 58px; }
+.tilepress-root .times { color: var(--comment); }
+.tilepress-root .unit { color: var(--comment); font-size: 10px; }
+
+/* 导出格式选择 */
+.tilepress-root .export-fmt {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px;
+  background: var(--bg-alt);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+.tilepress-root .fmt-chip {
+  padding: 3px 9px;
+  font-size: 11px;
+  color: var(--comment);
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.tilepress-root .fmt-chip:hover { color: var(--fg); }
+.tilepress-root .fmt-chip.active { background: var(--brand); color: #fff; font-weight: 600; }
+.tilepress-root .fmt-dpi {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  color: var(--comment);
+  padding-right: 4px;
+}
+.tilepress-root .fmt-dpi input {
+  width: 46px;
+  padding: 2px 3px;
+  font-size: 11px;
+  text-align: center;
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+
+/* Embedded inside ToolsBag: fill the tool viewport on the shared page surface. */
+.tilepress-root {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  background: transparent;
+}

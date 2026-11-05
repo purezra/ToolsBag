@@ -1,0 +1,83 @@
+/* ============================================================
+   Tilepress theme tokens — mapped onto the ToolsBag design system.
+   Surfaces, text, borders and radii come from the shared tokens so
+   the tool follows the app's light/dark appearance automatically.
+   Accent actions use the global accent colour (no separate hue).
+   ============================================================ */
+.tilepress-root {
+  --bg: var(--color-card, #ffffff);
+  --bg-alt: var(--surface-block, #efedf0);
+  --line: var(--border-primary, rgba(24, 28, 35, 0.1));
+  --line-soft: var(--border-secondary, rgba(24, 28, 35, 0.06));
+  --fg: var(--text-primary, #181c23);
+  --comment: var(--text-muted, #717786);
+
+  --cyan: var(--brand);
+  --green: var(--success, #34c759);
+  --orange: var(--warning, #ff9500);
+  --pink: #ff2d55;
+  --brand: var(--accent, #007aff);
+  --brand-soft: var(--accent-light, rgba(0, 122, 255, 0.1));
+  --red: var(--danger, #ff3b30);
+  --yellow: var(--brand);
+
+  --radius: var(--radius-md, 12px);
+  --mono: var(--font-mono, 'Cascadia Code', Consolas, 'Cascadia Mono', 'Courier New', monospace);
+  --sans: var(--font-sans, 'Segoe UI', 'Microsoft YaHei UI', 'Microsoft YaHei', 'PingFang SC', system-ui, sans-serif);
+}
+
+.tilepress-root * {
+  box-sizing: border-box;
+}
+
+.tilepress-root {
+  height: 100%;
+  margin: 0;
+  background: transparent;
+  color: var(--fg);
+  font-family: var(--sans);
+  font-size: 13px;
+  -webkit-font-smoothing: antialiased;
+}
+
+.tilepress-root button,
+.tilepress-root input,
+.tilepress-root select {
+  font: inherit;
+  color: inherit;
+}
+
+.tilepress-root button:focus-visible,
+.tilepress-root input:focus-visible,
+.tilepress-root select:focus-visible,
+.tilepress-root label:has(input:focus-visible) {
+  outline: 2px solid var(--brand);
+  outline-offset: 1px;
+}
+
+.tilepress-root ::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.tilepress-root ::-webkit-scrollbar-thumb {
+  background: var(--line);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.tilepress-root ::-webkit-scrollbar-thumb:hover {
+  background: var(--comment);
+  background-clip: padding-box;
+  border: 2px solid transparent;
+}
+
+.tilepress-root ::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.tilepress-root ::selection {
+  background: var(--brand-soft);
+  color: var(--fg);
+}

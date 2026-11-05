@@ -4,6 +4,7 @@ pub mod image_compress;
 pub mod image_to_pdf;
 pub mod media_batch;
 pub mod media_cache;
+pub mod tilepress;
 
 #[cfg(target_os = "windows")]
 pub mod mediainfo;
