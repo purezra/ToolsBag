@@ -1,16 +1,16 @@
 /* ============================================================
-   ToolsBag design system v2 — .tb-* component tokens
-   All visuals driven by CSS variables, so each skin adapts automatically.
+   ToolsBag design system — FlClash skin
+   Cards are tonal surfaces with soft elevation; no hard borders.
    ============================================================ */
 
 .panel-card,
 .tool-card {
-  border: 1px solid var(--card-border);
+  border: none;
   border-radius: var(--card-radius);
   box-shadow: var(--card-shadow);
   background: var(--color-card);
-  transition: border-color var(--duration-fast) ease,
-              box-shadow var(--duration-fast) ease;
+  transition: background var(--duration-fast) var(--ease-standard),
+              box-shadow var(--duration-fast) var(--ease-standard);
 }
 
 [data-theme='light'] .section-title,
@@ -21,7 +21,7 @@
 [data-theme='light'] .header .el-button--primary,
 [data-theme='dark'] .header .el-button--primary {
   min-width: 112px;
-  height: 32px;
+  height: 34px;
   font-weight: 600;
 }
 [data-theme='light'] .header .pill,
@@ -40,7 +40,7 @@
 /* ============ Section (unified card surface) ============ */
 .tb-section {
   background: var(--color-card);
-  border: 1px solid var(--card-border);
+  border: none;
   border-radius: var(--card-radius);
   padding: var(--card-padding);
   box-shadow: var(--card-shadow);
@@ -52,23 +52,18 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--text-primary);
   margin-bottom: 14px;
-  letter-spacing: 0.01em;
+  letter-spacing: -0.01em;
 }
 .tb-section-title::before {
-  content: '';
-  flex-shrink: 0;
-  width: 3px;
-  height: 13px;
-  border-radius: var(--radius-pill);
-  background: var(--section-accent-bar, var(--accent));
+  display: none;
 }
 .tb-section-title .el-icon {
   color: var(--accent);
-  font-size: 15px;
+  font-size: 16px;
 }
 /* Compact variant: tighter padding for nested/dense panels */
 .tb-section--compact {
@@ -124,16 +119,16 @@
 }
 .tb-stat-item {
   padding: 12px 10px;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-secondary);
+  background: var(--surface-block);
+  border: none;
   border-radius: var(--radius-md);
   text-align: center;
-  transition: transform var(--duration-fast) ease,
-              border-color var(--duration-fast) ease;
+  transition: transform var(--duration-fast) var(--ease-standard),
+              background var(--duration-fast) var(--ease-standard);
 }
 .tb-stat-item:hover {
   transform: translateY(-1px);
-  border-color: var(--border-primary);
+  background: var(--surface-inset);
 }
 .tb-stat-value {
   font-size: 22px;
@@ -157,9 +152,9 @@
   align-items: center;
   gap: 10px;
   padding: 12px 16px;
-  background: var(--bg-secondary);
-  border-radius: var(--radius-lg);
-  border: 1px solid var(--border-secondary);
+  background: var(--surface-block);
+  border-radius: var(--radius-md);
+  border: none;
   flex-wrap: wrap;
 }
 .tb-action-hint {
@@ -174,15 +169,13 @@
   gap: 16px;
   padding: 16px 18px;
   border-radius: var(--radius-lg);
-  border: 1px solid var(--border-secondary);
-  background: var(--bg-primary);
+  border: none;
+  background: var(--surface-block);
 }
 .tb-result--success {
-  border-color: transparent;
   background: var(--success-light);
 }
 .tb-result--error {
-  border-color: transparent;
   background: var(--danger-light);
 }
 .tb-result-icon {
@@ -195,11 +188,11 @@
   font-size: 20px;
 }
 .tb-result--success .tb-result-icon {
-  background: rgba(16, 185, 129, 0.16);
+  background: var(--success-light);
   color: var(--success);
 }
 .tb-result--error .tb-result-icon {
-  background: rgba(239, 68, 68, 0.16);
+  background: var(--danger-light);
   color: var(--danger);
 }
 .tb-result-body {
@@ -226,7 +219,7 @@
   word-break: break-all;
   margin-top: 6px;
   padding: 6px 10px;
-  background: var(--bg-secondary);
+  background: var(--surface-inset);
   border-radius: var(--radius-sm);
 }
 
@@ -242,7 +235,7 @@
 .tb-empty-icon {
   font-size: 40px;
   margin-bottom: 12px;
-  opacity: 0.4;
+  opacity: 0.55;
 }
 .tb-empty-text {
   font-size: 14px;
@@ -273,15 +266,15 @@
 }
 .tb-status-dot--success::before {
   background: var(--success);
-  box-shadow: 0 0 6px rgba(16, 185, 129, 0.5);
+  box-shadow: 0 0 6px rgba(52, 199, 89, 0.5);
 }
 .tb-status-dot--warning::before {
   background: var(--warning);
-  box-shadow: 0 0 6px rgba(245, 158, 11, 0.5);
+  box-shadow: 0 0 6px rgba(255, 149, 0, 0.5);
 }
 .tb-status-dot--danger::before {
   background: var(--danger);
-  box-shadow: 0 0 6px rgba(239, 68, 68, 0.5);
+  box-shadow: 0 0 6px rgba(255, 59, 48, 0.5);
 }
 
 /* ============ Delta Badge ============ */
@@ -308,7 +301,7 @@
 :root {
   --tb-paper-bg: #FFFFFF;
   --tb-paper-border: var(--border-primary);
-  --tb-paper-placeholder: var(--bg-tertiary);
+  --tb-paper-placeholder: var(--surface-block);
   --tb-paper-placeholder-text: var(--text-muted);
   --tb-paper-margin: rgba(0, 0, 0, 0.18);
 }
@@ -328,7 +321,7 @@
   flex-wrap: wrap;
   padding: 12px 14px;
   background: var(--color-card);
-  border: 1px solid var(--card-border);
+  border: none;
   border-radius: var(--card-radius);
   box-shadow: var(--card-shadow);
 }
@@ -348,7 +341,7 @@
 /* ============ Collapse region (settings tucked away by default) ============ */
 .tb-collapse {
   background: var(--color-card);
-  border: 1px solid var(--card-border);
+  border: none;
   border-radius: var(--card-radius);
   box-shadow: var(--card-shadow);
   overflow: hidden;
@@ -359,9 +352,9 @@
   border: none;
 }
 .tb-collapse .el-collapse-item__header {
-  height: 44px;
-  line-height: 44px;
-  padding: 0 14px;
+  height: 48px;
+  line-height: 48px;
+  padding: 0 16px;
   font-size: 13px;
   font-weight: 600;
   color: var(--text-primary);
@@ -372,7 +365,7 @@
   border-bottom-color: var(--border-secondary);
 }
 .tb-collapse .el-collapse-item__content {
-  padding: 14px;
+  padding: 14px 16px;
   font-size: 13px;
 }
 .tb-collapse .el-collapse-item__wrap {
@@ -385,4 +378,3 @@
   font-weight: 500;
   color: var(--text-muted);
 }
-

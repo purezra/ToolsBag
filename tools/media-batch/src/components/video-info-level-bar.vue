@@ -101,8 +101,8 @@ const { t } = useSettings()
   gap: 10px;
   padding: 8px 12px;
   border-radius: 8px;
-  border: 1px solid rgba(20, 23, 31, 0.06);
-  background: #fff;
+  border: 1px solid var(--border-secondary);
+  background: var(--surface-card);
   flex-wrap: wrap;
 }
 
@@ -114,12 +114,12 @@ const { t } = useSettings()
 .level-label {
   font-size: 13px;
   font-weight: 600;
-  color: #303133;
+  color: var(--text-primary);
   white-space: nowrap;
 }
 .level-desc {
   font-size: 12px;
-  color: #8b8fa3;
+  color: var(--text-muted);
   flex: 1;
 }
 .level-actions {
@@ -137,6 +137,6 @@ const { t } = useSettings()
 }
 .switch-label {
   font-size: 12px;
-  color: #4b5570;
+  color: var(--text-secondary);
 }
 </style>

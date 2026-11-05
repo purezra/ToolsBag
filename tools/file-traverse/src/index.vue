@@ -711,7 +711,7 @@ onBeforeUnmount(() => { isMounted = false; unlistenFn?.() })
 
     <div class="log">
       <div class="log-title">{{ t('问题日志') }}</div>
-      <pre class="log-box">{{ problemLog || t('暂无问题') }}</pre>
+      <pre class="log-box" :class="{ 'is-empty': !problemLog }">{{ problemLog || t('暂无问题') }}</pre>
     </div>
     </div>
   </div>
@@ -776,11 +776,10 @@ onBeforeUnmount(() => { isMounted = false; unlistenFn?.() })
   display: flex;
   align-items: center;
   gap: 8px;
-  background: var(--warning-light);
-  border: 1px solid var(--warning);
-  border-radius: var(--radius-sm);
-  padding: 4px 10px;
-  opacity: 0.9;
+  background: var(--color-card);
+  border: 1px solid var(--border-secondary);
+  border-radius: var(--radius-pill);
+  padding: 3px 12px;
 }
 .media-mode-label {
   font-size: 13px;
@@ -866,6 +865,13 @@ onBeforeUnmount(() => { isMounted = false; unlistenFn?.() })
   padding: 8px;
   min-height: 48px;
   white-space: pre-wrap;
+}
+/* Empty log: keep it as a quiet hint instead of a full-width grey slab. */
+.log-box.is-empty {
+  min-height: 0;
+  padding: 2px 0;
+  background: transparent;
+  color: var(--text-muted);
 }
 
 /* Preview Section */

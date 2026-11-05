@@ -327,13 +327,13 @@ watch(activeTab, (tab) => {
 }
 
 .alert.error {
-  background: #ffebee;
-  color: #c62828;
+  background: var(--danger-light);
+  color: var(--danger);
 }
 
 .alert.success {
-  background: #e8f5e9;
-  color: #2e7d32;
+  background: var(--success-light);
+  color: var(--success);
 }
 
 .status-bar {
@@ -351,15 +351,15 @@ watch(activeTab, (tab) => {
   width: 10px;
   height: 10px;
   border-radius: 50%;
-  background: #ccc;
+  background: var(--border-strong);
 }
 
 .status-dot.connected {
-  background: #4caf50;
+  background: var(--success);
 }
 
 .polling-badge {
-  background: #2196f3;
+  background: var(--accent);
   color: #fff;
   padding: 2px 8px;
   border-radius: 10px;
@@ -451,7 +451,7 @@ watch(activeTab, (tab) => {
 }
 
 .btn.danger {
-  background: #f44336;
+  background: var(--danger);
   color: #fff;
 }
 
@@ -504,18 +504,18 @@ watch(activeTab, (tab) => {
 }
 
 .log-item .action.added {
-  background: #e8f5e9;
-  color: #2e7d32;
+  background: var(--success-light);
+  color: var(--success);
 }
 
 .log-item .action.modified {
-  background: #fff3e0;
-  color: #ef6c00;
+  background: var(--warning-light);
+  color: var(--warning);
 }
 
 .log-item .action.deleted {
-  background: #ffebee;
-  color: #c62828;
+  background: var(--danger-light);
+  color: var(--danger);
 }
 
 .log-item .title {

@@ -154,19 +154,17 @@ onBeforeUnmount(() => {
   gap: 8px;
   flex: 1;
   max-width: var(--searchbar-max-width);
-  height: 34px;
-  padding: 0 12px;
+  height: 38px;
+  padding: 0 14px;
   background: var(--search-bg);
-  border: 1px solid var(--search-border);
+  border: 1px solid var(--md-outline-variant, var(--border-primary));
   border-radius: var(--radius-md);
-  transition: border-color var(--duration-fast) ease,
-              background var(--duration-fast) ease,
-              box-shadow var(--duration-fast) ease;
+  transition: background var(--duration-fast) var(--ease-standard),
+              box-shadow var(--duration-fast) var(--ease-standard);
 }
 .command-search:focus-within {
   background: var(--search-bg-focus);
-  border-color: var(--accent);
-  box-shadow: 0 0 0 2px var(--accent-light);
+  box-shadow: 0 0 0 2px var(--accent);
 }
 
 .command-search__icon {
@@ -183,6 +181,7 @@ onBeforeUnmount(() => {
   color: var(--text-primary);
   font-size: 13px;
   font-family: inherit;
+  line-height: 20px;
 }
 .command-search__input::placeholder {
   color: var(--text-muted);
@@ -204,25 +203,24 @@ onBeforeUnmount(() => {
 /* ============ Results popover ============ */
 .command-search__panel {
   position: absolute;
-  top: calc(100% + 6px);
+  top: calc(100% + 8px);
   left: 0;
   right: 0;
   z-index: 50;
   max-height: 380px;
   overflow-y: auto;
   padding: 6px;
-  background: var(--bg-primary);
-  border: 1px solid var(--border-primary);
-  border-radius: var(--radius-md);
+  background: var(--surface-card);
+  border: none;
+  border-radius: var(--radius-lg);
   box-shadow: var(--shadow-lg);
 }
 .command-search__section {
-  padding: 6px 10px 4px;
-  font-size: 11px;
+  padding: 8px 10px 6px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--text-muted);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  letter-spacing: 0;
 }
 .command-search__empty {
   padding: 18px 10px;
@@ -236,24 +234,24 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 10px;
   width: 100%;
-  padding: 8px 10px;
+  padding: 9px 10px;
   border: none;
   background: transparent;
   color: var(--text-primary);
   text-align: left;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   cursor: pointer;
-  transition: background var(--duration-fast) ease;
+  transition: background var(--duration-fast) var(--ease-standard);
 }
 .cmd-item.is-active {
-  background: var(--active-bg);
+  background: var(--bg-hover);
 }
 
 .cmd-item__icon {
   flex-shrink: 0;
-  width: 26px;
-  height: 26px;
-  border-radius: var(--radius-sm);
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
   display: grid;
   place-items: center;
   color: #fff;

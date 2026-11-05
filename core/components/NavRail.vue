@@ -40,6 +40,11 @@ const handleHomeClick = () => {
 
 <template>
   <aside class="nav-rail" :class="{ 'is-expanded': expanded }" :aria-label="t('工具导航')">
+    <button type="button" class="nav-rail__brand" :title="t('工具中心')" @click="handleHomeClick">
+      <span class="brand-mark">TB</span>
+      <span class="brand-name">ToolsBag</span>
+    </button>
+
     <div class="nav-rail__top">
       <button
         type="button"
@@ -91,23 +96,76 @@ const handleHomeClick = () => {
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-1);
+  gap: 4px;
+  padding: 10px 8px 12px;
   background: var(--nav-rail-bg);
-  border-right: 1px solid var(--nav-rail-border);
-  transition: width 0.25s var(--ease-out);
+  border-right: none;
+  transition: width 0.22s var(--ease-out);
   overflow: hidden;
 }
 .nav-rail.is-expanded {
   width: var(--sidebar-width);
 }
 
+/* ============ Brand ============ */
+.nav-rail__brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 48px;
+  padding: 0 8px;
+  margin-bottom: 6px;
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  overflow: hidden;
+}
+.nav-rail__brand:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.brand-mark {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  user-select: none;
+}
+.brand-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.nav-rail.is-expanded .brand-name {
+  opacity: 1;
+}
+.nav-rail:not(.is-expanded) .nav-rail__brand {
+  justify-content: center;
+  padding: 0;
+}
+/* Collapsed rail: the hidden name must not reserve layout width, or the
+   centered mark overflows the 68px rail and gets clipped. */
+.nav-rail:not(.is-expanded) .brand-name {
+  display: none;
+}
+
 .nav-rail__top {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding-bottom: var(--space-2);
-  border-bottom: 1px solid var(--nav-rail-border);
+  padding-bottom: 4px;
 }
 
 .nav-rail__list {
@@ -118,7 +176,7 @@ const handleHomeClick = () => {
   gap: 2px;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: var(--space-2) 0;
+  padding: 2px 0;
   scrollbar-width: thin;
 }
 .nav-rail__list::-webkit-scrollbar {
@@ -129,8 +187,7 @@ const handleHomeClick = () => {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding-top: var(--space-2);
-  border-top: 1px solid var(--nav-rail-border);
+  padding-top: 6px;
 }
 
 /* ============ Nav item ============ */
@@ -138,8 +195,8 @@ const handleHomeClick = () => {
   position: relative;
   display: flex;
   align-items: center;
-  gap: var(--space-2);
-  height: 40px;
+  gap: 10px;
+  height: 42px;
   padding: 0 12px;
   width: 100%;
   border: none;
@@ -150,8 +207,9 @@ const handleHomeClick = () => {
   border-radius: var(--radius-md);
   cursor: pointer;
   white-space: nowrap;
-  transition: background var(--duration-fast) ease,
-              color var(--duration-fast) ease;
+  text-align: left;
+  transition: background var(--duration-fast) var(--ease-standard),
+              color var(--duration-fast) var(--ease-standard);
 }
 .nav-item:focus-visible {
   outline: 2px solid var(--accent);
@@ -162,22 +220,11 @@ const handleHomeClick = () => {
   color: var(--text-primary);
 }
 
-/* Active: soft background + inner left bar, never a saturated flood */
+/* Active: FlClash's filled pill with a primary glyph. */
 .nav-item.is-active {
   background: var(--nav-item-active-bg);
   color: var(--nav-item-active-fg);
   font-weight: 600;
-}
-.nav-item.is-active::before {
-  content: '';
-  position: absolute;
-  left: 4px;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 3px;
-  height: 16px;
-  border-radius: var(--radius-pill);
-  background: var(--nav-item-active-bar);
 }
 .nav-item.is-active:hover {
   background: var(--nav-item-active-bg);
@@ -186,6 +233,14 @@ const handleHomeClick = () => {
 .nav-item__icon {
   flex-shrink: 0;
   color: inherit;
+}
+.nav-item.is-active .nav-item__icon {
+  color: var(--accent);
+}
+
+.nav-rail:not(.is-expanded) .nav-item {
+  justify-content: center;
+  padding: 0;
 }
 
 .nav-item__label {
@@ -198,6 +253,10 @@ const handleHomeClick = () => {
 }
 .nav-rail.is-expanded .nav-item__label {
   opacity: 1;
+}
+/* Collapsed rail: remove the label from layout so the icon is truly centered. */
+.nav-rail:not(.is-expanded) .nav-item__label {
+  display: none;
 }
 
 .nav-item__tag {
@@ -216,6 +275,9 @@ const handleHomeClick = () => {
 }
 .nav-rail.is-expanded .nav-item__tag {
   opacity: 1;
+}
+.nav-rail:not(.is-expanded) .nav-item__tag {
+  display: none;
 }
 
 @media (prefers-reduced-motion: reduce) {

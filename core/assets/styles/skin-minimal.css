@@ -1,301 +1,419 @@
 /* ============================================================
-   ToolsBag — Minimal skin (极简专业方向)
-   唯一界面皮肤：中性灰阶骨架 + 工具识别色 + 克制蓝交互强调
-   亮/暗双模，覆盖 Element Plus 令牌
+   ToolsBag — FlClash skin
+   Ported 1:1 from FlClash / prism_ui (Material You + Apple-style
+   interaction): seed #007AFF, ColorStyle.vivid, tonal surfaces,
+   large continuous corners, iOS type scale.
    ============================================================ */
 
-/* ============ Minimal — light ============ */
+/* ============ FlClash — light ============ */
 :root[data-skin='minimal'] {
-  /* 底色 — 中性灰阶 */
-  --bg-app: #FAFAFA;
-  --bg-primary: #FFFFFF;
-  --bg-secondary: #FAFAFA;
-  --bg-tertiary: #F4F4F5;
-  --bg-subtle: #F4F4F5;
-  --bg-hover: #F4F4F5;
-  --bg-elevated: #FFFFFF;
-  --bg-sunken: #F4F4F5;
-  --bg-overlay: rgba(255, 255, 255, 0.94);
-  --bg-glass: rgba(255, 255, 255, 0.8);
-  --bg-page: #FAFAFA;
-  --color-card: #FFFFFF;
+  color-scheme: light;
 
-  /* 文字 — 三级灰阶，WCAG AA */
-  --text-primary: #0A0A0A;      /* 15:1 on white */
-  --text-secondary: #525252;    /* 7.9:1 on white */
-  --text-muted: #A3A3A3;        /* 装饰用，不承载信息 */
+  /* ---- Material 3 role tokens (computed from seed #007AFF) ---- */
+  --md-primary: #007AFF;
+  --md-on-primary: #FFFFFF;
+  --md-primary-container: #D8E2FF;
+  --md-on-primary-container: #004493;
+  --md-secondary: #405E96;
+  --md-on-secondary: #FFFFFF;
+  --md-secondary-container: #A1BEFD;
+  --md-on-secondary-container: #2D4C83;
+  --md-tertiary: #902FB4;
+  --md-tertiary-container: #B554D8;
+  --md-error: #BA1A1A;
+  --md-error-container: #FFDAD6;
+  --md-on-error-container: #93000A;
+
+  --md-surface: #FCF8F9;
+  --md-surface-dim: #DBD9DC;
+  --md-surface-bright: #FCF8F9;
+  --md-surface-container-lowest: #FFFFFF;
+  --md-surface-container-low: #F5F3F6;
+  --md-surface-container: #EFEDF0;
+  --md-surface-container-high: #EAE7EA;
+  --md-surface-container-highest: #E4E2E4;
+  --md-on-surface: #181C23;
+  --md-on-surface-variant: #414755;
+  --md-outline: #717786;
+  --md-outline-variant: #C1C6D7;
+  --md-inverse-surface: #2D3039;
+  --md-inverse-on-surface: #EEF0FC;
+  --md-inverse-primary: #ADC6FF;
+
+  /* ---- Surface levels (prism_ui SurfaceLevel) ---- */
+  --surface-page: var(--md-surface-container);        /* page          */
+  --surface-card: var(--md-surface-bright);           /* card          */
+  --surface-block: var(--md-surface-container);       /* block         */
+  --surface-inset: var(--md-surface-container-highest); /* inset       */
+  --surface-chrome: var(--md-surface-container-highest); /* sidebar    */
+  --surface-float: #FFFFFF;
+
+  /* ---- Legacy aliases used across tools ---- */
+  --bg-app: var(--surface-page);
+  --bg-page: var(--surface-page);
+  --bg-primary: var(--surface-card);
+  --bg-secondary: var(--surface-block);
+  --bg-tertiary: var(--surface-inset);
+  --bg-subtle: var(--surface-block);
+  --bg-hover: rgba(24, 28, 35, 0.06);
+  --bg-elevated: var(--surface-float);
+  --bg-sunken: #E7E4E7;
+  --bg-overlay: rgba(252, 248, 249, 0.86);
+  --bg-glass: rgba(252, 248, 249, 0.72);
+  --color-card: var(--surface-card);
+  --card-bg: var(--surface-card);
+
+  /* ---- Text ---- */
+  --text-primary: var(--md-on-surface);
+  --text-secondary: var(--md-on-surface-variant);
+  --text-muted: var(--md-outline);
   --text-inverse: #FFFFFF;
 
-  /* 边框 — 发丝级 */
-  --border-primary: rgba(0, 0, 0, 0.08);
-  --border-secondary: rgba(0, 0, 0, 0.04);
-  --border-strong: rgba(0, 0, 0, 0.12);
-  --border-focus: rgba(37, 99, 235, 0.45);
-  --card-border: var(--border-primary);
+  /* ---- Hairlines: FlClash separates with tone, not borders ---- */
+  --border-primary: rgba(24, 28, 35, 0.10);
+  --border-secondary: rgba(24, 28, 35, 0.06);
+  --border-strong: rgba(24, 28, 35, 0.16);
+  --border-focus: rgba(0, 122, 255, 0.40);
+  --card-border: transparent;
 
-  /* 交互强调 — 克制蓝 */
-  --accent: #2563EB;
-  --accent-hover: #1D4ED8;
-  --accent-light: rgba(37, 99, 235, 0.08);
-  --accent-soft: rgba(37, 99, 235, 0.08);
-  --accent-border: rgba(37, 99, 235, 0.25);
-  --accent-gradient: linear-gradient(135deg, #3B82F6, #8B5CF6);
-  --section-accent-bar: var(--accent);
+  /* ---- Interactive accent ---- */
+  --accent: var(--md-primary);
+  --accent-hover: #0066D6;
+  --accent-light: rgba(0, 122, 255, 0.10);
+  --accent-soft: rgba(0, 122, 255, 0.10);
+  --accent-border: rgba(0, 122, 255, 0.28);
+  --accent-gradient: var(--md-primary);
+  --section-accent-bar: var(--md-primary);
 
-  /* 语义色 */
-  --success: #16A34A;
-  --success-light: rgba(22, 163, 74, 0.12);
-  --warning: #D97706;
-  --warning-light: rgba(217, 119, 6, 0.12);
-  --danger: #DC2626;
-  --danger-light: rgba(220, 38, 38, 0.12);
-  --info: #2563EB;
-  --info-light: rgba(37, 99, 235, 0.12);
+  /* ---- Semantic (iOS system colors) ---- */
+  --success: #34C759;
+  --success-light: rgba(52, 199, 89, 0.12);
+  --warning: #FF9500;
+  --warning-light: rgba(255, 149, 0, 0.12);
+  --danger: #FF3B30;
+  --danger-light: rgba(255, 59, 48, 0.12);
+  --info: var(--md-primary);
+  --info-light: rgba(0, 122, 255, 0.12);
 
-  /* 工具识别色 — 每个工具一个色相，用于卡片 icon、导航活跃态、徽章 */
-  --tool-media: #3B82F6;
-  --tool-media-soft: rgba(59, 130, 246, 0.12);
-  --tool-image: #10B981;
-  --tool-image-soft: rgba(16, 185, 129, 0.12);
-  --tool-file: #F59E0B;
-  --tool-file-soft: rgba(245, 158, 11, 0.12);
-  --tool-code: #8B5CF6;
-  --tool-code-soft: rgba(139, 92, 246, 0.12);
+  /* ---- Tool identity tints (iOS system palette) ---- */
+  --tool-media: #007AFF;
+  --tool-media-soft: rgba(0, 122, 255, 0.12);
+  --tool-image: #30B0C7;
+  --tool-image-soft: rgba(48, 176, 199, 0.12);
+  --tool-file: #FF9500;
+  --tool-file-soft: rgba(255, 149, 0, 0.12);
+  --tool-code: #AF52DE;
+  --tool-code-soft: rgba(175, 82, 222, 0.12);
 
-  /* 流类型色 — 详情面板区分视频/音频/字幕流 */
-  --stream-video: #3B82F6;
-  --stream-video-soft: rgba(59, 130, 246, 0.10);
-  --stream-audio: #10B981;
-  --stream-audio-soft: rgba(16, 185, 129, 0.10);
-  --stream-text: #F59E0B;
-  --stream-text-soft: rgba(245, 158, 11, 0.10);
+  --stream-video: #007AFF;
+  --stream-video-soft: rgba(0, 122, 255, 0.10);
+  --stream-audio: #34C759;
+  --stream-audio-soft: rgba(52, 199, 89, 0.10);
+  --stream-text: #FF9500;
+  --stream-text-soft: rgba(255, 149, 0, 0.10);
 
-  /* 字体 — 沿用项目现有 HarmonyOS Sans SC */
-  --font-sans: 'HarmonyOS Sans SC', -apple-system, 'SF Pro Display', 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
-  --font-mono: 'JetBrains Mono', 'Consolas', 'SF Mono', monospace;
+  /* ---- Type: iOS Dynamic Type on Segoe UI ---- */
+  --font-sans: 'Segoe UI Variable Text', 'Segoe UI', -apple-system, 'SF Pro Text',
+    'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --font-mono: 'Cascadia Code', 'SF Mono', 'JetBrains Mono', 'Consolas', monospace;
 
-  /* 圆角 — 紧凑 */
-  --radius-xs: 3px;
-  --radius-sm: 4px;
-  --radius-md: 6px;
-  --radius-lg: 8px;
-  --radius-xl: 12px;
+  /* ---- Continuous corners (AppCorner: 4/8/16/20/24/28) ---- */
+  --radius-xs: 4px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
   --radius-pill: 999px;
-  --radius-button: 6px;
-  --radius-card: 10px;
-  --radius-container: 12px;
-  --card-radius: var(--radius-lg);
+  --radius-button: 12px;
+  --radius-card: 16px;
+  --radius-container: 24px;
+  --card-radius: var(--radius-card);
 
-  /* 阴影 — 极克制，靠边框定义层次 */
-  --shadow-xs: 0 1px 1px rgba(0, 0, 0, 0.04);
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06);
-  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04);
-  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.10), 0 2px 6px rgba(0, 0, 0, 0.06);
-  --card-shadow: none;
+  /* ---- Elevation: soft, never a hard drop shadow ---- */
+  --shadow-xs: 0 1px 2px rgba(16, 18, 24, 0.04);
+  --shadow-sm: 0 1px 2px rgba(16, 18, 24, 0.05), 0 4px 12px rgba(16, 18, 24, 0.05);
+  --shadow-md: 0 2px 6px rgba(16, 18, 24, 0.06), 0 12px 32px rgba(16, 18, 24, 0.08);
+  --shadow-lg: 0 8px 20px rgba(16, 18, 24, 0.10), 0 24px 64px rgba(16, 18, 24, 0.12);
+  --card-shadow: 0 1px 2px rgba(16, 18, 24, 0.04), 0 6px 20px rgba(16, 18, 24, 0.04);
 
-  /* 布局尺寸 */
-  --sidebar-width: 240px;
-  --sidebar-collapsed-width: 56px;
-  --header-height: 48px;
+  /* ---- Layout ---- */
+  --sidebar-width: 200px;
+  --sidebar-collapsed-width: 68px;
+  --header-height: 64px;
   --detail-width: 360px;
   --card-padding: 16px;
   --content-max-width: none;
   --aside-width: 360px;
 
-  /* 表格 */
-  --table-header-bg: #FFFFFF;
-  --table-row-hover: rgba(0, 0, 0, 0.03);
-  --table-row-stripe: rgba(0, 0, 0, 0.012);
-  --table-border: var(--border-secondary);
+  /* ---- Table ---- */
+  --table-header-bg: transparent;
+  --table-row-hover: rgba(24, 28, 35, 0.04);
+  --table-row-stripe: transparent;
+  --table-border: rgba(24, 28, 35, 0.06);
 
-  /* 输入框 */
-  --input-bg: #FFFFFF;
-  --input-border: var(--border-primary);
+  /* ---- Inputs ---- */
+  --input-bg: var(--surface-block);
+  --input-border: transparent;
   --input-radius: var(--radius-md);
 
-  /* Element Plus 覆盖 */
-  --el-color-primary: #2563EB;
-  --el-color-primary-light-3: #60A5FA;
-  --el-color-primary-light-5: #93C5FD;
-  --el-color-primary-light-7: #BFDBFE;
-  --el-color-primary-light-8: #DBEAFE;
-  --el-color-primary-light-9: #EFF6FF;
-  --el-color-primary-dark-2: #1D4ED8;
-  --el-color-success: #16A34A;
-  --el-color-warning: #D97706;
-  --el-color-danger: #DC2626;
-  --el-color-info: #525252;
-  --el-border-radius-base: 6px;
+  /* ---- Element Plus ---- */
+  --el-color-primary: #007AFF;
+  --el-color-primary-light-3: #4DA3FF;
+  --el-color-primary-light-5: #80C0FF;
+  --el-color-primary-light-7: #B3D9FF;
+  --el-color-primary-light-8: #CCE6FF;
+  --el-color-primary-light-9: #E6F2FF;
+  --el-color-primary-dark-2: #0066D6;
+  --el-color-success: #34C759;
+  --el-color-warning: #FF9500;
+  --el-color-danger: #FF3B30;
+  --el-color-error: #FF3B30;
+  --el-color-info: #717786;
+  --el-border-radius-base: 12px;
+  --el-border-radius-small: 8px;
+  --el-border-radius-round: 999px;
   --el-font-size-base: 13px;
   --el-font-size-small: 12px;
   --el-font-size-large: 14px;
-  --el-component-size: 32px;
-  --el-component-size-small: 26px;
-  --el-component-size-large: 38px;
+  --el-component-size: 34px;
+  --el-component-size-small: 28px;
+  --el-component-size-large: 40px;
+  --el-text-color-primary: var(--md-on-surface);
+  --el-text-color-regular: #2F3541;
+  --el-text-color-secondary: var(--md-on-surface-variant);
+  --el-text-color-placeholder: #8A8F9C;
+  --el-bg-color: var(--surface-card);
+  --el-bg-color-page: var(--surface-page);
+  --el-bg-color-overlay: #FFFFFF;
+  --el-border-color: rgba(24, 28, 35, 0.12);
+  --el-border-color-light: rgba(24, 28, 35, 0.09);
+  --el-border-color-lighter: rgba(24, 28, 35, 0.07);
+  --el-border-color-extra-light: rgba(24, 28, 35, 0.05);
+  --el-fill-color: var(--surface-inset);
+  --el-fill-color-light: var(--md-surface-container-high);
+  --el-fill-color-lighter: var(--surface-block);
+  --el-fill-color-extra-light: var(--md-surface-container-low);
+  --el-fill-color-dark: #D8D6D9;
+  --el-fill-color-darker: #C9C7CA;
+  --el-fill-color-blank: var(--surface-card);
+  --el-mask-color: rgba(16, 18, 24, 0.28);
+  --el-box-shadow-light: var(--shadow-sm);
+  --el-box-shadow: var(--shadow-md);
+  --el-box-shadow-dark: var(--shadow-lg);
 
-  --color-muted: #A3A3A3;
-  --color-success: #16A34A;
-  --color-danger: #DC2626;
+  --color-muted: var(--md-outline);
+  --color-success: var(--success);
+  --color-danger: var(--danger);
 
-  /* 图表配色 */
-  --chart-1: #2563EB; --chart-2: #16A34A; --chart-3: #D97706; --chart-4: #DC2626; --chart-5: #8B5CF6;
-  --chart-6: #06B6D4; --chart-7: #EC4899; --chart-8: #14B8A6; --chart-9: #F59E0B; --chart-10: #6B7280;
+  /* ---- Charts (iOS system palette) ---- */
+  --chart-1: #007AFF; --chart-2: #34C759; --chart-3: #FF9500; --chart-4: #FF3B30;
+  --chart-5: #AF52DE; --chart-6: #5AC8FA; --chart-7: #FF2D55; --chart-8: #30B0C7;
+  --chart-9: #FFCC00; --chart-10: #8E8E93;
 
-  /* Shell surfaces — NavRail / topbar / launcher */
-  --nav-rail-bg: var(--bg-primary);
-  --nav-rail-border: var(--border-primary);
-  --nav-item-hover-bg: var(--bg-hover);
-  --nav-item-active-bg: var(--accent-soft);
-  --nav-item-active-fg: var(--accent);
-  --nav-item-active-bar: var(--accent);
-  --topbar-bg: var(--bg-primary);
-  --topbar-border: var(--border-primary);
-  --content-bg: var(--bg-app);
+  /* ---- Shell surfaces ---- */
+  --nav-rail-bg: var(--surface-chrome);
+  --nav-rail-border: transparent;
+  --nav-item-hover-bg: rgba(24, 28, 35, 0.05);
+  --nav-item-active-bg: rgba(24, 28, 35, 0.08);
+  --nav-item-active-fg: var(--md-on-surface);
+  --nav-item-active-bar: transparent;
+  --topbar-bg: transparent;
+  --topbar-border: transparent;
+  --content-bg: var(--surface-page);
   --hover-bg: var(--bg-hover);
-  --active-bg: var(--accent-soft);
-  --search-bg: var(--bg-secondary);
-  --search-border: var(--border-primary);
-  --search-bg-focus: var(--bg-primary);
-  --home-card-bg: var(--color-card);
-  --home-card-border: var(--border-primary);
-  --home-card-hover-shadow: var(--shadow-sm);
-  --soft-badge-bg: var(--bg-tertiary);
-  --soft-badge-fg: var(--text-secondary);
+  --active-bg: var(--accent-light);
+  --search-bg: var(--surface-card);
+  --search-border: transparent;
+  --search-bg-focus: var(--surface-card);
+  --home-card-bg: var(--surface-card);
+  --home-card-border: transparent;
+  --home-card-hover-shadow: var(--shadow-md);
+  --soft-badge-bg: rgba(24, 28, 35, 0.06);
+  --soft-badge-fg: var(--md-on-surface-variant);
 }
 
-/* ============ Minimal — dark ============ */
+/* ============ FlClash — dark ============ */
 :root[data-skin='minimal'][data-theme='dark'] {
   color-scheme: dark;
 
-  /* Cool charcoal surfaces: separated clearly without pure black glare. */
-  --bg-app: #0E1116;
-  --bg-primary: #15191F;
-  --bg-secondary: #1A1F27;
-  --bg-tertiary: #222832;
-  --bg-subtle: #1F252E;
-  --bg-hover: #272E39;
-  --bg-elevated: #1C212A;
-  --bg-sunken: #0A0D11;
-  --bg-overlay: rgba(14, 17, 22, 0.96);
-  --bg-glass: rgba(21, 25, 31, 0.92);
-  --bg-page: #0E1116;
-  --color-card: #15191F;
+  --md-primary: #2F83FF;
+  --md-on-primary: #FFFFFF;
+  --md-primary-container: #004493;
+  --md-on-primary-container: #D8E2FF;
+  --md-secondary: #ADC6FF;
+  --md-on-secondary: #082F65;
+  --md-secondary-container: #26467D;
+  --md-on-secondary-container: #98B5F3;
+  --md-tertiary: #EEB1FF;
+  --md-tertiary-container: #B554D8;
+  --md-error: #FFB4AB;
+  --md-error-container: #93000A;
+  --md-on-error-container: #FFDAD6;
 
-  /* High-contrast hierarchy for long metadata tables and dense controls. */
-  --text-primary: #F4F7FB;
-  --text-secondary: #C1C9D4;
-  --text-muted: #909BAA;
-  --text-inverse: #0E1116;
+  --md-surface: #131314;
+  --md-surface-dim: #131315;
+  --md-surface-bright: #39393A;
+  --md-surface-container-lowest: #0D0E10;
+  --md-surface-container-low: #1B1B1E;
+  --md-surface-container: #252628;
+  --md-surface-container-high: #323235;
+  --md-surface-container-highest: #404042;
+  --md-on-surface: #F5F6FF;
+  --md-on-surface-variant: #C1C6D7;
+  --md-outline: #8B90A0;
+  --md-outline-variant: #414755;
+  --md-inverse-surface: #E0E2ED;
+  --md-inverse-on-surface: #2D3039;
+  --md-inverse-primary: #005BC1;
 
-  --border-primary: #38414E;
-  --border-secondary: #2A313C;
-  --border-strong: #4A5564;
-  --border-focus: rgba(130, 158, 255, 0.72);
-  --card-border: var(--border-primary);
+  --surface-page: var(--md-surface);
+  --surface-card: var(--md-surface-container);
+  --surface-block: var(--md-surface-container-high);
+  --surface-inset: var(--md-surface-container-highest);
+  --surface-chrome: var(--md-surface-container-low);
+  --surface-float: #2C2D30;
 
-  --accent: #82A0FF;
-  --accent-hover: #A3B8FF;
-  --accent-light: rgba(130, 160, 255, 0.14);
-  --accent-soft: rgba(130, 160, 255, 0.14);
-  --accent-border: rgba(130, 160, 255, 0.42);
-  --accent-gradient: #82A0FF;
-  --section-accent-bar: var(--accent);
+  --bg-app: var(--surface-page);
+  --bg-page: var(--surface-page);
+  --bg-primary: var(--surface-card);
+  --bg-secondary: var(--surface-block);
+  --bg-tertiary: var(--surface-inset);
+  --bg-subtle: var(--surface-block);
+  --bg-hover: rgba(245, 246, 255, 0.08);
+  --bg-elevated: var(--surface-float);
+  --bg-sunken: #0B0C0E;
+  --bg-overlay: rgba(37, 38, 40, 0.90);
+  --bg-glass: rgba(37, 38, 40, 0.72);
+  --color-card: var(--surface-card);
+  --card-bg: var(--surface-card);
 
-  --success: #65D3A5;
-  --success-light: rgba(101, 211, 165, 0.14);
-  --warning: #E9BC72;
-  --warning-light: rgba(233, 188, 114, 0.14);
-  --danger: #F08A92;
-  --danger-light: rgba(240, 138, 146, 0.14);
-  --info: #82A0FF;
-  --info-light: rgba(130, 160, 255, 0.14);
+  --text-primary: var(--md-on-surface);
+  --text-secondary: var(--md-on-surface-variant);
+  --text-muted: var(--md-outline);
+  --text-inverse: #FFFFFF;
 
-  /* 工具识别色 — 暗色提亮 */
-  --tool-media: #60A5FA;
-  --tool-media-soft: rgba(96, 165, 250, 0.14);
-  --tool-image: #34D399;
-  --tool-image-soft: rgba(52, 211, 153, 0.14);
-  --tool-file: #FBBF24;
-  --tool-file-soft: rgba(251, 191, 36, 0.14);
-  --tool-code: #A78BFA;
-  --tool-code-soft: rgba(167, 139, 250, 0.14);
+  --border-primary: rgba(245, 246, 255, 0.12);
+  --border-secondary: rgba(245, 246, 255, 0.07);
+  --border-strong: rgba(245, 246, 255, 0.20);
+  --border-focus: rgba(47, 131, 255, 0.55);
+  --card-border: transparent;
 
-  --stream-video: #60A5FA;
-  --stream-video-soft: rgba(96, 165, 250, 0.12);
-  --stream-audio: #34D399;
-  --stream-audio-soft: rgba(52, 211, 153, 0.12);
-  --stream-text: #FBBF24;
-  --stream-text-soft: rgba(251, 191, 36, 0.12);
+  --accent: var(--md-primary);
+  --accent-hover: #5C9DFF;
+  --accent-light: rgba(47, 131, 255, 0.16);
+  --accent-soft: rgba(47, 131, 255, 0.16);
+  --accent-border: rgba(47, 131, 255, 0.40);
+  --accent-gradient: var(--md-primary);
+  --section-accent-bar: var(--md-primary);
 
-  --shadow-xs: 0 1px 1px rgba(0, 0, 0, 0.5);
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.6);
-  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.7), 0 1px 2px rgba(0, 0, 0, 0.4);
-  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.8), 0 2px 6px rgba(0, 0, 0, 0.5);
-  --card-shadow: none;
+  --success: #30D158;
+  --success-light: rgba(48, 209, 88, 0.16);
+  --warning: #FFD60A;
+  --warning-light: rgba(255, 214, 10, 0.14);
+  --danger: #FF453A;
+  --danger-light: rgba(255, 69, 58, 0.16);
+  --info: var(--md-primary);
+  --info-light: rgba(47, 131, 255, 0.16);
 
-  --table-header-bg: #1C222B;
-  --table-row-hover: #252C36;
-  --table-row-stripe: rgba(255, 255, 255, 0.018);
-  --table-border: var(--border-primary);
+  --tool-media: #409CFF;
+  --tool-media-soft: rgba(64, 156, 255, 0.16);
+  --tool-image: #40C8E0;
+  --tool-image-soft: rgba(64, 200, 224, 0.16);
+  --tool-file: #FFB340;
+  --tool-file-soft: rgba(255, 179, 64, 0.16);
+  --tool-code: #BF5AF2;
+  --tool-code-soft: rgba(191, 90, 242, 0.16);
 
-  --input-bg: #1D232C;
-  --input-border: var(--border-primary);
+  --stream-video: #409CFF;
+  --stream-video-soft: rgba(64, 156, 255, 0.14);
+  --stream-audio: #30D158;
+  --stream-audio-soft: rgba(48, 209, 88, 0.14);
+  --stream-text: #FFB340;
+  --stream-text-soft: rgba(255, 179, 64, 0.14);
 
-  --el-color-primary: #82A0FF;
-  --el-color-primary-light-3: #A3B8FF;
-  --el-color-primary-light-5: #BCCAFF;
-  --el-color-primary-light-7: #33446F;
-  --el-color-primary-light-8: #29395F;
-  --el-color-primary-light-9: #202C49;
-  --el-color-primary-dark-2: #A3B8FF;
-  --el-color-success: #65D3A5;
-  --el-color-warning: #E9BC72;
-  --el-color-danger: #F08A92;
-  --el-color-info: #AAB4C2;
-  --el-text-color-primary: #F4F7FB;
-  --el-text-color-regular: #D4DAE3;
-  --el-text-color-secondary: #AAB4C2;
-  --el-text-color-placeholder: #8994A3;
-  --el-bg-color: #15191F;
-  --el-bg-color-page: #0E1116;
-  --el-bg-color-overlay: #202630;
-  --el-border-color: #38414E;
-  --el-border-color-light: #303844;
-  --el-border-color-lighter: #29303A;
-  --el-border-color-extra-light: #242A33;
-  --el-fill-color: #272E39;
-  --el-fill-color-light: #222832;
-  --el-fill-color-lighter: #1E242C;
-  --el-fill-color-extra-light: #1A1F27;
-  --el-fill-color-dark: #303844;
-  --el-fill-color-darker: #38414E;
-  --el-fill-color-blank: #15191F;
-  --el-mask-color: rgba(4, 6, 9, 0.72);
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.40);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.45), 0 4px 12px rgba(0, 0, 0, 0.35);
+  --shadow-md: 0 2px 6px rgba(0, 0, 0, 0.50), 0 12px 32px rgba(0, 0, 0, 0.45);
+  --shadow-lg: 0 8px 20px rgba(0, 0, 0, 0.55), 0 24px 64px rgba(0, 0, 0, 0.50);
+  --card-shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 6px 20px rgba(0, 0, 0, 0.28);
 
-  --color-muted: #909BAA;
-  --color-success: #65D3A5;
-  --color-danger: #F08A92;
+  --table-header-bg: transparent;
+  --table-row-hover: rgba(245, 246, 255, 0.06);
+  --table-row-stripe: transparent;
+  --table-border: rgba(245, 246, 255, 0.07);
 
-  --chart-1: #60A5FA; --chart-2: #4ADE80; --chart-3: #FBBF24; --chart-4: #F87171; --chart-5: #A78BFA;
-  --chart-6: #22D3EE; --chart-7: #F472B6; --chart-8: #2DD4BF; --chart-9: #FB923C; --chart-10: #A3A3A3;
+  --input-bg: var(--surface-block);
+  --input-border: transparent;
 
-  --nav-rail-bg: var(--bg-primary);
-  --nav-rail-border: var(--border-primary);
-  --nav-item-hover-bg: var(--bg-hover);
-  --nav-item-active-bg: var(--accent-soft);
-  --nav-item-active-fg: var(--accent);
-  --nav-item-active-bar: var(--accent);
-  --topbar-bg: var(--bg-primary);
-  --topbar-border: var(--border-primary);
-  --content-bg: var(--bg-app);
+  --el-color-primary: #2F83FF;
+  --el-color-primary-light-3: #5C9DFF;
+  --el-color-primary-light-5: #86B5FF;
+  --el-color-primary-light-7: #1E3A5F;
+  --el-color-primary-light-8: #17304F;
+  --el-color-primary-light-9: #102540;
+  --el-color-primary-dark-2: #5C9DFF;
+  --el-color-success: #30D158;
+  --el-color-warning: #FFD60A;
+  --el-color-danger: #FF453A;
+  --el-color-error: #FF453A;
+  --el-color-info: #8B90A0;
+  --el-text-color-primary: var(--md-on-surface);
+  --el-text-color-regular: #D6DAE3;
+  --el-text-color-secondary: var(--md-on-surface-variant);
+  --el-text-color-placeholder: #8B90A0;
+  --el-bg-color: var(--surface-card);
+  --el-bg-color-page: var(--surface-page);
+  --el-bg-color-overlay: var(--surface-float);
+  --el-border-color: rgba(245, 246, 255, 0.14);
+  --el-border-color-light: rgba(245, 246, 255, 0.10);
+  --el-border-color-lighter: rgba(245, 246, 255, 0.08);
+  --el-border-color-extra-light: rgba(245, 246, 255, 0.05);
+  --el-fill-color: var(--surface-inset);
+  --el-fill-color-light: var(--surface-block);
+  --el-fill-color-lighter: #2B2C2F;
+  --el-fill-color-extra-light: var(--surface-card);
+  --el-fill-color-dark: #4A4B4E;
+  --el-fill-color-darker: #55565A;
+  --el-fill-color-blank: var(--surface-card);
+  --el-mask-color: rgba(0, 0, 0, 0.55);
+
+  --color-muted: var(--md-outline);
+  --color-success: var(--success);
+  --color-danger: var(--danger);
+
+  --chart-1: #409CFF; --chart-2: #30D158; --chart-3: #FFD60A; --chart-4: #FF453A;
+  --chart-5: #BF5AF2; --chart-6: #64D2FF; --chart-7: #FF375F; --chart-8: #40C8E0;
+  --chart-9: #FFD60A; --chart-10: #98989D;
+
+  --nav-rail-bg: var(--surface-chrome);
+  --nav-rail-border: transparent;
+  --nav-item-hover-bg: rgba(245, 246, 255, 0.07);
+  --nav-item-active-bg: rgba(245, 246, 255, 0.12);
+  --nav-item-active-fg: var(--md-on-surface);
+  --nav-item-active-bar: transparent;
+  --topbar-bg: transparent;
+  --topbar-border: transparent;
+  --content-bg: var(--surface-page);
   --hover-bg: var(--bg-hover);
-  --active-bg: var(--accent-soft);
-  --search-bg: var(--bg-secondary);
-  --search-border: var(--border-primary);
-  --search-bg-focus: var(--bg-tertiary);
-  --home-card-bg: var(--color-card);
-  --home-card-border: var(--border-primary);
+  --active-bg: var(--accent-light);
+  --search-bg: var(--surface-block);
+  --search-border: transparent;
+  --search-bg-focus: var(--surface-card);
+  --home-card-bg: var(--surface-card);
+  --home-card-border: transparent;
   --home-card-hover-shadow: var(--shadow-md);
-  --soft-badge-bg: #252C36;
-  --soft-badge-fg: var(--text-secondary);
+  --soft-badge-bg: rgba(245, 246, 255, 0.08);
+  --soft-badge-fg: var(--md-on-surface-variant);
+}
+
+/* ============ Base ============ */
+html,
+body {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text-primary);
+  background: var(--surface-page);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }

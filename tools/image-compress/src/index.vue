@@ -184,36 +184,36 @@
         <div v-if="summary"><strong>{{ Math.round(summary.compression_ratio * 100) }}%</strong><span>{{ t('体积比') }}</span></div>
       </section>
 
-      <el-table
-        :data="tableRows"
-        height="100%"
-        stripe
-        size="small"
-        class="file-table"
+      <div
+        v-if="tableRows.length"
+        class="virtual-table"
         v-loading="importing"
         :element-loading-text="t('正在导入...')"
-        @row-click="row => selectedPath = row.path"
       >
-        <el-table-column prop="name" :label="t('文件名')" min-width="220" show-overflow-tooltip />
-        <el-table-column prop="format" :label="t('格式')" width="80" align="center" />
-        <el-table-column prop="resolution" :label="t('分辨率')" width="130" align="center" />
-        <el-table-column prop="original" :label="t('原始大小')" width="110" align="right" />
-        <el-table-column prop="output" :label="t('输出大小')" width="110" align="right" />
-        <el-table-column prop="ratio" :label="t('体积比')" width="90" align="right" />
-        <el-table-column prop="status" :label="t('状态')" width="110" align="center" />
-        <el-table-column prop="error" :label="t('错误')" min-width="180" show-overflow-tooltip />
-        <template #empty>
-          <div class="empty-hint">
-            <p v-if="!pendingPaths.length">{{ t('选择图片或文件夹后点击导入') }}</p>
-          </div>
-        </template>
-      </el-table>
+        <el-auto-resizer>
+          <template #default="{ height, width }">
+            <el-table-v2
+              :columns="tableColumns"
+              :data="tableRows"
+              :width="width"
+              :height="height"
+              :row-height="36"
+              row-key="path"
+              fixed
+              :row-event-handlers="{ onClick: ({ rowKey }: { rowKey: string | number | symbol }) => (selectedPath = String(rowKey)) }"
+            />
+          </template>
+        </el-auto-resizer>
+      </div>
+      <div v-else class="empty-hint" v-loading="importing">
+        <p v-if="!pendingPaths.length">{{ t('选择图片或文件夹后点击导入') }}</p>
+      </div>
     </section>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch, h } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Download, FolderOpened, MagicStick, Picture } from '@element-plus/icons-vue'
 import { open } from '@tauri-apps/plugin-dialog'
@@ -336,6 +336,29 @@ const tableRows = computed(() => files.value.map(f => {
     error: r?.error || '',
   }
 }))
+
+// 虚拟滚动列定义：只渲染可视行，避免上千张图片时 el-table 一次性铺满 DOM。
+const tableColumns = computed(() => {
+  const textCell = (key: string, title: string, width: number, align: 'left' | 'center' | 'right' = 'left') => ({
+    key,
+    dataKey: key,
+    title,
+    width,
+    align,
+    cellRenderer: ({ cellData }: { cellData: unknown }) =>
+      h('span', { class: 'cell-ellipsis', title: String(cellData ?? '') }, String(cellData ?? '')),
+  })
+  return [
+    { ...textCell('name', t('文件名'), 220), flexGrow: 2 },
+    textCell('format', t('格式'), 80, 'center'),
+    textCell('resolution', t('分辨率'), 130, 'center'),
+    textCell('original', t('原始大小'), 110, 'right'),
+    textCell('output', t('输出大小'), 110, 'right'),
+    textCell('ratio', t('体积比'), 90, 'right'),
+    textCell('status', t('状态'), 110, 'center'),
+    { ...textCell('error', t('错误'), 180), flexGrow: 1 },
+  ]
+})
 
 // 导入：分析已选路径，填充图片列表。后端只读尺寸不解码，速度较快。
 async function doImport() {
@@ -509,7 +532,8 @@ onBeforeUnmount(() => {
 .summary-bar > div { padding: 6px 10px; border-radius: var(--radius-sm); background: var(--bg-tertiary); display: flex; gap: 6px; align-items: baseline; }
 .summary-bar strong { color: var(--text-primary); }
 .summary-bar span { color: var(--text-muted); font-size: 12px; }
-.file-table { flex: 1; min-height: 0; }
+.virtual-table { flex: 1; min-height: 0; position: relative; }
+.cell-ellipsis { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .empty-hint { padding: 40px 0; color: var(--text-muted); font-size: 13px; text-align: center; }
 @media (max-width: 820px) { .image-compress-tool { overflow-y: auto; } .result-panel { min-height: 420px; } }
 </style>

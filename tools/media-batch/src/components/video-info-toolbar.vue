@@ -58,7 +58,7 @@ const { t } = useSettings()
   align-items: center;
   padding: 10px 14px;
   border-radius: 10px;
-  border: 1px solid rgba(20, 23, 31, 0.06);
+  border: 1px solid var(--border-secondary);
   background: linear-gradient(145deg, rgba(243, 246, 255, 0.96), rgba(227, 235, 255, 0.9));
   flex-wrap: wrap;
   gap: 8px;
@@ -73,11 +73,11 @@ const { t } = useSettings()
   margin: 0;
   font-size: 16px;
   font-weight: 700;
-  color: #1a1d26;
+  color: var(--text-primary);
 }
 .toolbar-sub {
   font-size: 12px;
-  color: #6d7387;
+  color: var(--text-muted);
 }
 
 .toolbar-right {
@@ -95,6 +95,6 @@ const { t } = useSettings()
 }
 .switch-label {
   font-size: 12px;
-  color: #4b5570;
+  color: var(--text-secondary);
 }
 </style>

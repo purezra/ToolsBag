@@ -429,10 +429,11 @@ const handleInspect = async (path: string) => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 6px 10px;
-  border-radius: var(--card-radius, 10px);
-  border: 1px solid var(--card-border, rgba(20, 23, 31, 0.06));
-  background: linear-gradient(145deg, rgba(243, 246, 255, 0.96), rgba(227, 235, 255, 0.9));
+  padding: 8px 12px;
+  border-radius: var(--radius-card);
+  border: none;
+  background: var(--color-card);
+  box-shadow: var(--card-shadow);
   flex-shrink: 0;
   gap: 12px;
   flex-wrap: wrap;
@@ -454,7 +455,7 @@ const handleInspect = async (path: string) => {
 }
 .switch-label {
   font-size: 12px;
-  color: #4b5570;
+  color: var(--text-secondary);
 }
 .view-pane {
   flex: 1;

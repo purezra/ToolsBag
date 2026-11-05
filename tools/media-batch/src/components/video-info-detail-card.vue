@@ -210,9 +210,9 @@ const statusType = computed(() => props.item.status === 'success' ? 'success' : 
 
 <style scoped>
 .detail-card {
-  border: 1px solid rgba(20, 23, 31, 0.06);
+  border: 1px solid var(--border-secondary);
   border-radius: 12px;
-  background: #fff;
+  background: var(--surface-card);
   overflow: hidden;
   transition: box-shadow 0.2s;
 }
@@ -230,11 +230,11 @@ const statusType = computed(() => props.item.status === 'success' ? 'success' : 
   padding: 12px 16px;
   cursor: pointer;
   user-select: none;
-  background: #fafbfd;
+  background: var(--surface-block);
   transition: background 0.15s;
 }
 .card-header:hover {
-  background: #f0f4ff;
+  background: var(--accent-light);
 }
 
 .header-left {
@@ -250,14 +250,14 @@ const statusType = computed(() => props.item.status === 'success' ? 'success' : 
 .file-name {
   font-weight: 600;
   font-size: 13px;
-  color: #1a1d26;
+  color: var(--text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .file-size {
   font-size: 12px;
-  color: #8b8fa3;
+  color: var(--text-muted);
   flex-shrink: 0;
 }
 
@@ -272,14 +272,14 @@ const statusType = computed(() => props.item.status === 'success' ? 'success' : 
   gap: 4px;
 }
 .expand-icon {
-  color: #8b8fa3;
+  color: var(--text-muted);
   font-size: 16px;
 }
 
 .card-error {
   padding: 8px 16px;
-  background: #fef0f0;
-  color: #f56c6c;
+  background: var(--danger-light);
+  color: var(--danger);
   font-size: 12px;
 }
 
@@ -303,23 +303,23 @@ const statusType = computed(() => props.item.status === 'success' ? 'success' : 
   gap: 8px;
   font-size: 13px;
   font-weight: 600;
-  color: #303133;
+  color: var(--text-primary);
   margin-bottom: 10px;
 }
 .section-dot {
   width: 4px;
   height: 16px;
   border-radius: 2px;
-  background: #409eff;
+  background: var(--accent);
 }
 .section-dot.video {
-  background: #409eff;
+  background: var(--accent);
 }
 .section-dot.audio {
-  background: #67c23a;
+  background: var(--success);
 }
 .section-dot.text {
-  background: #e6a23c;
+  background: var(--warning);
 }
 .hdr-tag {
   margin-left: 4px;
@@ -340,13 +340,13 @@ const statusType = computed(() => props.item.status === 'success' ? 'success' : 
 }
 .field-label {
   font-size: 12px;
-  color: #8b8fa3;
+  color: var(--text-muted);
   flex-shrink: 0;
   min-width: 70px;
 }
 .field-value {
   font-size: 12px;
-  color: #1a1d26;
+  color: var(--text-primary);
   font-family: 'JetBrainsMonoNL-Regular', monospace;
   overflow: hidden;
   text-overflow: ellipsis;

@@ -1,24 +1,23 @@
 /* ============================================================
-   Dark-mode ambient layer — reduced glow for desktop-tool feel
+   Dark-mode adjustments on top of the FlClash role tokens.
+   Surfaces never step back down; cards lift toward the light.
    ============================================================ */
 
-/* ============ Ambient background (all dark skins) ============ */
 [data-theme='dark'] body {
-  background: var(--bg-page);
+  background: var(--surface-page);
   color: var(--text-primary);
 }
 
 [data-theme='dark'] .app-shell {
-  background: transparent;
+  background: var(--surface-page);
 }
 
-/* ============ Topbar (shared dark base) ============ */
 [data-theme='dark'] .app-topbar {
-  border-bottom: 1px solid var(--border-secondary);
+  border-bottom: none;
 }
 
 [data-theme='dark'] .brand-mark {
-  background: var(--accent-gradient);
+  background: var(--accent);
 }
 
 [data-theme='dark'] .brand-name {
@@ -31,9 +30,9 @@
 
 /* ============ Live strip ============ */
 [data-theme='dark'] .live-strip {
-  background: var(--bg-tertiary);
-  border-color: var(--border-primary);
-  box-shadow: inset 0 0 0 1px var(--border-secondary);
+  background: var(--surface-block);
+  border-color: transparent;
+  box-shadow: none;
 }
 
 [data-theme='dark'] .live-strip__label,
@@ -46,17 +45,17 @@
   color: var(--text-primary);
 }
 
-/* ============ Cards / panels (shared dark base) ============ */
+/* ============ Cards / panels ============ */
 [data-theme='dark'] .quick-actions,
 [data-theme='dark'] .hero-card {
-  background: var(--color-card);
-  border: 1px solid var(--border-primary);
+  background: var(--surface-card);
+  border: none;
 }
 
 [data-theme='dark'] .floating-card {
-  background: var(--color-card);
+  background: var(--surface-card);
   color: var(--text-primary);
-  border: 1px solid var(--border-primary);
+  border: none;
 }
 
 [data-theme='dark'] .setting-label {
@@ -68,7 +67,7 @@
 }
 
 [data-theme='dark'] .effect-options {
-  background: var(--bg-tertiary);
+  background: var(--surface-block);
 }
 
 /* ============ Category chips ============ */
@@ -77,31 +76,30 @@
 }
 
 [data-theme='dark'] .category-item {
-  background: var(--bg-tertiary);
-  border-color: var(--border-primary);
+  background: var(--surface-block);
+  border-color: transparent;
   color: var(--text-secondary);
 }
 
 [data-theme='dark'] .category-item:hover {
-  border-color: var(--accent);
   color: var(--text-primary);
 }
 
 [data-theme='dark'] .category-item.active {
   background: var(--accent);
   color: var(--text-inverse);
-  border-color: var(--accent);
+  border-color: transparent;
 }
 
 /* ============ Format panel ============ */
 [data-theme='dark'] .format-panel {
-  background: var(--bg-tertiary);
-  border-color: var(--accent);
+  background: var(--surface-block);
+  border-color: transparent;
 }
 
 [data-theme='dark'] .format-item {
-  background: var(--bg-secondary);
-  border-color: var(--border-primary);
+  background: var(--surface-card);
+  border-color: transparent;
   color: var(--text-secondary);
 }
 
@@ -115,22 +113,27 @@
 }
 
 [data-theme='dark'] .password-display {
-  background: var(--bg-tertiary);
+  background: var(--surface-inset);
   color: var(--success);
 }
 
 [data-theme='dark'] .preview-section {
-  background: var(--bg-secondary);
-  border-color: var(--accent);
+  background: var(--surface-card);
+  border-color: transparent;
 }
 
 [data-theme='dark'] .log-box,
 [data-theme='dark'] .result-card,
 [data-theme='dark'] .progress-card {
-  background: var(--color-card);
-  border-color: var(--border-primary);
+  background: var(--surface-card);
+  border-color: transparent;
 }
 
 [data-theme='dark'] .progress-msg {
   color: var(--text-muted);
+}
+
+/* Images and previews sit on a light paper tone in both modes. */
+[data-theme='dark'] img {
+  color-scheme: dark;
 }

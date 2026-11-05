@@ -621,7 +621,7 @@ defineExpose({
           </template>
           <div style="max-height: 50vh; overflow-y: auto;">
             <div v-for="(cols, group) in historyGroupedCols" :key="group" style="margin-bottom: 8px;">
-              <div style="font-size: 12px; font-weight: 600; color: #606266; margin-bottom: 4px;">{{ GROUP_LABELS[group] }}</div>
+              <div style="font-size: 12px; font-weight: 600; color: var(--text-secondary); margin-bottom: 4px;">{{ GROUP_LABELS[group] }}</div>
               <el-checkbox-group v-model="historyColKeys" size="small">
                 <el-checkbox v-for="col in cols" :key="col.key" :value="col.key" style="margin-right: 12px; margin-bottom: 2px;">
                   {{ col.label }}
@@ -634,7 +634,7 @@ defineExpose({
             <el-button size="small" text @click="historyColKeys = [...HISTORY_DEFAULT_KEYS]">恢复默认</el-button>
           </div>
         </el-popover>
-        <span style="font-size: 12px; color: #909399;">{{ historyRecords.length }} / {{ historyCount }} {{ t('条记录') }}</span>
+        <span style="font-size: 12px; color: var(--text-muted);">{{ historyRecords.length }} / {{ historyCount }} {{ t('条记录') }}</span>
       </div>
       <el-table
         :data="historyRecords"
@@ -733,7 +733,7 @@ defineExpose({
           {{ t('加载更多') }} ({{ historyRecords.length }}/{{ historyCount }})
         </el-button>
       </div>
-      <div v-else-if="historyRecords.length" style="text-align: center; padding: 6px 0; font-size: 12px; color: #909399;">
+      <div v-else-if="historyRecords.length" style="text-align: center; padding: 6px 0; font-size: 12px; color: var(--text-muted);">
         {{ t('已加载全部') }} {{ historyRecords.length }} {{ t('条记录') }}
       </div>
       <template #footer>
@@ -754,13 +754,13 @@ defineExpose({
           <el-radio value="same">
             <div>
               <div style="font-weight: 600;">源目录内生成</div>
-              <div style="font-size: 12px; color: #8b8fa3; margin-top: 2px;">在每个视频所在目录下生成对应的 MediaInfo 文件</div>
+              <div style="font-size: 12px; color: var(--text-muted); margin-top: 2px;">在每个视频所在目录下生成对应的 MediaInfo 文件</div>
             </div>
           </el-radio>
           <el-radio value="folder">
             <div>
               <div style="font-weight: 600;">集中导出到指定目录</div>
-              <div style="font-size: 12px; color: #8b8fa3; margin-top: 2px;">所有导出文件统一保存到一个目录，默认目录名如 mediainfo_txt_20260513182112</div>
+              <div style="font-size: 12px; color: var(--text-muted); margin-top: 2px;">所有导出文件统一保存到一个目录，默认目录名如 mediainfo_txt_20260513182112</div>
             </div>
           </el-radio>
         </el-radio-group>
@@ -784,10 +784,10 @@ defineExpose({
 }
 
 .table-wrapper {
-  border: 1px solid rgba(20, 23, 31, 0.06);
+  border: 1px solid var(--border-secondary);
   border-radius: 12px;
   overflow: hidden;
-  background: #fff;
+  background: var(--surface-card);
 }
 .info-table {
   width: 100%;
@@ -854,7 +854,7 @@ defineExpose({
 }
 .col-filter-btn.filter-active {
   opacity: 1;
-  color: #409eff;
+  color: var(--accent);
 }
 
 /* 筛选弹窗 */
@@ -868,9 +868,9 @@ defineExpose({
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  background: #fff;
+  background: var(--surface-card);
   border-radius: 10px;
-  box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+  box-shadow: var(--shadow-lg);
   padding: 16px;
   min-width: 240px;
   max-width: 320px;
@@ -886,7 +886,7 @@ defineExpose({
   align-items: center;
   font-weight: 600;
   font-size: 14px;
-  color: #303133;
+  color: var(--text-primary);
 }
 .filter-search {
   margin: 0;
@@ -922,7 +922,7 @@ defineExpose({
   text-align: center;
   border-radius: 6px;
   background: rgba(103, 194, 58, 0.15);
-  color: #67c23a;
+  color: var(--success);
   font-weight: 600;
   font-size: 12px;
 }
@@ -934,7 +934,7 @@ defineExpose({
   text-align: center;
   border-radius: 6px;
   background: rgba(245, 108, 108, 0.15);
-  color: #f56c6c;
+  color: var(--danger);
   font-weight: 600;
   font-size: 12px;
 }
@@ -955,9 +955,9 @@ defineExpose({
   font-weight: 600;
   margin-right: 2px;
 }
-.stream-tag.video { background: rgba(64, 158, 255, 0.1); color: #409eff; }
-.stream-tag.audio { background: rgba(103, 194, 58, 0.1); color: #67c23a; }
-.stream-tag.text { background: rgba(230, 162, 60, 0.1); color: #e6a23c; }
+.stream-tag.video { background: var(--stream-video-soft); color: var(--accent); }
+.stream-tag.audio { background: var(--stream-audio-soft); color: var(--success); }
+.stream-tag.text { background: var(--stream-text-soft); color: var(--warning); }
 
 .grouped-table-wrapper {
   display: flex;
@@ -965,23 +965,23 @@ defineExpose({
   gap: 16px;
 }
 .group-section {
-  border: 1px solid rgba(20, 23, 31, 0.06);
+  border: 1px solid var(--border-secondary);
   border-radius: 12px;
   overflow: hidden;
-  background: #fff;
+  background: var(--surface-card);
 }
 .group-header {
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 6px 12px;
-  background: linear-gradient(135deg, #f0f4ff, #e8eeff);
+  background: var(--accent-light);
   border-bottom: 1px solid rgba(20, 23, 31, 0.06);
 }
 .group-label {
   font-weight: 700;
   font-size: 14px;
-  color: #2f73ff;
+  color: var(--accent);
 }
 
 .info-toolbar {
@@ -990,7 +990,7 @@ defineExpose({
   align-items: center;
   padding: 10px 14px;
   border-radius: 10px;
-  border: 1px solid rgba(20, 23, 31, 0.06);
+  border: 1px solid var(--border-secondary);
   background: linear-gradient(145deg, rgba(243, 246, 255, 0.96), rgba(227, 235, 255, 0.9));
   flex-wrap: wrap;
   gap: 8px;
@@ -1005,11 +1005,11 @@ defineExpose({
   margin: 0;
   font-size: 16px;
   font-weight: 700;
-  color: #1a1d26;
+  color: var(--text-primary);
 }
 .toolbar-sub {
   font-size: 12px;
-  color: #6d7387;
+  color: var(--text-muted);
 }
 
 .toolbar-right {
@@ -1043,7 +1043,7 @@ defineExpose({
 }
 .switch-label {
   font-size: 12px;
-  color: #4b5570;
+  color: var(--text-secondary);
 }
 
 .progress-bar {
@@ -1056,8 +1056,8 @@ defineExpose({
   gap: 10px;
   padding: 8px 12px;
   border-radius: 8px;
-  border: 1px solid rgba(20, 23, 31, 0.06);
-  background: #fff;
+  border: 1px solid var(--border-secondary);
+  background: var(--surface-card);
   flex-wrap: wrap;
 }
 
@@ -1069,12 +1069,12 @@ defineExpose({
 .level-label {
   font-size: 13px;
   font-weight: 600;
-  color: #303133;
+  color: var(--text-primary);
   white-space: nowrap;
 }
 .level-desc {
   font-size: 12px;
-  color: #8b8fa3;
+  color: var(--text-muted);
   flex: 1;
 }
 .level-actions {
@@ -1090,11 +1090,11 @@ defineExpose({
   gap: 8px;
   padding: 6px 10px;
   border-radius: 8px;
-  background: #f5f7fa;
+  background: var(--surface-block);
 }
 .summary-text {
   font-size: 12px;
-  color: #6d7387;
+  color: var(--text-muted);
 }
 
 .card-list {
@@ -1113,7 +1113,7 @@ defineExpose({
   gap: 6px;
   padding: 8px 10px;
   border-radius: 8px;
-  background: #fff8ed;
+  background: var(--warning-light);
   border: 1px solid rgba(230, 162, 60, 0.18);
 }
 .health-popover {
@@ -1123,7 +1123,7 @@ defineExpose({
 }
 .health-popover p {
   margin: 0;
-  color: #67c23a;
+  color: var(--success);
 }
 .health-popover-item {
   display: flex;
@@ -1148,11 +1148,11 @@ defineExpose({
   margin: 0 0 8px;
   font-size: 16px;
   font-weight: 600;
-  color: #303133;
+  color: var(--text-primary);
 }
 .empty-desc {
   margin: 0;
   font-size: 13px;
-  color: #8b8fa3;
+  color: var(--text-muted);
 }
 </style>

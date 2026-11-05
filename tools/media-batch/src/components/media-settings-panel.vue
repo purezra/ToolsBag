@@ -399,7 +399,7 @@ const onDrop = (kind: 'video' | 'image', targetIndex: number) => {
   color: var(--text-secondary);
 }
 .safety-grid .warn {
-  color: #d9901d;
+  color: var(--warning);
   font-weight: 700;
 }
 </style>

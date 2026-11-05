@@ -1,7 +1,7 @@
 ﻿<script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch, h } from 'vue'
 import { listen } from '@tauri-apps/api/event'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElTag } from 'element-plus'
 import { FolderOpened, Upload as UploadIcon, MagicStick, Document } from '@element-plus/icons-vue'
 import ImageStatusCard from './components/image-status-card.vue'
 import { convertImages, convertToEpub, listImages, readImageBatchNote } from './api/image-batch'
@@ -25,7 +25,30 @@ const outputFormat = ref<'pdf' | 'epub'>('pdf') // 输出格式
 const epubPageSize = ref<EpubPageSize>('ipadpro') // EPUB 页面尺寸
 const running = ref(false)
 const listLoading = ref(false)
-const files = ref<{ name: string; format: string; size: number }[]>([])
+const files = ref<{ id: number; name: string; format: string; size: number }[]>([])
+
+// el-table-v2 只渲染可视行，几千张图片也不会一次性铺满 DOM。
+const fileColumns = computed(() => [
+  { key: 'name', dataKey: 'name', title: t('文件名'), width: 260, flexGrow: 1 },
+  {
+    key: 'format',
+    dataKey: 'format',
+    title: t('格式'),
+    width: 80,
+    align: 'center' as const,
+    cellRenderer: ({ cellData }: { cellData: string }) =>
+      h(ElTag, { size: 'small', type: 'info' }, () => `.${cellData}`),
+  },
+  {
+    key: 'size',
+    dataKey: 'size',
+    title: t('大小'),
+    width: 120,
+    align: 'right' as const,
+    cellRenderer: ({ cellData }: { cellData: number }) =>
+      h('span', { class: 'cell-ellipsis' }, formatBytes(Number(cellData))),
+  },
+])
 const problemLog = ref('')
 const progress = ref<{ stage: string; percent: number; message: string } | null>(null)
 const resultInfo = ref<{
@@ -76,7 +99,7 @@ const importList = async () => {
   listLoading.value = true
   try {
     const res = await listImages(inputDir.value, recursive.value)
-    files.value = res.map((f) => ({ name: f.name, format: f.format, size: f.size }))
+    files.value = res.map((f, index) => ({ id: index, name: f.name, format: f.format, size: f.size }))
     showImportStats()
   } catch (e: any) {
     ElMessage.error(e?.toString() || t('导入失败'))
@@ -257,10 +280,10 @@ onBeforeUnmount(() => {
       </el-input>
       <el-button :icon="UploadIcon" :disabled="listLoading || running" @click="pastePath">{{ t('粘贴') }}</el-button>
       <el-checkbox v-model="recursive" :disabled="listLoading || running">{{ t('递归') }}</el-checkbox>
-      <el-button type="primary" :icon="MagicStick" :loading="listLoading" :disabled="running" @click="importList">
+      <el-button :icon="MagicStick" :loading="listLoading" :disabled="running" @click="importList">
         {{ t('导入列表') }}
       </el-button>
-      <el-button type="success" :loading="running" :disabled="listLoading" @click="runConvert">{{ t('开始转换') }}</el-button>
+      <el-button type="primary" :loading="running" :disabled="listLoading" @click="runConvert">{{ t('开始转换') }}</el-button>
       <el-button @click="clearList">{{ t('清空') }}</el-button>
       <span class="tb-toolbar__hint">
         <el-link type="info" :icon="Document" @click="openNote">{{ t('说明') }}</el-link>
@@ -343,21 +366,25 @@ onBeforeUnmount(() => {
           {{ t('文件列表') }}
           <el-tag size="small" type="info" class="file-count-tag">{{ files.length }}</el-tag>
         </div>
-        <el-table :data="files" size="small" height="100%" v-loading="listLoading">
-          <el-table-column prop="name" :label="t('文件名')" />
-          <el-table-column prop="format" :label="t('格式')" width="80">
-            <template #default="{ row }">
-              <el-tag size="small" type="info">.{{ row.format }}</el-tag>
+        <div class="virtual-table" v-loading="listLoading">
+          <el-auto-resizer>
+            <template #default="{ height, width }">
+              <el-table-v2
+                :columns="fileColumns"
+                :data="files"
+                :width="width"
+                :height="height"
+                :row-height="34"
+                row-key="id"
+                fixed
+              />
             </template>
-          </el-table-column>
-          <el-table-column :label="t('大小')" width="120">
-            <template #default="{ row }">{{ formatBytes(row.size) }}</template>
-          </el-table-column>
-        </el-table>
+          </el-auto-resizer>
+        </div>
       </div>
 
       <div v-else-if="!listLoading" class="tb-empty">
-        <div class="tb-empty-icon">&#128193;</div>
+        <el-icon class="tb-empty-icon" :size="40"><FolderOpened /></el-icon>
         <div class="tb-empty-text">{{ t('暂无文件') }}</div>
         <div class="tb-empty-hint">{{ t('点击上方导入列表开始') }}</div>
       </div>
@@ -400,6 +427,11 @@ onBeforeUnmount(() => {
 .file-list-section :deep(.el-table) {
   flex: 1;
   min-height: 0;
+}
+.virtual-table {
+  flex: 1;
+  min-height: 0;
+  position: relative;
 }
 .file-count-tag {
   margin-left: 6px;
