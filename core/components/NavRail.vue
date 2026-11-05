@@ -40,11 +40,6 @@ const handleHomeClick = () => {
 
 <template>
   <aside class="nav-rail" :class="{ 'is-expanded': expanded }" :aria-label="t('工具导航')">
-    <button type="button" class="nav-rail__brand" :title="t('工具中心')" @click="handleHomeClick">
-      <span class="brand-mark">TB</span>
-      <span class="brand-name">ToolsBag</span>
-    </button>
-
     <div class="nav-rail__top">
       <button
         type="button"
@@ -97,7 +92,7 @@ const handleHomeClick = () => {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  padding: 10px 8px 12px;
+  padding: 12px 8px 12px;
   background: var(--nav-rail-bg);
   border-right: none;
   transition: width 0.22s var(--ease-out);
@@ -105,60 +100,6 @@ const handleHomeClick = () => {
 }
 .nav-rail.is-expanded {
   width: var(--sidebar-width);
-}
-
-/* ============ Brand ============ */
-.nav-rail__brand {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  height: 48px;
-  padding: 0 8px;
-  margin-bottom: 6px;
-  border: none;
-  background: transparent;
-  border-radius: var(--radius-md);
-  cursor: pointer;
-  overflow: hidden;
-}
-.nav-rail__brand:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: -2px;
-}
-.brand-mark {
-  flex-shrink: 0;
-  width: 32px;
-  height: 32px;
-  border-radius: 10px;
-  display: grid;
-  place-items: center;
-  background: var(--accent);
-  color: #fff;
-  font-weight: 700;
-  font-size: 12px;
-  letter-spacing: 0.02em;
-  user-select: none;
-}
-.brand-name {
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--text-primary);
-  letter-spacing: -0.02em;
-  white-space: nowrap;
-  opacity: 0;
-  transition: opacity 0.12s ease;
-}
-.nav-rail.is-expanded .brand-name {
-  opacity: 1;
-}
-.nav-rail:not(.is-expanded) .nav-rail__brand {
-  justify-content: center;
-  padding: 0;
-}
-/* Collapsed rail: the hidden name must not reserve layout width, or the
-   centered mark overflows the 68px rail and gets clipped. */
-.nav-rail:not(.is-expanded) .brand-name {
-  display: none;
 }
 
 .nav-rail__top {

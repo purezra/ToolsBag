@@ -45,14 +45,19 @@ const sortedTools = computed(() => {
 <template>
   <div class="tool-home">
     <!-- Hero intro -->
-    <section class="tool-home__hero">
+    <section class="tool-home__hero ink-paper">
       <div class="tool-home__hero-text">
-        <h1 class="tool-home__title">{{ t('ToolsBag 工具中心') }}</h1>
+        <div class="tool-home__brand">
+          <span class="tool-home__brand-tile" aria-hidden="true">
+            <img src="/brand/otter.svg" alt="" width="44" height="44" />
+          </span>
+          <h1 class="tool-home__title">ToolsBag</h1>
+        </div>
         <p class="tool-home__subtitle">
           {{ t('精致克制的桌面工具盒 · 媒体探针 · 图像套件 · 文件收割 · 密码册') }}
         </p>
       </div>
-      <div class="tool-home__hero-badge">
+      <div class="tool-home__hero-badge ink-frame ink-tilt">
         <span class="tb-soft-badge tb-soft-badge--accent">v0.2.0</span>
       </div>
     </section>
@@ -134,10 +139,47 @@ const sortedTools = computed(() => {
   gap: var(--space-4);
   flex-shrink: 0;
 }
+/* Sketch frame around the version badge (see core/assets/styles/ink.css) */
+.tool-home__hero-badge {
+  flex-shrink: 0;
+  margin-top: 2px;
+  padding: 3px 7px;
+}
+/* Home hero brand lockup: mark + wordmark, the only logo in the running UI.
+   The otter is a fixed two-colour illustration (#3b2924 / #fce8ce), so the
+   plate stays light in both themes and only the ring follows the theme —
+   same treatment as the About dialog. */
+.tool-home__brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.tool-home__brand-tile {
+  --brand-plate: #fffdf7;
+  --brand-plate-ring: rgba(24, 28, 35, 0.09);
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  background: var(--brand-plate);
+  box-shadow: inset 0 0 0 1px var(--brand-plate-ring);
+}
+.tool-home__brand-tile img {
+  display: block;
+  width: 40px;
+  height: 40px;
+}
+:root[data-theme='dark'] .tool-home__brand-tile,
+html.dark .tool-home__brand-tile {
+  --brand-plate: #efe4d4;
+  --brand-plate-ring: rgba(255, 255, 255, 0.16);
+}
 .tool-home__title {
   margin: 0;
-  font-size: 28px;
-  line-height: 34px;
+  font-size: 32px;
+  line-height: 38px;
   font-weight: 700;
   letter-spacing: -0.03em;
   color: var(--text-primary);
@@ -324,8 +366,21 @@ const sortedTools = computed(() => {
   .tool-home {
     padding: var(--space-4);
   }
+  .tool-home__brand {
+    gap: 10px;
+  }
+  .tool-home__brand-tile {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+  }
+  .tool-home__brand-tile img {
+    width: 32px;
+    height: 32px;
+  }
   .tool-home__title {
-    font-size: 18px;
+    font-size: 24px;
+    line-height: 30px;
   }
   .tool-card__open {
     opacity: 1;

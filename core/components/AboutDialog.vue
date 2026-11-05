@@ -45,18 +45,20 @@ const principles = ['本地优先', '轻量运行', '专注效率']
     append-to-body
     @update:model-value="(val: boolean) => emit('update:modelValue', val)"
   >
-    <div class="about-hero">
-      <div class="about-brand-mark" aria-hidden="true">TB</div>
+    <div class="about-hero ink-paper">
+      <div class="about-brand-mark" aria-hidden="true">
+        <img src="/brand/otter.svg" alt="" width="40" height="40" />
+      </div>
       <div class="about-heading">
         <span class="about-eyebrow">DESKTOP TOOLKIT</span>
-        <h2>ToolsBag</h2>
+        <h2 class="ink-underline">ToolsBag</h2>
         <p>{{ t('为日常文件工作提供清晰、可靠的本地工具。') }}</p>
       </div>
       <span class="about-version">v0.2.0</span>
     </div>
 
     <section class="about-section" aria-labelledby="about-capabilities-title">
-      <div class="about-section-head">
+      <div class="about-section-head ink-rule">
         <h3 id="about-capabilities-title">{{ t('核心能力') }}</h3>
         <span>04 TOOLS</span>
       </div>
@@ -121,13 +123,23 @@ const principles = ['本地优先', '轻量运行', '专注效率']
   height: 48px;
   display: grid;
   place-items: center;
-  border: 1px solid var(--accent-border);
-  border-radius: var(--radius-lg);
-  background: var(--accent-soft);
-  color: var(--accent);
-  font-size: 13px;
-  font-weight: 750;
-  letter-spacing: 0.08em;
+  border-radius: 14px;
+  background: #fffdf7;
+  box-shadow: inset 0 0 0 1px rgba(24, 28, 35, 0.09);
+}
+
+/* 水獭是固定的双色插画（#3b2924 / #fce8ce），不能反转；深色下只把底板压暗一档。
+   取值与顶栏 .topbar-brand__tile 保持一致。 */
+:root[data-theme='dark'] .about-brand-mark,
+html.dark .about-brand-mark {
+  background: #efe4d4;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16);
+}
+
+.about-brand-mark img {
+  display: block;
+  width: 40px;
+  height: 40px;
 }
 
 .about-heading {
@@ -178,7 +190,8 @@ const principles = ['本地优先', '轻量运行', '专注效率']
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 8px;
+  margin-bottom: 0;
+  padding-bottom: 8px;
 }
 
 .about-section-head h3 {
@@ -196,7 +209,7 @@ const principles = ['本地优先', '轻量运行', '专注效率']
 }
 
 .capability-list {
-  border-top: 1px solid var(--border-primary);
+  border-top: none;
 }
 
 .capability-row {
@@ -274,6 +287,12 @@ const principles = ['本地优先', '轻量运行', '专注效率']
   .about-brand-mark {
     width: 42px;
     height: 42px;
+    border-radius: 12px;
+  }
+
+  .about-brand-mark img {
+    width: 34px;
+    height: 34px;
   }
 
   .about-version {

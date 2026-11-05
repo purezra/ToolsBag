@@ -407,7 +407,6 @@ const enMessages = Object.fromEntries<string>([
   ['结果', 'Results'],
   ['未找到匹配的工具', 'No matching tools found'],
   ['打开', 'Open'],
-  ['ToolsBag 工具中心', 'ToolsBag Tool Center'],
   ['精致克制的桌面工具盒 · 媒体探针 · 图像套件 · 文件收割 · 密码册', 'Refined desktop toolkit · Media Probe · Image Suite · File Harvester · Cipher Book'],
   ['拼版印刷', 'Imposition'],
   ['把文件夹里的图片密集拼贴成多页 PDF，也可导出整页 WebP/AVIF', 'Tile a folder of images into dense multi-page PDFs, or export full pages as WebP/AVIF'],
