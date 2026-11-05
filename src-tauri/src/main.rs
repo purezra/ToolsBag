@@ -10,6 +10,7 @@ mod error;
 mod models;
 mod repairer;
 mod tools;
+mod update;
 mod utils;
 mod webdav;
 
@@ -17,6 +18,7 @@ use crate::tools::image_compress;
 use crate::tools::image_to_pdf;
 use crate::tools::media_batch;
 use crate::tools::media_cache;
+use crate::tools::tilepress;
 use std::{path::PathBuf, process::Command};
 use tauri::Manager;
 use tauri_plugin_sql::{Migration, MigrationKind};
@@ -152,6 +154,13 @@ fn main() {
                 tools::mediainfo::set_resource_dir(res_dir.clone());
                 image_compress::set_resource_dir(res_dir);
             }
+            // 缩略图磁盘缓存放到应用缓存目录，跨会话复用，避免重复解码大图。
+            let thumb_dir = app
+                .path()
+                .app_cache_dir()
+                .unwrap_or_else(|_| std::env::temp_dir().join("toolsbag"))
+                .join("thumbnails");
+            image_to_pdf::init_thumbnail_cache(thumb_dir);
             // 初始化媒体缓存数据库到 app_data_dir，fallback 到临时目录
             {
                 let db_path = match app.path().app_data_dir() {
@@ -175,6 +184,8 @@ fn main() {
         })
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_opener::init())
+        .manage(tilepress::TilepressState::new(tilepress::resolve_paths()))
         .plugin(
             tauri_plugin_sql::Builder::default()
                 .add_migrations("sqlite:video_records.db", video_db_migrations)
@@ -240,10 +251,34 @@ fn main() {
             image_to_pdf::generate_pdf,
             image_to_pdf::generate_pdf_batch,
             image_to_pdf::get_image_thumbnail,
+            image_to_pdf::prewarm_thumbnails,
             // Tool6: Image Compress
             image_compress::get_libjxl_status,
             image_compress::analyze_compress_inputs,
-            image_compress::compress_images
+            image_compress::compress_images,
+            // Tool7: Tilepress 拼版印刷
+            tilepress::app_paths,
+            tilepress::load_config,
+            tilepress::save_config,
+            tilepress::scan_folder,
+            tilepress::recommend,
+            tilepress::filter_stats,
+            tilepress::estimate_export,
+            tilepress::build_layout_cmd,
+            tilepress::render_page_preview,
+            tilepress::prewarm_previews,
+            tilepress::export_pdf_cmd,
+            tilepress::export_images_cmd,
+            tilepress::cancel_current,
+            tilepress::startup_dir,
+            tilepress::open_pdf,
+            tilepress::reveal_pdf,
+            tilepress::open_output_folder,
+            tilepress::copy_image_files,
+            // Portable self-update
+            update::check_update,
+            update::download_update,
+            update::apply_update
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

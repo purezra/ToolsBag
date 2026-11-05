@@ -1,8 +1,18 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import { Moon, Sunny, InfoFilled, MagicStick, Operation } from '@element-plus/icons-vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { Moon, Sunny, InfoFilled, Operation, Refresh } from '@element-plus/icons-vue'
+import { getVersion } from '@tauri-apps/api/app'
+import type { UnlistenFn } from '@tauri-apps/api/event'
 import { useSettings } from '@core/hooks/useSettings'
-import type { WatermarkMode } from '@core/hooks/useSettings'
+import { formatBytes } from '@core/utils/format'
+import { hasTauriRuntime } from '@core/utils/tauri'
+import {
+  applyUpdate,
+  checkUpdate,
+  downloadUpdate,
+  onUpdateProgress,
+  type UpdateInfo
+} from '@core/api/update'
 
 defineProps<{
   modelValue: boolean
@@ -15,29 +25,8 @@ const emit = defineEmits<{
 
 const {
   t, appearance, setAppearance, locale, setLocale,
-  fontFamily, setFontFamily, customFontName, loadCustomFont, clearCustomFont,
-  showWatermark, setShowWatermark, watermarkMode, setWatermarkMode,
-  watermarkOpacity, setWatermarkOpacity, watermarkScale, setWatermarkScale
+  fontFamily, setFontFamily, customFontName, loadCustomFont, clearCustomFont
 } = useSettings()
-
-const watermarkOpacityMarks = computed(() => ({
-  2: '2%',
-  12: '12%',
-  30: '30%'
-}))
-
-const watermarkScaleMarks = computed(() => ({
-  40: '小',
-  100: '中',
-  200: '大'
-}))
-
-const watermarkModeOptions: { value: WatermarkMode; labelKey: string }[] = [
-  { value: 'static', labelKey: '水印·静态' },
-  { value: 'tile', labelKey: '水印·平铺' },
-  { value: 'float', labelKey: '水印·漂浮' },
-  { value: 'breath', labelKey: '水印·呼吸' }
-]
 
 const handleFontUpload = async (file: File) => {
   const success = await loadCustomFont(file)
@@ -46,6 +35,88 @@ const handleFontUpload = async (file: File) => {
   }
   return false
 }
+
+/* ============ Portable self-update ============ */
+const isDesktop = hasTauriRuntime()
+const currentVersion = ref('0.2.0')
+type UpdateState = 'idle' | 'checking' | 'uptodate' | 'available' | 'downloading' | 'ready' | 'error'
+const updateState = ref<UpdateState>('idle')
+const updateInfo = ref<UpdateInfo | null>(null)
+const updatePath = ref('')
+const updateProgress = ref(0)
+const updateError = ref('')
+let unlistenProgress: UnlistenFn | null = null
+
+const updateStatusText = computed(() => {
+  switch (updateState.value) {
+    case 'checking': return t('正在检查更新…')
+    case 'uptodate': return t('已是最新版本')
+    case 'available': return `${t('发现新版本')} v${updateInfo.value?.latest || ''}`
+    case 'downloading': return `${t('正在下载…')} ${updateProgress.value}%`
+    case 'ready': return t('下载完成，点击重启更新')
+    case 'error': return t('更新失败')
+    default: return updateInfo.value?.message || (isDesktop ? t('检查是否有新版本') : t('仅桌面端可用'))
+  }
+})
+
+const checkUpdateAction = async () => {
+  if (!isDesktop || updateState.value === 'checking' || updateState.value === 'downloading') return
+  updateState.value = 'checking'
+  updateError.value = ''
+  try {
+    const info = await checkUpdate()
+    updateInfo.value = info
+    updateState.value = info.available ? 'available' : info.message ? 'idle' : 'uptodate'
+  } catch (e: any) {
+    updateState.value = 'error'
+    updateError.value = e?.message || String(e)
+  }
+}
+
+const downloadUpdateAction = async () => {
+  const info = updateInfo.value
+  if (!info?.assetUrl) return
+  updateState.value = 'downloading'
+  updateProgress.value = 0
+  updateError.value = ''
+  try {
+    updatePath.value = await downloadUpdate(info.assetUrl, info.latest, info.sha256)
+    updateProgress.value = 100
+    updateState.value = 'ready'
+  } catch (e: any) {
+    updateState.value = 'error'
+    updateError.value = e?.message || String(e)
+  }
+}
+
+const applyUpdateAction = async () => {
+  if (!updatePath.value) return
+  try {
+    await applyUpdate(updatePath.value)
+  } catch (e: any) {
+    updateState.value = 'error'
+    updateError.value = e?.message || String(e)
+  }
+}
+
+onMounted(async () => {
+  if (!isDesktop) return
+  try {
+    currentVersion.value = await getVersion()
+  } catch {
+    /* keep package version */
+  }
+  unlistenProgress = await onUpdateProgress(({ downloaded, total }) => {
+    updateProgress.value = total > 0
+      ? Math.min(100, Math.round((downloaded / total) * 100))
+      : 0
+  })
+})
+
+onBeforeUnmount(() => {
+  unlistenProgress?.()
+  unlistenProgress = null
+})
 </script>
 
 <template>
@@ -135,61 +206,63 @@ const handleFontUpload = async (file: File) => {
         </div>
       </section>
 
-      <!-- Effects group -->
+      <!-- Portable self-update -->
       <section class="settings-group">
         <header class="settings-group__head">
-          <el-icon :size="15"><MagicStick /></el-icon>
-          <span>{{ t('视觉效果') }}</span>
+          <el-icon :size="15"><Refresh /></el-icon>
+          <span>{{ t('应用更新') }}</span>
         </header>
 
-        <div class="settings-row settings-row--stack">
+        <div class="settings-row">
           <div class="settings-row__text">
-            <p class="settings-row__title">{{ t('工具水印') }}</p>
-            <p class="settings-row__desc">{{ t('在工具页面叠加图标水印，可调模式与透明度') }}</p>
+            <p class="settings-row__title">{{ t('当前版本') }} v{{ currentVersion }}</p>
+            <p class="settings-row__desc">{{ updateStatusText }}</p>
           </div>
-          <div class="settings-row__control settings-row__control--full">
-            <div class="watermark-controls">
-              <el-switch :model-value="showWatermark" @change="(val: any) => setShowWatermark(val)" />
-              <template v-if="showWatermark">
-                <div class="watermark-options">
-                  <el-radio-group :model-value="watermarkMode" size="small" @change="(val: any) => setWatermarkMode(val)">
-                    <el-radio-button
-                      v-for="opt in watermarkModeOptions"
-                      :key="opt.value"
-                      :label="opt.value"
-                    >{{ t(opt.labelKey) }}</el-radio-button>
-                  </el-radio-group>
-                  <div class="watermark-slider">
-                    <span class="watermark-slider__label">{{ t('透明度') }}</span>
-                    <el-slider
-                      :model-value="watermarkOpacity"
-                      :min="2"
-                      :max="30"
-                      :step="1"
-                      :marks="watermarkOpacityMarks"
-                      :show-tooltip="true"
-                      :format-tooltip="(val: number) => val + '%'"
-                      @change="(val: any) => setWatermarkOpacity(Number(val))"
-                    />
-                  </div>
-                  <div class="watermark-slider">
-                    <span class="watermark-slider__label">{{ t('大小') }}</span>
-                    <el-slider
-                      :model-value="watermarkScale"
-                      :min="40"
-                      :max="200"
-                      :step="10"
-                      :marks="watermarkScaleMarks"
-                      :show-tooltip="true"
-                      :format-tooltip="(val: number) => val + '%'"
-                      @change="(val: any) => setWatermarkScale(Number(val))"
-                    />
-                  </div>
-                </div>
-              </template>
-            </div>
+          <div class="settings-row__control">
+            <el-button
+              size="small"
+              :loading="updateState === 'checking'"
+              :disabled="!isDesktop || updateState === 'downloading'"
+              @click="checkUpdateAction"
+            >
+              {{ t('检查更新') }}
+            </el-button>
           </div>
         </div>
+
+        <div
+          v-if="updateState === 'available' || updateState === 'downloading' || updateState === 'ready'"
+          class="update-panel"
+        >
+          <div class="update-panel__head">
+            <span class="update-panel__version">
+              {{ t('发现新版本') }} v{{ updateInfo?.latest }}
+            </span>
+            <span class="update-panel__size">{{ formatBytes(updateInfo?.assetSize || 0) }}</span>
+          </div>
+          <pre v-if="updateInfo?.notes" class="update-notes">{{ updateInfo.notes }}</pre>
+          <el-progress
+            v-if="updateState === 'downloading'"
+            :percentage="updateProgress"
+            :stroke-width="8"
+            :show-text="false"
+          />
+          <div class="update-actions">
+            <el-button
+              v-if="updateState === 'available'"
+              type="primary"
+              size="small"
+              @click="downloadUpdateAction"
+            >
+              {{ t('下载更新') }}
+            </el-button>
+            <el-button v-if="updateState === 'ready'" type="primary" size="small" @click="applyUpdateAction">
+              {{ t('重启更新') }}
+            </el-button>
+          </div>
+        </div>
+
+        <p v-if="updateError" class="update-error">{{ updateError }}</p>
       </section>
 
       <!-- About entry -->
@@ -211,30 +284,31 @@ const handleFontUpload = async (file: File) => {
 .settings-body {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
-  padding: 4px 0 var(--space-5);
+  gap: var(--space-5);
+  padding: 8px 0 var(--space-5);
 }
 
-/* ============ Group ============ */
+/* ============ Group (iOS-style grouped list) ============ */
 .settings-group {
   display: flex;
   flex-direction: column;
-  border: 1px solid var(--card-border);
-  border-radius: var(--radius-card);
+  border: none;
+  border-radius: var(--radius-lg);
   background: var(--color-card);
+  box-shadow: var(--card-shadow);
   overflow: hidden;
 }
 .settings-group__head {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 12px var(--space-4);
+  padding: 14px 16px 6px;
   font-size: 12px;
   font-weight: 600;
-  color: var(--text-secondary);
-  letter-spacing: 0.02em;
-  background: var(--bg-secondary);
-  border-bottom: 1px solid var(--border-secondary);
+  color: var(--text-muted);
+  letter-spacing: 0.01em;
+  background: transparent;
+  border-bottom: none;
 }
 .settings-group__head .el-icon {
   color: var(--accent);
@@ -246,7 +320,8 @@ const handleFontUpload = async (file: File) => {
   align-items: center;
   justify-content: space-between;
   gap: var(--space-3);
-  padding: var(--space-3) var(--space-4);
+  min-height: 56px;
+  padding: 12px 16px;
   border-bottom: 1px solid var(--border-secondary);
 }
 .settings-row:last-child {
@@ -265,8 +340,8 @@ const handleFontUpload = async (file: File) => {
 }
 .settings-row__title {
   margin: 0;
-  font-size: 13px;
-  font-weight: 600;
+  font-size: 14px;
+  font-weight: 500;
   color: var(--text-primary);
 }
 .settings-row__desc {
@@ -299,33 +374,6 @@ const handleFontUpload = async (file: File) => {
   align-items: center;
 }
 
-/* Watermark controls */
-.watermark-controls {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-  width: 100%;
-}
-.watermark-options {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-  width: 100%;
-  padding: var(--space-3);
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-secondary);
-  border-radius: var(--radius-md);
-}
-.watermark-slider {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.watermark-slider__label {
-  font-size: 12px;
-  color: var(--text-secondary);
-}
-
 /* ============ About entry ============ */
 .settings-group--footer {
   border: none;
@@ -336,17 +384,17 @@ const handleFontUpload = async (file: File) => {
   align-items: center;
   gap: var(--space-3);
   width: 100%;
-  padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--card-border);
-  border-radius: var(--radius-md);
+  padding: 14px 16px;
+  border: none;
+  border-radius: var(--radius-lg);
   background: var(--color-card);
+  box-shadow: var(--card-shadow);
   color: var(--text-primary);
   cursor: pointer;
-  transition: border-color var(--duration-fast) ease, background var(--duration-fast) ease;
+  transition: background var(--duration-fast) var(--ease-standard);
 }
 .about-entry:hover {
-  border-color: var(--accent);
-  background: var(--accent-light);
+  background: var(--surface-inset);
 }
 .about-entry__text {
   flex: 1;
@@ -365,6 +413,54 @@ const handleFontUpload = async (file: File) => {
 }
 .about-entry__arrow {
   color: var(--text-muted);
+}
+
+/* ============ Portable self-update ============ */
+.update-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0 16px 12px;
+  padding: 12px;
+  border-radius: var(--radius-md);
+  background: var(--surface-block);
+}
+.update-panel__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.update-panel__size {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+.update-notes {
+  max-height: 140px;
+  margin: 0;
+  overflow-y: auto;
+  font-family: var(--font-sans);
+  font-size: 11px;
+  line-height: 1.55;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.update-actions {
+  display: flex;
+  gap: 8px;
+}
+.update-error {
+  margin: 0 16px 12px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--danger);
+  word-break: break-word;
 }
 
 @media (max-width: 480px) {
