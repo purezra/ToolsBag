@@ -4150,63 +4150,171 @@ fn decode_jpeg_scaled(path: &Path, limit: u32) -> Option<DynamicImage> {
     }
 }
 
-#[tauri::command]
-pub async fn get_image_thumbnail(image_path: String, max_size: u32) -> Result<String, String> {
-    tokio::task::spawn_blocking(move || {
-        let path = PathBuf::from(&image_path);
-        let limit = max_size.clamp(256, 1024);
-        let guessed_format = ImageReader::open(&path)
-            .and_then(|r| r.with_guessed_format())
-            .map(|r| r.format().unwrap_or(ImageFormat::Png))
-            .unwrap_or(ImageFormat::Png);
+/// 缩略图缓存：内存 LRU（最近 256 张）+ 磁盘缓存（跨会话复用）。
+/// 键包含路径、文件大小、修改时间和目标尺寸，原图变化后会自动失效。
+struct ThumbnailCache {
+    dir: PathBuf,
+    mem: Mutex<lru::LruCache<String, Arc<Vec<u8>>>>,
+}
 
-        // JPEG 优先走 DCT 缩放解码；TIFF 走 image_crate::open（多页只取第一页）；
-        // 其余格式走 fast 路径
-        let img = if matches!(guessed_format, ImageFormat::Jpeg) {
-            match decode_jpeg_scaled(&path, limit) {
-                Some(img) => img,
-                None => decode_image_fast(&path, guessed_format)?,
+static THUMBNAIL_CACHE: OnceLock<ThumbnailCache> = OnceLock::new();
+
+/// 在应用启动时调用，把缩略图落到应用缓存目录。
+pub fn init_thumbnail_cache(dir: PathBuf) {
+    let _ = std::fs::create_dir_all(&dir);
+    let cap = std::num::NonZeroUsize::new(256).expect("256 is non-zero");
+    let _ = THUMBNAIL_CACHE.set(ThumbnailCache {
+        dir,
+        mem: Mutex::new(lru::LruCache::new(cap)),
+    });
+}
+
+fn thumbnail_cache() -> &'static ThumbnailCache {
+    THUMBNAIL_CACHE.get_or_init(|| {
+        let dir = std::env::temp_dir().join("toolsbag").join("thumbnails");
+        let _ = std::fs::create_dir_all(&dir);
+        let cap = std::num::NonZeroUsize::new(256).expect("256 is non-zero");
+        ThumbnailCache {
+            dir,
+            mem: Mutex::new(lru::LruCache::new(cap)),
+        }
+    })
+}
+
+fn thumbnail_key(path: &Path, limit: u32) -> String {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(path.to_string_lossy().as_bytes());
+    if let Ok(meta) = std::fs::metadata(path) {
+        hasher.update(meta.len().to_le_bytes());
+        if let Ok(modified) = meta.modified() {
+            if let Ok(duration) = modified.duration_since(std::time::UNIX_EPOCH) {
+                hasher.update(duration.as_nanos().to_le_bytes());
             }
-        } else if matches!(guessed_format, ImageFormat::Tiff) {
-            image_crate::open(&path).map_err(|e| e.to_string())?
-        } else {
-            decode_image_fast(&path, guessed_format)?
-        };
+        }
+    }
+    hasher.update(limit.to_le_bytes());
+    format!("{:x}", hasher.finalize())
+}
 
-        // 应用 EXIF 旋转，保证缩略图方向与最终 PDF 一致
-        let img = apply_exif_orientation(img, &path);
-        let (w, h) = img.dimensions();
-        let thumbnail = if w <= limit && h <= limit {
-            img
-        } else {
-            let scale = if w > h {
-                limit as f64 / w as f64
-            } else {
-                limit as f64 / h as f64
-            };
-            let new_w = (w as f64 * scale) as u32;
-            let new_h = (h as f64 * scale) as u32;
-            img.resize(new_w, new_h, FilterType::Triangle)
-        };
+/// 生成缩略图 JPEG 原始字节（不再 base64，直接走 Tauri IPC 二进制通道）。
+fn render_thumbnail_jpeg(path: &Path, limit: u32) -> Result<Vec<u8>, String> {
+    let guessed_format = ImageReader::open(path)
+        .and_then(|r| r.with_guessed_format())
+        .map(|r| r.format().unwrap_or(ImageFormat::Png))
+        .unwrap_or(ImageFormat::Png);
 
-        // 输出 JPEG q=80 — 比 PNG base64 体积小 5–10 倍
-        let rgb = if has_alpha_channel(&thumbnail) {
-            flatten_rgba_to_white(&thumbnail.to_rgba8())
-        } else {
-            thumbnail.to_rgb8()
-        };
-        let (tw, th) = rgb.dimensions();
-        let mut buffer = Cursor::new(Vec::new());
-        let mut encoder = image_crate::codecs::jpeg::JpegEncoder::new_with_quality(&mut buffer, 80);
-        encoder
-            .encode(rgb.as_raw(), tw, th, image_crate::ExtendedColorType::Rgb8)
-            .map_err(|e| e.to_string())?;
+    // JPEG 优先走 DCT 缩放解码；TIFF 走 image_crate::open（多页只取第一页）；
+    // 其余格式走 fast 路径
+    let img = if matches!(guessed_format, ImageFormat::Jpeg) {
+        match decode_jpeg_scaled(path, limit) {
+            Some(img) => img,
+            None => decode_image_fast(path, guessed_format)?,
+        }
+    } else if matches!(guessed_format, ImageFormat::Tiff) {
+        image_crate::open(path).map_err(|e| e.to_string())?
+    } else {
+        decode_image_fast(path, guessed_format)?
+    };
 
-        let base64_data = base64::Engine::encode(
-            &base64::engine::general_purpose::STANDARD,
-            buffer.into_inner(),
-        );
-        Ok(format!("data:image/jpeg;base64,{}", base64_data))
+    // 应用 EXIF 旋转，保证缩略图方向与最终 PDF 一致
+    let img = apply_exif_orientation(img, path);
+    let (w, h) = img.dimensions();
+    let thumbnail = if w <= limit && h <= limit {
+        img
+    } else {
+        let scale = if w > h {
+            limit as f64 / w as f64
+        } else {
+            limit as f64 / h as f64
+        };
+        let new_w = (w as f64 * scale) as u32;
+        let new_h = (h as f64 * scale) as u32;
+        img.resize(new_w, new_h, FilterType::Triangle)
+    };
+
+    // 输出 JPEG q=80 — 比 PNG base64 体积小 5–10 倍
+    let rgb = if has_alpha_channel(&thumbnail) {
+        flatten_rgba_to_white(&thumbnail.to_rgba8())
+    } else {
+        thumbnail.to_rgb8()
+    };
+    let (tw, th) = rgb.dimensions();
+    let mut buffer = Cursor::new(Vec::new());
+    let mut encoder = image_crate::codecs::jpeg::JpegEncoder::new_with_quality(&mut buffer, 80);
+    encoder
+        .encode(rgb.as_raw(), tw, th, image_crate::ExtendedColorType::Rgb8)
+        .map_err(|e| e.to_string())?;
+    Ok(buffer.into_inner())
+}
+
+fn thumbnail_bytes(path: &Path, limit: u32) -> Result<Arc<Vec<u8>>, String> {
+    let cache = thumbnail_cache();
+    let key = thumbnail_key(path, limit);
+
+    {
+        let mut mem = cache.mem.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(hit) = mem.get(&key).cloned() {
+            return Ok(hit);
+        }
+    }
+
+    let disk_path = cache.dir.join(format!("{key}.jpg"));
+    if let Ok(bytes) = std::fs::read(&disk_path) {
+        if !bytes.is_empty() {
+            let arc = Arc::new(bytes);
+            let mut mem = cache.mem.lock().unwrap_or_else(|e| e.into_inner());
+            mem.put(key, arc.clone());
+            return Ok(arc);
+        }
+    }
+
+    let bytes = render_thumbnail_jpeg(path, limit)?;
+    // 原子写：先写临时文件再改名，避免并发请求读到半张图。
+    let tmp = disk_path.with_extension("jpg.tmp");
+    if std::fs::write(&tmp, &bytes).is_ok() {
+        let _ = std::fs::rename(&tmp, &disk_path);
+    }
+    let arc = Arc::new(bytes);
+    {
+        let mut mem = cache.mem.lock().unwrap_or_else(|e| e.into_inner());
+        mem.put(key, arc.clone());
+    }
+    Ok(arc)
+}
+
+/// 返回缩略图 JPEG 原始字节。
+///
+/// 旧实现返回 `data:image/jpeg;base64,...`：每张图多 33% 体积，还要在 IPC 上做
+/// 字符串编码/解码。现在直接返回二进制，前端用 Blob URL 挂到 `<img>`，大图列表
+/// 的内存和耗时都明显下降。
+#[tauri::command]
+pub async fn get_image_thumbnail(
+    image_path: String,
+    max_size: u32,
+) -> Result<tauri::ipc::Response, String> {
+    let path = PathBuf::from(&image_path);
+    let limit = max_size.clamp(256, 1024);
+    let bytes = tokio::task::spawn_blocking(move || thumbnail_bytes(&path, limit))
+        .await
+        .map_err(|e| format!("task join error: {e}"))??;
+    Ok(tauri::ipc::Response::new((*bytes).clone()))
+}
+
+/// 后台预生成缩略图并写入磁盘缓存，供后续滚动/翻页秒开。
+/// 只处理前 120 个去重路径，避免一次性把 CPU 占满。
+#[tauri::command]
+pub async fn prewarm_thumbnails(paths: Vec<String>, max_size: u32) -> Result<usize, String> {
+    let limit = max_size.clamp(256, 1024);
+    tokio::task::spawn_blocking(move || {
+        let unique: HashSet<String> = paths.into_iter().take(120).collect();
+        let paths: Vec<String> = unique.into_iter().collect();
+        Ok::<usize, String>(
+            paths
+                .par_iter()
+                .filter(|p| thumbnail_bytes(Path::new(p.as_str()), limit).is_ok())
+                .count(),
+        )
     })
     .await
     .map_err(|e| format!("task join error: {e}"))?

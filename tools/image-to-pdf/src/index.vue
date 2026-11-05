@@ -492,6 +492,7 @@ import {
   generatePdf as apiGeneratePdf,
   generatePdfBatch as apiGeneratePdfBatch,
   getImageThumbnail,
+  prewarmThumbnails,
   formatFileSize,
   PAGE_SIZE_NAMES,
   PAGE_SIZE_DIMS_MM,
@@ -946,8 +947,7 @@ async function analyzeFolderAction() {
   analysisSourceKey.value = ''
   result.value = null
   batchResults.value = null
-  thumbnails.value.clear()
-  loadingThumbnails.value.clear()
+  clearThumbnails()
   gridPageIndex.value = 0
   waterfallLimit.value = 60
 
@@ -990,16 +990,22 @@ async function analyzeFolderAction() {
 async function updatePreview() {
   if (!analysis.value) return
   try {
-    previewData.value = await calculatePreviewLayout(
+    const preview = await calculatePreviewLayout(
       analysis.value.images,
       settings.value.pageSize,
       buildPageMode(),
       settings.value.margin,
     )
+    previewData.value = preview
     gridPageIndex.value = 0
     currentSelectedPage.value = 0
     await nextTick()
     schedulePreloadVisible()
+    // 后台把前 80 张缩略图预热进 Rust 磁盘缓存；不阻塞预览，失败也不影响使用。
+    void prewarmThumbnails(
+      preview.pages.slice(0, 80).map((page) => page.image_path),
+      384,
+    ).catch(() => {})
   } catch (e: any) {
     console.error('预览失败:', e)
     ElMessage.error(t('预览更新失败') + ': ' + (e?.message || e))
@@ -1066,6 +1072,19 @@ function touchThumbnail(path: string) {
   thumbnails.value.set(path, data)
 }
 
+/** 缩略图现在存的是 Blob URL，淘汰/清空时必须主动释放，否则内存只增不减。 */
+function revokeThumbnail(path: string) {
+  const url = thumbnails.value.get(path)
+  if (url) URL.revokeObjectURL(url)
+  thumbnails.value.delete(path)
+}
+
+function clearThumbnails() {
+  for (const url of thumbnails.value.values()) URL.revokeObjectURL(url)
+  thumbnails.value.clear()
+  loadingThumbnails.value.clear()
+}
+
 async function loadThumbnail(path: string): Promise<void> {
   if (thumbnails.value.has(path)) {
     touchThumbnail(path)
@@ -1075,12 +1094,14 @@ async function loadThumbnail(path: string): Promise<void> {
   loadingThumbnails.value.add(path)
   try {
     const data = await getImageThumbnail(path, 384)
+    // 直接拿 JPEG 字节建 Blob，避免 base64 的字符串膨胀与额外解码。
+    const url = URL.createObjectURL(new Blob([data], { type: 'image/jpeg' }))
     // LRU 淘汰：Map 头部即最久未使用项
     if (thumbnails.value.size >= THUMBNAIL_CACHE_MAX) {
       const firstKey = thumbnails.value.keys().next().value
-      if (firstKey) thumbnails.value.delete(firstKey)
+      if (firstKey) revokeThumbnail(firstKey)
     }
-    thumbnails.value.set(path, data)
+    thumbnails.value.set(path, url)
   } catch (e) {
     console.warn('缩略图加载失败:', path, e)
   } finally {
@@ -1274,7 +1295,7 @@ onBeforeUnmount(() => {
   unlistenProgress?.()
   unlistenBatchItem?.()
   stopAutoPlay()
-  thumbnails.value.clear()
+  clearThumbnails()
 })
 </script>
 
@@ -1286,7 +1307,10 @@ onBeforeUnmount(() => {
   flex-direction: column;
   height: 100%;
   min-height: 0;
-  overflow: hidden;
+  /* The settings + analysis cards can be taller than the window; scroll the
+     page instead of clipping the preview panel underneath them. */
+  overflow-y: auto;
+  overflow-x: hidden;
   gap: 10px;
 }
 .img2pdf :deep(.tb-collapse) {
@@ -1314,9 +1338,11 @@ onBeforeUnmount(() => {
 
 /* 预览面板（全宽，纵向流中占主区） */
 .preview-panel {
-  flex: 1 1 auto;
+  /* Grow into spare space, but never shrink below a usable preview height —
+     the page scrolls instead. */
+  flex: 1 0 auto;
   min-width: 0;
-  min-height: 0;
+  min-height: 420px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -1446,7 +1472,7 @@ onBeforeUnmount(() => {
 
 /* ============================ Generate ============================ */
 
-.progress-container { margin-top: 10px; }
+.progress-container { margin-top: 10px; flex-shrink: 0; }
 .progress-text { margin-top: 6px; font-size: 11px; color: var(--text-secondary); }
 .current-file {
   color: var(--text-muted); font-family: var(--font-mono); font-size: 10px;
@@ -1455,6 +1481,7 @@ onBeforeUnmount(() => {
 .result-container {
   margin-top: 10px; padding: 8px 10px; border-radius: var(--radius-md);
   border: 1px solid var(--border-secondary);
+  flex-shrink: 0;
 }
 .result-container.success { background: var(--success-light); }
 .result-container.error { background: var(--danger-light); }

@@ -244,12 +244,25 @@ export async function generatePdfBatch(
   })
 }
 
-/** 获取图片缩略图（base64 JPEG） */
+/**
+ * 获取图片缩略图（JPEG 原始字节）。
+ *
+ * 返回 ArrayBuffer 而不是 base64 data URL：少一层 33% 体积膨胀和字符串编解码，
+ * 前端用 Blob URL 挂到 <img> 上即可。
+ */
 export async function getImageThumbnail(
   imagePath: string,
   maxSize: number = 512
-): Promise<string> {
-  return await invoke('get_image_thumbnail', { imagePath, maxSize })
+): Promise<ArrayBuffer> {
+  return await invoke<ArrayBuffer>('get_image_thumbnail', { imagePath, maxSize })
+}
+
+/** 后台预生成缩略图并写入 Rust 侧磁盘缓存，返回成功数量。 */
+export async function prewarmThumbnails(
+  paths: string[],
+  maxSize: number = 384
+): Promise<number> {
+  return await invoke('prewarm_thumbnails', { paths, maxSize })
 }
 
 /** 页面尺寸中文名称 */
