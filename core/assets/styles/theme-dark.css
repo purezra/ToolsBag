@@ -37,7 +37,7 @@
 
 [data-theme='dark'] .live-strip__label,
 [data-theme='dark'] .live-strip__count {
-  color: var(--accent);
+  color: var(--accent-text);
   background: var(--accent-light);
 }
 
@@ -72,7 +72,7 @@
 
 /* ============ Category chips ============ */
 [data-theme='dark'] .category-header {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 [data-theme='dark'] .category-item {
@@ -86,7 +86,7 @@
 }
 
 [data-theme='dark'] .category-item.active {
-  background: var(--accent);
+  background: var(--accent-solid);
   color: var(--text-inverse);
   border-color: transparent;
 }
@@ -109,12 +109,12 @@
 
 [data-theme='dark'] .format-item.selected {
   background: var(--accent-light);
-  border-color: var(--accent);
+  border-color: var(--accent-text);
 }
 
 [data-theme='dark'] .password-display {
   background: var(--surface-inset);
-  color: var(--success);
+  color: var(--success-text);
 }
 
 [data-theme='dark'] .preview-section {

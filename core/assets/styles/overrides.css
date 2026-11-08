@@ -104,19 +104,19 @@
   transform: scale(0.98);
 }
 .el-button--primary {
-  background: var(--accent);
+  background: var(--accent-solid);
   border: none;
   color: var(--text-inverse);
   box-shadow: none;
 }
 .el-button--primary:hover,
 .el-button--primary:focus {
-  background: var(--accent-hover);
+  background: var(--accent-solid-hover);
   border: none;
   color: var(--text-inverse);
 }
 .el-button--primary:active {
-  background: var(--accent-hover);
+  background: var(--accent-solid-hover);
 }
 .el-button--default {
   background: var(--surface-block);
@@ -132,43 +132,44 @@
 .el-button.is-plain {
   background: var(--accent-light);
   border: none;
-  color: var(--accent);
+  color: var(--accent-text);
 }
 .el-button.is-plain:hover {
-  background: var(--accent);
+  background: var(--accent-solid);
   color: var(--text-inverse);
 }
 .el-button--primary.is-plain {
   background: var(--accent-light);
   border: none;
-  color: var(--accent);
+  color: var(--accent-text);
 }
 .el-button--primary.is-plain:hover {
-  background: var(--accent);
+  background: var(--accent-solid);
   color: var(--text-inverse);
 }
 .el-button--danger {
-  color: var(--danger);
+  color: var(--danger-text);
   border: none;
   background: var(--danger-light);
 }
 .el-button--danger:hover {
   color: #fff;
-  background: var(--danger);
+  background: var(--danger-solid);
 }
 .el-button--success {
   background: var(--success);
   border: none;
-  color: #fff;
+  color: var(--on-success);
 }
 .el-button--success:hover {
   background: var(--success);
+  color: var(--on-success);
   filter: brightness(0.95);
 }
 .el-button.is-link {
   border: none;
   background: transparent;
-  color: var(--accent);
+  color: var(--accent-text);
   padding: 0;
   height: auto;
 }
@@ -180,12 +181,12 @@
 .el-button.text {
   border: none;
   background: transparent;
-  color: var(--accent);
+  color: var(--accent-text);
 }
 .el-button.is-text:hover,
 .el-button.text:hover {
   background: var(--accent-light);
-  color: var(--accent);
+  color: var(--accent-text);
 }
 .el-button--small {
   height: 28px;
@@ -264,7 +265,7 @@
 }
 .el-input-number__decrease:hover,
 .el-input-number__increase:hover {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 /* ============ Selects ============ */
@@ -303,7 +304,7 @@
   background: var(--bg-hover);
 }
 .el-select-dropdown__item.is-selected {
-  color: var(--accent);
+  color: var(--accent-text);
   font-weight: 600;
   background: var(--accent-light);
 }
@@ -319,7 +320,7 @@
   color: var(--text-primary);
 }
 .el-tabs__item.is-active {
-  color: var(--accent);
+  color: var(--accent-text);
   font-weight: 600;
 }
 .el-tabs__nav-wrap::after {
@@ -413,17 +414,17 @@
 .el-tag--success {
   background: var(--success-light);
   border-color: transparent;
-  color: var(--success);
+  color: var(--success-text);
 }
 .el-tag--warning {
   background: var(--warning-light);
   border-color: transparent;
-  color: var(--warning);
+  color: var(--warning-text);
 }
 .el-tag--danger {
   background: var(--danger-light);
   border-color: transparent;
-  color: var(--danger);
+  color: var(--danger-text);
 }
 .el-tag--info {
   background: var(--soft-badge-bg, var(--bg-hover));
@@ -433,7 +434,7 @@
 .el-tag--primary {
   background: var(--accent-light);
   border-color: transparent;
-  color: var(--accent);
+  color: var(--accent-text);
 }
 .el-tag.el-tag--plain {
   background: transparent;
@@ -443,7 +444,7 @@
 
 /* ============ Switch / Checkbox / Radio ============ */
 .el-switch {
-  --el-switch-on-color: var(--accent);
+  --el-switch-on-color: var(--accent-solid);
   --el-switch-off-color: var(--surface-inset);
 }
 .el-switch__core {
@@ -465,7 +466,7 @@
   left: calc(100% - 24px);
 }
 .el-switch.is-checked .el-switch__core {
-  background: var(--accent);
+  background: var(--accent-solid);
   border-color: transparent;
 }
 .el-checkbox__inner {
@@ -476,8 +477,8 @@
   transition: all var(--duration-fast) var(--ease-standard);
 }
 .el-checkbox__input.is-checked .el-checkbox__inner {
-  background: var(--accent);
-  border-color: var(--accent);
+  background: var(--accent-solid);
+  border-color: var(--accent-solid);
 }
 
 /* Radio buttons render as an iOS segmented control */
@@ -516,7 +517,7 @@
 .el-radio-group:has(.el-radio-button)
   .el-radio-button__original-radio:checked
   + .el-radio-button__inner {
-  background: var(--accent);
+  background: var(--accent-solid);
   color: #fff;
   font-weight: 600;
   box-shadow: none;
@@ -586,19 +587,19 @@
 }
 .el-progress-bar__inner {
   border-radius: var(--radius-pill);
-  background-color: var(--accent);
+  background-color: var(--accent-solid);
   background-image: none;
 }
 .el-progress.is-success .el-progress-bar__inner {
-  background-color: var(--success);
+  background-color: var(--success-text);
   background-image: none;
 }
 .el-progress.is-warning .el-progress-bar__inner {
-  background-color: var(--warning);
+  background-color: var(--warning-text);
   background-image: none;
 }
 .el-progress.is-exception .el-progress-bar__inner {
-  background-color: var(--danger);
+  background-color: var(--danger-text);
   background-image: none;
 }
 .el-progress-bar__inner--striped {
@@ -618,7 +619,7 @@
 .el-slider {
   --el-slider-height: 4px;
   --el-slider-button-size: 18px;
-  --el-slider-main-bg-color: var(--accent);
+  --el-slider-main-bg-color: var(--accent-text);
   --el-slider-runway-bg-color: var(--surface-inset);
 }
 .el-slider__runway {
@@ -722,13 +723,13 @@
 .el-segmented {
   --el-segmented-item-selected-color: #fff;
   --el-segmented-bg-color: var(--surface-inset);
-  --el-segmented-item-selected-bg-color: var(--accent);
+  --el-segmented-item-selected-bg-color: var(--accent-solid);
   --el-segmented-color: var(--text-secondary);
   border-radius: var(--radius-md);
   padding: 3px;
 }
 .el-segmented .el-segmented__item-selected {
-  background: var(--accent);
+  background: var(--accent-solid);
   border-radius: 9px;
 }
 .el-segmented .el-segmented__item.is-checked {
@@ -761,7 +762,13 @@
 
 /* ============ Badge ============ */
 .el-badge__content.is-fixed.is-dot {
-  background: var(--accent);
+  background: var(--accent-solid);
+}
+/* 红底白字要够深才读得清；--danger 本身太亮，只适合做描边/文字。 */
+.el-badge__content--danger {
+  background-color: var(--danger-solid);
+  border-color: var(--danger-solid);
+  color: #fff;
 }
 
 .el-card.is-always-shadow {
@@ -903,4 +910,117 @@
     padding: 8px 12px;
     font-size: 12px;
   }
+}
+
+/* ============================================================
+   Element Plus 是按需加载的：组件样式在 JS chunk 里晚于本文件注入，
+   同优先级会覆盖上面的主题规则。这里用 html 前缀提高优先级，
+   保证按钮/徽标在明暗两套主题下都满足对比度要求。
+   ============================================================ */
+html .el-button--primary,
+html .el-button--primary:hover,
+html .el-button--primary:focus,
+html .el-button--primary:active {
+  background-color: var(--accent-solid);
+  border-color: transparent;
+  color: var(--text-inverse);
+}
+html .el-button--primary:hover,
+html .el-button--primary:focus {
+  background-color: var(--accent-solid-hover);
+}
+html .el-button--primary:active {
+  background-color: var(--accent-solid-hover);
+}
+html .el-button--primary.is-plain {
+  background-color: var(--accent-light);
+  border-color: transparent;
+  color: var(--accent-text);
+}
+html .el-button--primary.is-plain:hover,
+html .el-button--primary.is-plain:focus {
+  background-color: var(--accent-solid);
+  color: var(--text-inverse);
+}
+html .el-button.is-link,
+html .el-button.is-text,
+html .el-button.text {
+  color: var(--accent-text);
+}
+html .el-button.is-link:hover,
+html .el-button.is-text:hover,
+html .el-button.text:hover {
+  color: var(--accent-hover);
+}
+html .el-button--success,
+html .el-button--success:hover,
+html .el-button--success:focus,
+html .el-button--success:active {
+  background-color: var(--success);
+  border-color: transparent;
+  color: var(--on-success);
+}
+html .el-button--success:hover {
+  filter: brightness(0.95);
+}
+html .el-button--danger:hover,
+html .el-button--danger:focus {
+  background-color: var(--danger-solid);
+  color: #fff;
+}
+/* 未指定 type 的默认按钮：hover/active 不跟随 primary 变蓝 */
+html .el-button:not(.el-button--primary):not(.el-button--success):not(.el-button--warning):not(.el-button--danger):not(.el-button--info) {
+  --el-button-text-color: var(--text-primary);
+  --el-button-bg-color: var(--surface-block);
+  --el-button-border-color: transparent;
+  --el-button-hover-text-color: var(--text-primary);
+  --el-button-hover-bg-color: var(--surface-inset);
+  --el-button-hover-border-color: transparent;
+  --el-button-active-text-color: var(--text-primary);
+  --el-button-active-bg-color: var(--surface-inset);
+  --el-button-active-border-color: transparent;
+}
+/* 禁用态统一成「低饱和文字 + 中性底」，避免白字压在浅色系上。
+   Element 的 dark css-vars 用 html.dark .el-button 定义禁用文字色（同优先级），
+   这里再加一级 body，保证两套主题都按我们的 token 渲染。 */
+html body .el-button.is-disabled,
+html body .el-button.is-disabled:hover {
+  --el-button-disabled-text-color: var(--text-muted);
+  --el-button-disabled-bg-color: var(--surface-block);
+  --el-button-disabled-border-color: transparent;
+}
+/* plain/link/text 的禁用态在 Element 里是直接写死 light-5 颜色的，这里统一成中性灰 */
+html body .el-button.is-plain.is-disabled,
+html body .el-button.is-plain.is-disabled:hover,
+html body .el-button.is-link.is-disabled,
+html body .el-button.is-link.is-disabled:hover,
+html body .el-button.is-text.is-disabled,
+html body .el-button.is-text.is-disabled:hover {
+  background-color: var(--surface-block);
+  border-color: transparent;
+  color: var(--text-muted);
+}
+html .el-badge__content--danger {
+  background-color: var(--danger-solid);
+  border-color: var(--danger-solid);
+  color: #fff;
+}
+/* 单选按钮组 / 标签页：选中态用更深的实色，白字才够对比度 */
+html .el-radio-button.is-active .el-radio-button__original-radio:not(:disabled) + .el-radio-button__inner {
+  background-color: var(--accent-solid);
+  border-color: var(--accent-solid);
+  color: #fff;
+}
+html .el-radio-button.is-active .el-radio-button__original-radio:not(:disabled) + .el-radio-button__inner:hover {
+  background-color: var(--accent-solid-hover);
+}
+html .el-tabs__item.is-active,
+html .el-tabs--border-card > .el-tabs__header .el-tabs__item.is-active {
+  color: var(--accent-text);
+}
+html .el-tabs__item:hover {
+  color: var(--text-primary);
+}
+html .el-tabs__active-bar {
+  background-color: var(--accent-solid);
 }

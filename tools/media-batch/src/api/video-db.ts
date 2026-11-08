@@ -128,6 +128,194 @@ export async function getRecordCount(): Promise<number> {
   return rows[0]?.cnt ?? 0
 }
 
+// ==================== 数据库统计 ====================
+
+export interface StatBucket {
+  label: string
+  count: number
+  size: number
+}
+
+export interface VideoDbStats {
+  total: number
+  success: number
+  failed: number
+  totalSize: number
+  totalDurationMs: number
+  byHdr: StatBucket[]
+  byResolution: StatBucket[]
+  bySize: StatBucket[]
+  byFormat: StatBucket[]
+  byCodec: StatBucket[]
+  byBitDepth: StatBucket[]
+}
+
+const SIZE_BUCKET_ORDER = [
+  '< 100 MB',
+  '100–500 MB',
+  '0.5–1 GB',
+  '1–2 GB',
+  '2–5 GB',
+  '5–10 GB',
+  '≥ 10 GB',
+  '未知',
+]
+
+/** 把 MediaInfo 的 HDR 长字符串归并成几大类，Dolby Vision / HDR10+ 优先匹配。 */
+function normalizeHdr(raw: string | null): string {
+  if (raw === null) return '未知'
+  const value = raw.trim()
+  if (!value || value === '-') return 'SDR'
+  const lower = value.toLowerCase()
+  if (lower.includes('dolby vision') || lower.includes('dvhe') || lower.includes('dvh1')) return 'Dolby Vision'
+  if (lower.includes('hdr10+') || lower.includes('hdr10plus') || lower.includes('hdr10 plus')) return 'HDR10+'
+  if (lower.includes('hdr10')) return 'HDR10'
+  if (lower.includes('hlg')) return 'HLG'
+  if (lower.includes('hdr')) return 'HDR（其他）'
+  return value
+}
+
+function mergeBuckets(label: string, count: number, size: number, target: Map<string, StatBucket>) {
+  const existing = target.get(label)
+  if (existing) {
+    existing.count += count
+    existing.size += size
+  } else {
+    target.set(label, { label, count, size })
+  }
+}
+
+const sortByCount = (a: StatBucket, b: StatBucket) => b.count - a.count
+
+/**
+ * 聚合当前数据库中的全部记录。
+ *
+ * 分布数据交给 SQLite 做 GROUP BY，避免把 detail_json 全量读进前端。
+ */
+export async function loadVideoStats(): Promise<VideoDbStats> {
+  const db = await getDb()
+
+  const [overall] = await db.select<{
+    total: number
+    success: number
+    failed: number
+    total_size: number
+    total_duration: number
+  }[]>(`
+    SELECT
+      COUNT(*) AS total,
+      COALESCE(SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END), 0) AS success,
+      COALESCE(SUM(CASE WHEN status IS NULL OR status <> 'success' THEN 1 ELSE 0 END), 0) AS failed,
+      COALESCE(SUM(size), 0) AS total_size,
+      COALESCE(SUM(duration_ms), 0) AS total_duration
+    FROM video_records
+  `)
+
+  const [hdrRows, resRows, sizeRows, formatRows, codecRows, depthRows] = await Promise.all([
+    db.select<{ raw: string | null; count: number; size: number }[]>(`
+      SELECT
+        CASE
+          WHEN detail_json IS NULL THEN NULL
+          WHEN json_valid(detail_json) THEN json_extract(detail_json, '$.videoStreams[0].hdrFormat')
+          ELSE NULL
+        END AS raw,
+        COUNT(*) AS count,
+        COALESCE(SUM(size), 0) AS size
+      FROM video_records
+      GROUP BY raw
+    `),
+    db.select<{ width: number | null; height: number | null; count: number; size: number }[]>(`
+      SELECT width, height, COUNT(*) AS count, COALESCE(SUM(size), 0) AS size
+      FROM video_records
+      GROUP BY width, height
+    `),
+    db.select<{ label: string; count: number; size: number }[]>(`
+      SELECT
+        CASE
+          WHEN size < 104857600 THEN '< 100 MB'
+          WHEN size < 524288000 THEN '100–500 MB'
+          WHEN size < 1073741824 THEN '0.5–1 GB'
+          WHEN size < 2147483648 THEN '1–2 GB'
+          WHEN size < 5368709120 THEN '2–5 GB'
+          WHEN size < 10737418240 THEN '5–10 GB'
+          WHEN size > 0 THEN '≥ 10 GB'
+          ELSE '未知'
+        END AS label,
+        COUNT(*) AS count,
+        COALESCE(SUM(size), 0) AS size
+      FROM video_records
+      GROUP BY label
+    `),
+    db.select<{ label: string | null; count: number; size: number }[]>(`
+      SELECT COALESCE(NULLIF(format, ''), '未知') AS label, COUNT(*) AS count, COALESCE(SUM(size), 0) AS size
+      FROM video_records
+      GROUP BY label
+    `),
+    db.select<{ label: string | null; count: number; size: number }[]>(`
+      SELECT COALESCE(NULLIF(codec, ''), '未知') AS label, COUNT(*) AS count, COALESCE(SUM(size), 0) AS size
+      FROM video_records
+      GROUP BY label
+    `),
+    db.select<{ raw: string | null; count: number; size: number }[]>(`
+      SELECT
+        CASE
+          WHEN detail_json IS NULL THEN NULL
+          WHEN json_valid(detail_json) THEN json_extract(detail_json, '$.videoStreams[0].bitDepth')
+          ELSE NULL
+        END AS raw,
+        COUNT(*) AS count,
+        COALESCE(SUM(size), 0) AS size
+      FROM video_records
+      GROUP BY raw
+    `),
+  ])
+
+  const hdrMap = new Map<string, StatBucket>()
+  for (const row of hdrRows) {
+    mergeBuckets(normalizeHdr(row.raw), row.count, row.size, hdrMap)
+  }
+
+  const resolutionMap = new Map<string, StatBucket>()
+  for (const row of resRows) {
+    const label = row.width && row.height ? `${row.width}×${row.height}` : '未知'
+    mergeBuckets(label, row.count, row.size, resolutionMap)
+  }
+
+  const sizeMap = new Map<string, StatBucket>()
+  for (const row of sizeRows) {
+    mergeBuckets(row.label || '未知', row.count, row.size, sizeMap)
+  }
+
+  const depthMap = new Map<string, StatBucket>()
+  for (const row of depthRows) {
+    const raw = row.raw
+    const label = raw === null ? '未知' : raw.trim() ? `${raw.trim()} bit` : '未知'
+    mergeBuckets(label, row.count, row.size, depthMap)
+  }
+
+  const bySize = [...sizeMap.values()].sort(
+    (a, b) => SIZE_BUCKET_ORDER.indexOf(a.label) - SIZE_BUCKET_ORDER.indexOf(b.label)
+  )
+
+  return {
+    total: overall?.total ?? 0,
+    success: overall?.success ?? 0,
+    failed: overall?.failed ?? 0,
+    totalSize: overall?.total_size ?? 0,
+    totalDurationMs: overall?.total_duration ?? 0,
+    byHdr: [...hdrMap.values()].sort(sortByCount),
+    byResolution: [...resolutionMap.values()].sort(sortByCount),
+    bySize,
+    byFormat: formatRows
+      .map((row) => ({ label: row.label || '未知', count: row.count, size: row.size }))
+      .sort(sortByCount),
+    byCodec: codecRows
+      .map((row) => ({ label: row.label || '未知', count: row.count, size: row.size }))
+      .sort(sortByCount),
+    byBitDepth: [...depthMap.values()].sort(sortByCount),
+  }
+}
+
 let _idSeq = 0
 // ponytail: global counter, crypto.randomUUID() overkill for table row keys
 const nextId = () => ++_idSeq

@@ -279,7 +279,7 @@ const statusType = computed(() => props.item.status === 'success' ? 'success' : 
 .card-error {
   padding: 8px 16px;
   background: var(--danger-light);
-  color: var(--danger);
+  color: var(--danger-text);
   font-size: 12px;
 }
 

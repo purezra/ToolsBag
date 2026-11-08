@@ -282,9 +282,9 @@ const onDrop = (kind: 'video' | 'image', targetIndex: number) => {
   font-size: 11px;
   font-weight: 500;
 }
-.text-ok { color: var(--success); }
-.text-warn { color: var(--warning); }
-.text-err { color: var(--danger); }
+.text-ok { color: var(--success-text); }
+.text-warn { color: var(--warning-text); }
+.text-err { color: var(--danger-text); }
 .tool-path {
   font-size: 10px;
   color: var(--text-muted);
@@ -389,7 +389,7 @@ const onDrop = (kind: 'video' | 'image', targetIndex: number) => {
   margin-bottom: 4px;
   font-size: 11px;
   font-weight: 700;
-  color: var(--accent);
+  color: var(--accent-text);
 }
 .safety-grid {
   display: grid;
@@ -399,7 +399,7 @@ const onDrop = (kind: 'video' | 'image', targetIndex: number) => {
   color: var(--text-secondary);
 }
 .safety-grid .warn {
-  color: var(--warning);
+  color: var(--warning-text);
   font-weight: 700;
 }
 </style>

@@ -764,13 +764,13 @@ onBeforeUnmount(() => { isMounted = false; unlistenFn?.() })
   background: var(--success);
 }
 .mediainfo-status.available .status-text {
-  color: var(--success);
+  color: var(--success-text);
 }
 .mediainfo-status.unavailable .status-dot {
   background: var(--danger);
 }
 .mediainfo-status.unavailable .status-text {
-  color: var(--danger);
+  color: var(--danger-text);
 }
 .media-mode-toggle {
   display: flex;
@@ -888,7 +888,7 @@ onBeforeUnmount(() => { isMounted = false; unlistenFn?.() })
   align-items: center;
   margin-bottom: 10px;
   font-weight: 600;
-  color: var(--accent);
+  color: var(--accent-text);
 }
 .header-right {
   display: flex;
@@ -924,12 +924,12 @@ onBeforeUnmount(() => { isMounted = false; unlistenFn?.() })
   font-size: 13px;
 }
 .category-chip:hover {
-  border-color: var(--accent);
+  border-color: var(--accent-solid);
 }
 .category-chip.active {
-  background: var(--accent);
+  background: var(--accent-solid);
   color: var(--text-inverse);
-  border-color: var(--accent);
+  border-color: var(--accent-solid);
 }
 .category-chip.active .chip-count {
   background: rgba(255,255,255,0.25);
@@ -937,11 +937,11 @@ onBeforeUnmount(() => { isMounted = false; unlistenFn?.() })
 }
 .category-chip.partial {
   background: var(--accent-light);
-  border-color: var(--accent);
-  color: var(--accent);
+  border-color: var(--accent-solid);
+  color: var(--accent-text);
 }
 .category-chip.expanded {
-  border-color: var(--accent);
+  border-color: var(--accent-solid);
 }
 .chip-name {
   font-weight: 500;
@@ -1002,12 +1002,12 @@ onBeforeUnmount(() => { isMounted = false; unlistenFn?.() })
   font-size: 12px;
 }
 .format-item:hover {
-  border-color: var(--accent);
+  border-color: var(--accent-solid);
   background: var(--accent-light);
 }
 .format-item.selected {
   background: var(--accent-light);
-  border-color: var(--accent);
+  border-color: var(--accent-solid);
 }
 .format-ext {
   font-family: var(--font-mono);
@@ -1028,7 +1028,7 @@ onBeforeUnmount(() => { isMounted = false; unlistenFn?.() })
 .table-cat-tag {
   font-size: 12px;
   font-weight: 500;
-  color: var(--accent);
+  color: var(--accent-text);
 }
 .table-ext {
   font-family: var(--font-mono);
@@ -1090,7 +1090,7 @@ onBeforeUnmount(() => { isMounted = false; unlistenFn?.() })
   align-items: center;
   margin-bottom: 12px;
   font-weight: 600;
-  color: var(--accent);
+  color: var(--accent-text);
 }
 .media-total-count {
   font-size: 13px;

@@ -6,6 +6,7 @@ import { hasTauriRuntime } from '@core/utils/tauri'
 import { formatBytes } from '@core/utils/format'
 import { useSettings } from '@core/hooks/useSettings'
 import VideoInfoDetailCard from './video-info-detail-card.vue'
+import VideoDbStats from './video-db-stats.vue'
 import { useVideoInfoHealth } from '../composables/useVideoInfoHealth'
 import { useVideoInfoColumns } from '../composables/useVideoInfoColumns'
 import { useVideoInfoActions, type ExportFormat } from '../composables/useVideoInfoActions'
@@ -30,6 +31,7 @@ const expandedIds = ref<Set<number>>(new Set())
 const importSummary = ref('')
 const searchQuery = ref('')
 const viewMode = ref<'card' | 'table'>('table')
+const dbStatsVisible = ref(false)
 const emptyColMode = ref<'right' | 'hide'>('right')
 const highlightDiff = ref(false)
 const groupBy = ref<'none' | 'resolution' | 'resolutionTier' | 'orientation' | 'codec' | 'hdr' | 'bitDepth' | 'format' | 'frameRate'>('none')
@@ -149,9 +151,13 @@ let unlistenProgress: (() => void) | null = null
 let isMounted = false
 let windowResizeHandler: (() => void) | null = null
 
+// 应用在后台时可能用 CLI 往库里写了新记录；回到窗口时刷新计数。
+const handleWindowFocus = () => { refreshHistoryCount() }
+
 onMounted(() => {
   isMounted = true
   refreshHistoryCount()
+  window.addEventListener('focus', handleWindowFocus)
 
   if (!hasTauriRuntime()) return
 
@@ -183,6 +189,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   isMounted = false
+  window.removeEventListener('focus', handleWindowFocus)
   destroyResizeObserver()
   if (windowResizeHandler) {
     window.removeEventListener('resize', windowResizeHandler)
@@ -224,6 +231,7 @@ defineExpose({
         <el-button v-if="items.length" type="success" :icon="Coin" round :loading="saving" @click="handleSaveToDb">
           {{ t('入库') }}
         </el-button>
+        <el-button round @click="dbStatsVisible = true">{{ t('数据库统计') }}</el-button>
         <el-badge :value="historyCount" :hidden="!historyCount" :max="999">
           <el-button round @click="openHistory">{{ t('历史记录') }}</el-button>
         </el-badge>
@@ -612,6 +620,9 @@ defineExpose({
       <p class="empty-desc">{{ t('支持文件夹导入或粘贴路径，可选择是否递归遍历子目录') }}</p>
     </div>
 
+    <!-- 数据库统计 -->
+    <VideoDbStats v-model="dbStatsVisible" />
+
     <!-- 历史记录对话框 -->
     <el-dialog v-model="historyVisible" :title="t('历史记录')" width="clamp(600px, 85vw, 1400px)" top="5vh" append-to-body>
       <div style="margin-bottom: 10px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
@@ -784,6 +795,8 @@ defineExpose({
 }
 
 .table-wrapper {
+  flex: 1;
+  min-height: 0;
   border: 1px solid var(--border-secondary);
   border-radius: 12px;
   overflow: hidden;
@@ -791,9 +804,6 @@ defineExpose({
 }
 .info-table {
   width: 100%;
-}
-.info-table :deep(.el-table__body-wrapper) {
-  overflow-x: auto;
 }
 .info-table :deep(.el-table__cell) {
   word-break: break-all;
@@ -854,7 +864,7 @@ defineExpose({
 }
 .col-filter-btn.filter-active {
   opacity: 1;
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 /* 筛选弹窗 */
@@ -922,7 +932,7 @@ defineExpose({
   text-align: center;
   border-radius: 6px;
   background: rgba(103, 194, 58, 0.15);
-  color: var(--success);
+  color: var(--success-text);
   font-weight: 600;
   font-size: 12px;
 }
@@ -934,7 +944,7 @@ defineExpose({
   text-align: center;
   border-radius: 6px;
   background: rgba(245, 108, 108, 0.15);
-  color: var(--danger);
+  color: var(--danger-text);
   font-weight: 600;
   font-size: 12px;
 }
@@ -955,14 +965,18 @@ defineExpose({
   font-weight: 600;
   margin-right: 2px;
 }
-.stream-tag.video { background: var(--stream-video-soft); color: var(--accent); }
-.stream-tag.audio { background: var(--stream-audio-soft); color: var(--success); }
-.stream-tag.text { background: var(--stream-text-soft); color: var(--warning); }
+.stream-tag.video { background: var(--stream-video-soft); color: var(--accent-text); }
+.stream-tag.audio { background: var(--stream-audio-soft); color: var(--success-text); }
+.stream-tag.text { background: var(--stream-text-soft); color: var(--warning-text); }
 
 .grouped-table-wrapper {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 4px;
 }
 .group-section {
   border: 1px solid var(--border-secondary);
@@ -981,17 +995,18 @@ defineExpose({
 .group-label {
   font-weight: 700;
   font-size: 14px;
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .info-toolbar {
+  flex-shrink: 0;
   display: flex;
   justify-content: space-between;
   align-items: center;
   padding: 10px 14px;
   border-radius: 10px;
   border: 1px solid var(--border-secondary);
-  background: linear-gradient(145deg, rgba(243, 246, 255, 0.96), rgba(227, 235, 255, 0.9));
+  background: linear-gradient(145deg, var(--banner-from), var(--banner-to));
   flex-wrap: wrap;
   gap: 8px;
 }
@@ -1024,15 +1039,15 @@ defineExpose({
 .toolbar-right :deep(.el-button.is-plain),
 .level-actions :deep(.el-button.is-plain) {
   background: var(--bg-primary, #fff);
-  border-color: var(--accent);
-  color: var(--accent);
+  border-color: var(--accent-text);
+  color: var(--accent-text);
   font-weight: 600;
 }
 .toolbar-right :deep(.el-button.is-plain:hover),
 .level-actions :deep(.el-button.is-plain:hover) {
   background: var(--accent);
   color: var(--text-inverse, #fff);
-  border-color: var(--accent);
+  border-color: var(--accent-text);
 }
 
 .switch-field {
@@ -1051,6 +1066,7 @@ defineExpose({
 }
 
 .level-bar {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -1085,6 +1101,7 @@ defineExpose({
 }
 
 .summary-bar {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -1101,6 +1118,10 @@ defineExpose({
   display: flex;
   flex-direction: column;
   gap: 8px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 4px;
 }
 .health-card-wrapper {
   display: flex;
@@ -1123,7 +1144,7 @@ defineExpose({
 }
 .health-popover p {
   margin: 0;
-  color: var(--success);
+  color: var(--success-text);
 }
 .health-popover-item {
   display: flex;

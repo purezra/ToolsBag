@@ -9,6 +9,11 @@ default-run = "app"
 edition = "2021"
 rust-version = "1.77"
 
+[[bin]]
+# 快捷命令行：tools v <目录>，批量提取视频元数据并写入与桌面端共用的 video_records.db
+name = "tools"
+path = "src/bin/tools.rs"
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 # Compress the embedded MediaInfo.dll / cjxl.exe at build time.

@@ -36,7 +36,7 @@
 
 <script setup lang="ts">
 import { computed, defineAsyncComponent, ref, type Component } from 'vue'
-import { Brush, Document, Files, Picture } from '@element-plus/icons-vue'
+import { Collection, Document, Files, Picture } from '@element-plus/icons-vue'
 import { useSettings } from '@core/hooks/useSettings'
 
 const ImageBatchTool = defineAsyncComponent(() => import('@image-batch/index.vue'))
@@ -56,11 +56,11 @@ const { t } = useSettings()
 
 const tabs: ImageToolTab[] = [
   {
-    key: 'batch',
-    name: '图片批处理',
-    desc: '图片原样合成、批量处理与问题列表',
-    icon: Brush,
-    component: ImageBatchTool,
+    key: 'pdf',
+    name: '图片转 PDF',
+    desc: '单份 / 按数量分批 / 每子文件夹一份，支持原样无损、幅面边距与预览',
+    icon: Document,
+    component: ImageToPdfTool,
   },
   {
     key: 'compress',
@@ -70,22 +70,22 @@ const tabs: ImageToolTab[] = [
     component: ImageCompressTool,
   },
   {
-    key: 'pdf',
-    name: '图片转 PDF',
-    desc: '高确定性图片合并 PDF，支持边距、多尺寸与预览',
-    icon: Document,
-    component: ImageToPdfTool,
-  },
-  {
     key: 'tilepress',
     name: '拼版印刷',
     desc: '把文件夹图片密集拼贴成多页 PDF，也可整页导出 WebP/AVIF',
     icon: Files,
     component: TilepressTool,
   },
+  {
+    key: 'epub',
+    name: '图片打包 (EPUB)',
+    desc: '把图片打包为 EPUB 电子书；PDF 合成已整合到「图片转 PDF」',
+    icon: Collection,
+    component: ImageBatchTool,
+  },
 ]
 
-const activeTab = ref(tabs[0]!.key)
+const activeTab = ref('pdf')
 const activeComponent = computed(() => tabs.find(tab => tab.key === activeTab.value)?.component ?? tabs[0]!.component)
 const activeTabDesc = computed(() => tabs.find(tab => tab.key === activeTab.value)?.desc ?? tabs[0]!.desc)
 </script>
@@ -138,7 +138,7 @@ const activeTabDesc = computed(() => tabs.find(tab => tab.key === activeTab.valu
 }
 .seg-btn.active {
   background: var(--bg-primary);
-  color: var(--accent);
+  color: var(--accent-text);
   font-weight: 600;
   box-shadow: var(--shadow-xs);
 }

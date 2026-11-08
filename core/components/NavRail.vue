@@ -176,7 +176,7 @@ const handleHomeClick = () => {
   color: inherit;
 }
 .nav-item.is-active .nav-item__icon {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .nav-rail:not(.is-expanded) .nav-item {

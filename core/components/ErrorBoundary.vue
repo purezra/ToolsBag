@@ -45,7 +45,7 @@ onErrorCaptured((err: unknown) => {
   border: 1px solid var(--border-primary);
   border-radius: var(--radius-md);
   background: var(--bg-tertiary);
-  color: var(--danger);
+  color: var(--danger-text);
   display: flex;
   flex-direction: column;
   gap: 8px;

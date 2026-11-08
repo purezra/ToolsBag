@@ -105,6 +105,9 @@ fn default_fixed_orientation() -> FixedOrientation {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
 pub enum MergeMode {
+    /// 原样模式：JPEG 原始字节直传，其余格式以 Flate 无损嵌入；
+    /// 不限制输出体积，也不做任何有损重编码（等价于旧「PDF合成（原样）」）
+    Original,
     /// 无损模式：原始 JPEG 直接 passthrough，其他格式 q=95；
     /// 总输出 > 原图总大小 × max_size_ratio 时自动降级
     Lossless {
@@ -2622,6 +2625,8 @@ fn convert_tiff_plane_u8(
 struct ProcessParams {
     /// 对原始 JPEG 是否直接 passthrough（零重编码）
     passthrough_jpeg: bool,
+    /// 非 JPEG 图像是否强制以 FlateDecode 无损嵌入（不做 JPEG 有损重编码）
+    force_flate: bool,
     /// JPEG 编码质量（仅在需要重编码时使用）
     quality: u8,
     /// 像素缩放比例（1.0 = 原尺寸；< 1.0 = 等比缩小）
@@ -2632,7 +2637,18 @@ impl ProcessParams {
     fn lossless(quality: u8, passthrough: bool) -> Self {
         Self {
             passthrough_jpeg: passthrough,
+            force_flate: false,
             quality,
+            scale: 1.0,
+        }
+    }
+
+    /// 原样模式：JPEG 直传，其他格式 Flate 无损，不缩放、不有损重编码。
+    fn original() -> Self {
+        Self {
+            passthrough_jpeg: true,
+            force_flate: true,
+            quality: 95,
             scale: 1.0,
         }
     }
@@ -2647,13 +2663,16 @@ impl ProcessParams {
         let scale = 0.35 + t * 0.65; // 0.35..1.00
         Self {
             passthrough_jpeg: false,
+            force_flate: false,
             quality,
             scale,
         }
     }
 
     fn label(&self) -> String {
-        if self.passthrough_jpeg && (self.scale - 1.0).abs() < 1e-3 {
+        if self.force_flate {
+            "原样 (JPEG 直传 / 其他 Flate 无损)".to_string()
+        } else if self.passthrough_jpeg && (self.scale - 1.0).abs() < 1e-3 {
             format!("无损 (JPEG 直传 / 其他 q={})", self.quality)
         } else if (self.scale - 1.0).abs() < 1e-3 {
             format!("重编码 q={}", self.quality)
@@ -2846,7 +2865,11 @@ fn handle_multipage_tiff(
             (oriented.to_rgb8(), None)
         };
 
-        let mut processed = encode_rgb_to_jpeg_processed(&rgb, params.quality)?;
+        let mut processed = if params.force_flate {
+            encode_rgb_to_flate_processed(&rgb)
+        } else {
+            encode_rgb_to_jpeg_processed(&rgb, params.quality)?
+        };
         processed.alpha_data = alpha_data;
         let (page_width, page_height) = get_page_dimensions(
             &config.page_mode,
@@ -3023,9 +3046,12 @@ fn process_image(
         ColorPlan::Passthrough => false,
     };
 
-    // ---- PNG 内容自适应编码分流 ----
-    // 仅对 PNG 格式做分类；其他格式一律走 JPEG
-    let mut processed = if matches!(guessed_format, ImageFormat::Png) {
+    // ---- 编码分流 ----
+    // 原样模式：所有非直传 JPEG 一律 Flate 无损嵌入，绝不做有损重编码。
+    // 其他模式：仅 PNG 做内容自适应分类（线条艺术 Flate，照片 DCT），其余格式走 JPEG。
+    let mut processed = if params.force_flate {
+        encode_rgb_to_flate_processed(&rgb)
+    } else if matches!(guessed_format, ImageFormat::Png) {
         match classify_png_content(&rgb) {
             ImageEncoding::Flate => {
                 // 线条艺术 / 索引色内容：FlateDecode 无损，与 JPEG 比体积取小者。
@@ -3860,6 +3886,7 @@ fn generate_pdf_core(
 
     // 构建尝试链
     let attempts: Vec<ProcessParams> = match config.merge_mode {
+        MergeMode::Original => vec![ProcessParams::original()],
         MergeMode::Lossless { .. } => vec![
             ProcessParams::lossless(95, true),
             ProcessParams::lossless(85, false),
@@ -3869,11 +3896,15 @@ fn generate_pdf_core(
     };
 
     let max_ratio = match config.merge_mode {
+        MergeMode::Original => f32::MAX,
         MergeMode::Lossless { max_size_ratio } => max_size_ratio,
         MergeMode::Portable { .. } => f32::MAX, // portable 模式不强制阈值
     };
 
-    let target_max_bytes = (original_total_size as f64 * max_ratio as f64) as u64;
+    let target_max_bytes = match config.merge_mode {
+        MergeMode::Original => u64::MAX,
+        _ => (original_total_size as f64 * max_ratio as f64) as u64,
+    };
 
     let output_path = PathBuf::from(&config.output_path);
     let mut last_pages: Option<Vec<Vec<PreparedPage>>> = None;
@@ -4542,6 +4573,65 @@ mod tests {
         // out-of-range clamped
         let p0 = ProcessParams::portable(0.0);
         assert_eq!(p0.quality, 40);
+    }
+
+    #[test]
+    fn original_params_are_lossless() {
+        let p = ProcessParams::original();
+        assert!(p.passthrough_jpeg);
+        assert!(p.force_flate);
+        assert!((p.scale - 1.0).abs() < 1e-3);
+    }
+
+    #[test]
+    fn original_mode_forces_lossless_flate_for_photo_png() {
+        let dir =
+            std::env::temp_dir().join(format!("toolsbag-pdf-original-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("photo.png");
+        let mut img = RgbImage::new(256, 256);
+        for (x, y, pixel) in img.enumerate_pixels_mut() {
+            *pixel = image_crate::Rgb([
+                (x % 256) as u8,
+                (y % 256) as u8,
+                ((x * 7 + y * 11) % 251) as u8,
+            ]);
+        }
+        img.save(&path).unwrap();
+
+        let config = PdfConfig {
+            page_size: PageSize::A4,
+            page_mode: PageMode::Original,
+            margin: 0.0,
+            output_path: String::new(),
+            merge_mode: MergeMode::Original,
+            embed_icc: Some(true),
+            color_mode: ColorMode::Preserve,
+        };
+        let original = process_image(
+            &path,
+            &config,
+            &ProcessParams::original(),
+            false,
+            false,
+            &ColorPlan::Passthrough,
+        )
+        .unwrap();
+        assert_eq!(original[0].processed.encoding, ImageEncoding::Flate);
+
+        // 普通无损模式对照片型 PNG 会走 JPEG；原样模式必须保持 Flate。
+        let smart = process_image(
+            &path,
+            &config,
+            &ProcessParams::lossless(95, true),
+            false,
+            false,
+            &ColorPlan::Passthrough,
+        )
+        .unwrap();
+        assert_eq!(smart[0].processed.encoding, ImageEncoding::Dct);
+
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]

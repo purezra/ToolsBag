@@ -4,7 +4,7 @@
    Consumed by App shell, NavRail, CommandSearch, ToolHome.
    ============================================================ */
 import { defineAsyncComponent, type Component } from 'vue'
-import { Grid, Picture, FolderChecked, Key } from '@element-plus/icons-vue'
+import { Grid, Picture, FolderChecked, Key, DocumentCopy } from '@element-plus/icons-vue'
 
 export type ToolTagType = 'primary' | 'success' | 'info' | 'warning'
 
@@ -28,6 +28,7 @@ export interface ToolDefinition {
 export const toolComponentMap: Record<string, Component> = {
   'media-batch': defineAsyncComponent(() => import('@media-batch/index.vue')),
   'image-tools': defineAsyncComponent(() => import('@image-tools/index.vue')),
+  'pdf-merge': defineAsyncComponent(() => import('@pdf-merge/index.vue')),
   'file-traverse': defineAsyncComponent(() => import('@file-traverse/index.vue')),
   'codebook': defineAsyncComponent(() => import('@codebook/index.vue'))
 }
@@ -47,13 +48,24 @@ export const toolDefinitions: ToolDefinition[] = [
   {
     key: 'image-tools',
     name: '图像套件',
-    desc: '批量处理、AVIF/JXL 压缩转换、图片转 PDF 与多页拼版印刷',
+    desc: '图片转 PDF（单份/分批/子文件夹）、AVIF/JXL 压缩、拼版印刷与 EPUB 打包',
     tag: 'Suite',
     tagType: 'success',
     icon: Picture,
     iconImage: '/assets/tool2.webp',
     accent: 'linear-gradient(135deg, #43e97b, #38f9d7)',
-    meta: '批量处理 · 压缩转换 · 图片转PDF · 拼版印刷'
+    meta: '图片转PDF · 压缩转换 · 拼版印刷 · EPUB'
+  },
+  {
+    key: 'pdf-merge',
+    name: 'PDF 合并',
+    desc: '把 PDF、图片与 Word 文档按顺序合并为一份 PDF，支持页数/时间排序与 Word 选页',
+    tag: 'New',
+    tagType: 'success',
+    icon: DocumentCopy,
+    iconImage: '/assets/tool5.webp',
+    accent: 'linear-gradient(135deg, #f6d365, #fda085)',
+    meta: 'PDF/图片/Word · 排序 · 选页合并'
   },
   {
     key: 'file-traverse',

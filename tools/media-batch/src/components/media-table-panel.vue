@@ -443,11 +443,11 @@ const extensionOf = (name: string) => {
   white-space: nowrap;
 }
 .selected-count {
-  color: var(--accent);
+  color: var(--accent-text);
   font-weight: 700;
 }
 .missing-count {
-  color: var(--warning);
+  color: var(--warning-text);
 }
 .table-header-bar {
   display: flex;
@@ -536,7 +536,7 @@ const extensionOf = (name: string) => {
   gap: 8px;
 }
 .link-like {
-  color: var(--accent);
+  color: var(--accent-text);
   cursor: pointer;
 }
 .name-cell {

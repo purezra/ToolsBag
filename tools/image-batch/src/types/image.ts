@@ -1,19 +1,4 @@
-﻿export type ConvertReq = {
-  inputDir: string
-  outputDir?: string | null
-  batchSize?: number | null
-  losslessMerge?: boolean | null
-  recursive?: boolean
-}
-
-export type ProblemItem = { path: string; reasons: string[] }
-
-export type ConvertResp = {
-  outputPath: string
-  problems: ProblemItem[]
-  originalBytes: number
-  outputBytes: number
-}
+﻿export type ProblemItem = { path: string; reasons: string[] }
 
 // EPUB 转换相关类型
 export type EpubPageSize = 'ipadpro' | 'ipadmini' | 'a4' | 'b5'

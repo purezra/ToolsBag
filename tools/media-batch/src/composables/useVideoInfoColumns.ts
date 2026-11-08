@@ -447,12 +447,18 @@ export function useVideoInfoColumns(
 
   // === 表格容器尺寸 ===
   const tableContainerWidth = ref(0)
+  const tableContainerHeight = ref(0)
   const tableContainerRef = ref<HTMLElement | null>(null)
   const windowHeight = ref(window.innerHeight)
 
+  // 以表格容器自身的可用高度为准。之前用 window.innerHeight - 300 估算，
+  // 一旦工具栏/等级栏实际占位更多，表格就会高于可视区域并被外层 overflow:hidden 裁掉，
+  // 表现为「滚轮完全没反应」。
   const tableMaxHeight = computed(() => {
-    const overhead = 300
-    return Math.max(400, windowHeight.value - overhead)
+    if (tableContainerHeight.value > 0) {
+      return Math.max(240, tableContainerHeight.value - 2)
+    }
+    return Math.max(400, windowHeight.value - 300)
   })
 
   const FIXED_BASE_WIDTH = 60 + 100 + 100
@@ -478,9 +484,11 @@ export function useVideoInfoColumns(
     if (el) {
       tableContainerRef.value = el
       tableContainerWidth.value = el.clientWidth
+      tableContainerHeight.value = el.clientHeight
       resizeObserver = new ResizeObserver((entries) => {
         for (const entry of entries) {
           tableContainerWidth.value = entry.contentRect.width
+          tableContainerHeight.value = entry.contentRect.height
         }
       })
       resizeObserver.observe(el)

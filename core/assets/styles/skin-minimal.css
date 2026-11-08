@@ -78,6 +78,8 @@
 
   /* ---- Interactive accent ---- */
   --accent: var(--md-primary);
+  --accent-solid: #0066D6;
+  --accent-solid-hover: #0057B8;
   --accent-hover: #0066D6;
   --accent-light: rgba(0, 122, 255, 0.10);
   --accent-soft: rgba(0, 122, 255, 0.10);
@@ -88,12 +90,22 @@
   /* ---- Semantic (iOS system colors) ---- */
   --success: #34C759;
   --success-light: rgba(52, 199, 89, 0.12);
+  --success-text: #0B7A33;
+  --on-success: #06210F;
   --warning: #FF9500;
   --warning-light: rgba(255, 149, 0, 0.12);
+  --warning-text: #8A5300;
   --danger: #FF3B30;
   --danger-light: rgba(255, 59, 48, 0.12);
+  --danger-solid: #C42017;
+  --danger-solid-hover: #A81912;
   --info: var(--md-primary);
   --info-light: rgba(0, 122, 255, 0.12);
+
+  /* 文本专用的强调色：浅色底上用更深一档；深色主题下单独提亮，
+     避免彩色文字压在同色浅底/深底上对比度不足。 */
+  --accent-text: #0057B8;
+  --danger-text: #C42017;
 
   /* ---- Tool identity tints (iOS system palette) ---- */
   --tool-media: #007AFF;
@@ -168,7 +180,7 @@
   --el-color-warning: #FF9500;
   --el-color-danger: #FF3B30;
   --el-color-error: #FF3B30;
-  --el-color-info: #717786;
+  --el-color-info: #5F6675;
   --el-border-radius-base: 12px;
   --el-border-radius-small: 8px;
   --el-border-radius-round: 999px;
@@ -181,7 +193,7 @@
   --el-text-color-primary: var(--md-on-surface);
   --el-text-color-regular: #2F3541;
   --el-text-color-secondary: var(--md-on-surface-variant);
-  --el-text-color-placeholder: #8A8F9C;
+  --el-text-color-placeholder: #5F6675;
   --el-bg-color: var(--surface-card);
   --el-bg-color-page: var(--surface-page);
   --el-bg-color-overlay: #FFFFFF;
@@ -225,6 +237,9 @@
   --search-bg: var(--surface-card);
   --search-border: transparent;
   --search-bg-focus: var(--surface-card);
+  /* 工具页信息横幅：浅色主题是淡蓝白，深色主题改成半透明深蓝，避免白字白底 */
+  --banner-from: rgba(243, 246, 255, 0.96);
+  --banner-to: rgba(227, 235, 255, 0.9);
   --home-card-bg: var(--surface-card);
   --home-card-border: transparent;
   --home-card-hover-shadow: var(--shadow-md);
@@ -289,7 +304,7 @@
 
   --text-primary: var(--md-on-surface);
   --text-secondary: var(--md-on-surface-variant);
-  --text-muted: var(--md-outline);
+  --text-muted: #A6ACBC;
   --text-inverse: #FFFFFF;
 
   --border-primary: rgba(245, 246, 255, 0.12);
@@ -299,6 +314,8 @@
   --card-border: transparent;
 
   --accent: var(--md-primary);
+  --accent-solid: #1D6FE0;
+  --accent-solid-hover: #2470D8;
   --accent-hover: #5C9DFF;
   --accent-light: rgba(47, 131, 255, 0.16);
   --accent-soft: rgba(47, 131, 255, 0.16);
@@ -308,12 +325,21 @@
 
   --success: #30D158;
   --success-light: rgba(48, 209, 88, 0.16);
+  --success-text: #4CE07A;
+  --on-success: #06210F;
   --warning: #FFD60A;
   --warning-light: rgba(255, 214, 10, 0.14);
+  --warning-text: #FFD60A;
   --danger: #FF453A;
   --danger-light: rgba(255, 69, 58, 0.16);
+  --danger-solid: #B3261E;
+  --danger-solid-hover: #C22E26;
   --info: var(--md-primary);
   --info-light: rgba(47, 131, 255, 0.16);
+
+  /* 深色底上的文字用更亮的蓝/红，保证 4.5:1 以上对比度 */
+  --accent-text: #7CB0FF;
+  --danger-text: #FF8F87;
 
   --tool-media: #409CFF;
   --tool-media-soft: rgba(64, 156, 255, 0.16);
@@ -356,11 +382,11 @@
   --el-color-warning: #FFD60A;
   --el-color-danger: #FF453A;
   --el-color-error: #FF453A;
-  --el-color-info: #8B90A0;
+  --el-color-info: #9AA1B4;
   --el-text-color-primary: var(--md-on-surface);
   --el-text-color-regular: #D6DAE3;
   --el-text-color-secondary: var(--md-on-surface-variant);
-  --el-text-color-placeholder: #8B90A0;
+  --el-text-color-placeholder: #9AA1B4;
   --el-bg-color: var(--surface-card);
   --el-bg-color-page: var(--surface-page);
   --el-bg-color-overlay: var(--surface-float);
@@ -399,6 +425,8 @@
   --search-bg: var(--surface-block);
   --search-border: transparent;
   --search-bg-focus: var(--surface-card);
+  --banner-from: rgba(47, 131, 255, 0.16);
+  --banner-to: rgba(47, 131, 255, 0.06);
   --home-card-bg: var(--surface-card);
   --home-card-border: transparent;
   --home-card-hover-shadow: var(--shadow-md);

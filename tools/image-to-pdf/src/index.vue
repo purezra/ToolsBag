@@ -21,33 +21,63 @@
           </el-button>
         </template>
       </el-input>
-      <el-checkbox v-model="recursive" :disabled="loading || generating || batchMode" @change="onRecursiveChange">
+      <el-checkbox v-model="recursive" :disabled="loading || generating || isSubfolderMode" @change="onRecursiveChange">
         {{ t('递归') }}
       </el-checkbox>
-      <el-checkbox v-model="batchMode" :disabled="loading || generating" @change="onBatchModeChange">
-        {{ t('批量：每子文件夹一份 PDF') }}
-      </el-checkbox>
+      <el-select
+        v-model="outputMode"
+        size="small"
+        class="output-mode-select"
+        :disabled="loading || generating"
+        @change="onOutputModeChange"
+      >
+        <el-option :label="t('单份 PDF')" value="single" />
+        <el-option :label="t('按数量分批')" value="count" />
+        <el-option :label="t('每子文件夹一份')" value="subfolder" />
+      </el-select>
+      <el-select
+        v-if="outputMode === 'count'"
+        v-model="countBatchSize"
+        size="small"
+        class="count-size-select"
+        :disabled="loading || generating"
+      >
+        <el-option :label="t('每 100 张')" :value="100" />
+        <el-option :label="t('每 200 张')" :value="200" />
+        <el-option :label="t('每 300 张')" :value="300" />
+        <el-option :label="t('全部合并')" :value="0" />
+      </el-select>
       <el-button
         type="success"
         :icon="MagicStick"
         @click="generatePdfAction"
         :disabled="generating || !canGenerate"
         :loading="generating"
-      >{{ generating ? t('生成中') : (batchMode ? t('批量合成 PDF') : t('合成 PDF')) }}</el-button>
+      >{{ generating ? t('生成中') : generateButtonLabel }}</el-button>
       <span v-if="analysis" class="pdf-toolbar__hint">
         {{ analysis.images.length }} {{ t('张') }} · {{ formatFileSize(analysis.total_size) }}
       </span>
       <span v-else-if="batchItems?.length" class="pdf-toolbar__hint">
-        {{ batchItems.length }} {{ t('个子文件夹') }} · {{ batchTotalImages }} {{ t('张') }} · {{ formatFileSize(batchTotalSize) }}
+        {{ batchItems.length }} {{ t('项') }} · {{ batchTotalImages }} {{ t('张') }} · {{ formatFileSize(batchTotalSize) }}
       </span>
+      <el-link type="info" :underline="false" class="toolbar-note-link" @click="openNote">
+        {{ t('说明') }}
+      </el-link>
     </div>
 
     <!-- 实际扫描路径 / 自动切换提示 -->
     <p v-if="analysis?.auto_switched_from_file" class="hint is-warn toolbar-hint">
       {{ t('检测到的是文件路径，已自动切换为其所在目录并按非递归扫描') }}
     </p>
-    <p v-if="batchMode && batchItems?.length" class="hint toolbar-hint">
+    <p v-if="isSubfolderMode && batchItems?.length" class="hint toolbar-hint">
       {{ t('批量模式：一级子文件夹各合并为一份 PDF（内部递归），根目录图片单独一份') }}
+    </p>
+    <p v-else-if="outputMode === 'count' && countBatchSize === 0" class="hint toolbar-hint">
+      {{ t('全部合并：当前扫描到的图片会按顺序合并为一份 PDF') }}
+    </p>
+    <p v-else-if="outputMode === 'count'" class="hint toolbar-hint">
+      {{ t('按数量分批：每份最多') }} {{ countBatchSize }} {{ t('张，文件名自动追加 _batch001/_batch002…') }}
+      <span v-if="countBatchCount > 0">（{{ t('将生成') }} {{ countBatchCount }} {{ t('份') }}）</span>
     </p>
     <p v-if="analysis" class="hint toolbar-hint">
       {{ t('实际扫描') }}：{{ analysis.effective_path }}
@@ -89,8 +119,43 @@
       </div>
     </div>
 
-    <!-- 页面设置（可折叠，默认收起；分析后显示，批量模式同样适用） -->
-    <div v-if="analysis || (batchMode && batchItems?.length)" class="tb-collapse">
+    <!-- 输出设置（仅批量输出时显示；留空使用默认目录） -->
+    <div v-if="outputMode !== 'single'" class="tb-collapse">
+      <el-collapse>
+        <el-collapse-item>
+          <template #title>
+            {{ t('输出设置') }}
+            <span class="tb-collapse-summary">{{ outputSettingsSummary }}</span>
+          </template>
+          <div class="setting-group">
+            <label>{{ t('输出目录') }}</label>
+            <div class="output-dir-row">
+              <el-input
+                v-model="outputDir"
+                :placeholder="t('留空使用下方默认目录')"
+                :disabled="generating"
+                clearable
+              />
+              <el-button :icon="FolderOpened" :disabled="generating" @click="selectOutputDir">
+                {{ t('浏览') }}
+              </el-button>
+            </div>
+            <p class="hint">
+              {{ t('留空时自动输出到') }}：{{ defaultOutputDir }}
+            </p>
+          </div>
+          <div class="setting-group">
+            <el-checkbox v-model="settings.overwriteBatch" :disabled="generating">
+              {{ t('覆盖同名 PDF') }}
+            </el-checkbox>
+            <p class="hint">{{ t('默认不覆盖：输出目录已有同名 PDF 时自动加序号，避免替换掉上一次的产出') }}</p>
+          </div>
+        </el-collapse-item>
+      </el-collapse>
+    </div>
+
+    <!-- 页面设置（可折叠，默认收起；分析后显示，批量输出同样适用） -->
+    <div v-if="analysis || (isSubfolderMode && batchItems?.length)" class="tb-collapse">
       <el-collapse>
         <el-collapse-item>
           <template #title>
@@ -157,11 +222,20 @@
           <div class="setting-group">
             <label>{{ t('合并模式') }}</label>
             <el-radio-group v-model="settings.mergeMode" size="small">
-              <el-radio-button label="lossless">{{ t('无损模式') }}</el-radio-button>
+              <el-radio-button label="original">{{ t('原样无损') }}</el-radio-button>
+              <el-radio-button label="lossless">{{ t('智能压缩') }}</el-radio-button>
               <el-radio-button label="portable">{{ t('便携模式') }}</el-radio-button>
             </el-radio-group>
 
-            <div v-if="settings.mergeMode === 'lossless'" class="mode-detail">
+            <div v-if="settings.mergeMode === 'original'" class="mode-detail">
+              <p class="hint">
+                {{ t('JPEG 原始字节直传（零重编码）；PNG/WebP/TIFF 等以 Flate 无损嵌入。不限制输出体积，画质零损失。') }}
+                <br />
+                {{ t('带 EXIF 旋转的 JPEG 需先解码再无损嵌入，文件体积可能明显增大。') }}
+              </p>
+            </div>
+
+            <div v-else-if="settings.mergeMode === 'lossless'" class="mode-detail">
               <p class="hint">
                 {{ t('原始 JPEG 直接嵌入（零重编码），其他格式以 q=95 编码。') }}
                 <br />
@@ -244,7 +318,7 @@
             <div class="stat">
               <span class="label">{{ t('建议方向') }}</span>
               <span class="value suggestion">
-                {{ batchMode ? t('批量') : (FIXED_ORIENTATION_NAMES[displayAnalysis.suggested_orientation as FixedOrientation] || displayAnalysis.suggested_orientation) }}
+                {{ isSubfolderMode ? t('批量') : (FIXED_ORIENTATION_NAMES[displayAnalysis.suggested_orientation as FixedOrientation] || displayAnalysis.suggested_orientation) }}
               </span>
             </div>
           </div>
@@ -279,12 +353,12 @@
       </el-collapse>
     </div>
 
-    <!-- 批量列表面板（批量模式分析后显示，替代预览） -->
-    <main v-if="batchMode && batchItems?.length" class="preview-panel batch-panel">
+    <!-- 批量列表面板（分批/子文件夹模式生成后显示，替代预览） -->
+    <main v-if="showBatchPanel" class="preview-panel batch-panel">
       <header class="preview-toolbar">
-        <span class="tool-label">{{ t('按子文件夹合并') }}</span>
+        <span class="tool-label">{{ batchPanelLabel }}</span>
         <span class="page-info">
-          {{ batchItems.length }} {{ t('项') }} · {{ batchTotalImages }} {{ t('张') }} · {{ formatFileSize(batchTotalSize) }}
+          {{ batchItems?.length ?? 0 }} {{ t('项') }} · {{ batchTotalImages }} {{ t('张') }} · {{ formatFileSize(batchTotalSize) }}
         </span>
         <div class="tool-group spacer"></div>
         <el-tooltip
@@ -292,18 +366,18 @@
           :content="t('默认不覆盖：输出目录已有同名 PDF 时自动加序号，避免替换掉上一次的产出')"
           placement="bottom"
         >
-          <el-checkbox v-model="settings.overwriteBatch" size="small">
+          <el-checkbox v-model="settings.overwriteBatch" size="small" :disabled="generating">
             {{ t('覆盖同名 PDF') }}
           </el-checkbox>
         </el-tooltip>
         <span v-if="batchResults" class="page-info">
-          {{ batchSuccessCount }} / {{ batchItems.length }} {{ t('成功') }}
+          {{ batchSuccessCount }} / {{ batchItems?.length ?? 0 }} {{ t('成功') }}
         </span>
       </header>
       <div class="batch-list">
         <div
-          v-for="(item, i) in batchItems"
-          :key="item.path"
+          v-for="(item, i) in (batchItems || [])"
+          :key="`${i}-${item.name}`"
           class="batch-row"
           :class="{ done: batchResults?.[i]?.success, failed: batchResults?.[i] && !batchResults[i].success }"
         >
@@ -474,6 +548,12 @@
         <p class="hint">{{ t('支持 JPG/PNG/WebP/TIFF/BMP/GIF/TGA/DDS/PNM/QOI/HDR/ICO 等位图格式混合合并') }}</p>
       </div>
     </main>
+
+    <el-dialog v-model="noteVisible" :title="t('图片转 PDF 说明')" width="640px">
+      <el-scrollbar height="360px">
+        <pre class="note-content" v-loading="noteLoading">{{ noteContent || t('未找到说明内容') }}</pre>
+      </el-scrollbar>
+    </el-dialog>
   </div>
 </template>
 
@@ -493,6 +573,7 @@ import {
   generatePdfBatch as apiGeneratePdfBatch,
   getImageThumbnail,
   prewarmThumbnails,
+  readImagePdfNote,
   formatFileSize,
   PAGE_SIZE_NAMES,
   PAGE_SIZE_DIMS_MM,
@@ -562,7 +643,9 @@ const DistCard = defineComponent({
 
 const pathInput = ref('')
 const recursive = ref(false)
-const batchMode = ref(false)
+const outputMode = ref<'single' | 'count' | 'subfolder'>('single')
+const countBatchSize = ref<100 | 200 | 300 | 0>(100)
+const outputDir = ref('')
 const analysis = ref<FolderAnalysis | null>(null)
 const batchItems = ref<BatchItemAnalysis[] | null>(null)
 const batchResults = ref<BatchGenerationResult[] | null>(null)
@@ -572,6 +655,9 @@ const loading = ref(false)
 const generating = ref(false)
 const progress = ref<GenerationProgress | null>(null)
 const result = ref<GenerationResult | null>(null)
+const noteVisible = ref(false)
+const noteContent = ref('')
+const noteLoading = ref(false)
 
 // 缩略图缓存（path → data URL）
 const thumbnails = ref<Map<string, string>>(new Map())
@@ -593,7 +679,7 @@ const settings = ref({
   pageSize: 'A4' as PageSize,
   fixedOrientation: 'auto' as FixedOrientation,
   margin: 10,
-  mergeMode: 'lossless' as 'lossless' | 'portable',
+  mergeMode: 'original' as 'original' | 'lossless' | 'portable',
   maxSizeRatio: DEFAULT_LOSSLESS_MAX_RATIO,
   portableTargetRatio: DEFAULT_PORTABLE_TARGET_RATIO,
   embedIcc: true,
@@ -602,6 +688,72 @@ const settings = ref({
 })
 
 // ==================== Computed ====================
+
+const isSubfolderMode = computed(() => outputMode.value === 'subfolder')
+const isCountBatch = computed(() => outputMode.value === 'count')
+
+const showBatchPanel = computed(
+  () => outputMode.value !== 'single' && !!batchItems.value?.length,
+)
+
+const countBatchCount = computed(() => {
+  const total = analysis.value?.images.length ?? 0
+  if (!isCountBatch.value || total === 0) return 0
+  return countBatchSize.value === 0 ? 1 : Math.ceil(total / countBatchSize.value)
+})
+
+const generateButtonLabel = computed(() => {
+  if (outputMode.value === 'subfolder') return t('批量合成 PDF')
+  if (outputMode.value === 'count') {
+    return countBatchSize.value === 0 ? t('合成 PDF') : t('分批合成 PDF')
+  }
+  return t('合成 PDF')
+})
+
+const batchPanelLabel = computed(() =>
+  isSubfolderMode.value ? t('按子文件夹合并') : t('按数量分批'),
+)
+
+/** 拆出输入目录的父级、文件夹名与分隔符风格（用于默认输出命名）。 */
+function splitInputPath(): { parent: string; name: string; sep: string } {
+  const p = (analysis.value?.effective_path || pathInput.value.trim()).replace(/[\\/]+$/, '')
+  // 盘符根目录（如 D:\）去掉尾部分隔符后只剩 "D:"，父级仍是 D:\
+  if (/^[A-Za-z]:$/.test(p)) return { parent: `${p}\\`, name: 'output', sep: '\\' }
+  if (!p) return { parent: '.', name: 'output', sep: '/' }
+  const idx = Math.max(p.lastIndexOf('\\'), p.lastIndexOf('/'))
+  return {
+    parent: idx >= 0 ? p.slice(0, idx) : '.',
+    name: p.slice(idx + 1) || 'output',
+    sep: p.includes('\\') ? '\\' : '/',
+  }
+}
+
+/** 输入文件夹名（输出文件命名基础）。 */
+function inputFolderName(): string {
+  return splitInputPath().name
+}
+
+/** 批量输出的默认目录：单份/全部合并放输入目录旁；多份放 <输入名>_合并 文件夹。 */
+const defaultOutputDir = computed(() => {
+  const { parent, name, sep } = splitInputPath()
+  if (!pathInput.value.trim() && !analysis.value) return ''
+  if (isSubfolderMode.value || (isCountBatch.value && countBatchSize.value > 0)) {
+    return `${parent}${sep}${name}_合并`
+  }
+  return parent
+})
+
+/** 单份模式保存对话框的默认完整路径（与旧版原样合并的命名一致）。 */
+const defaultSinglePath = computed(() => {
+  const { parent, name, sep } = splitInputPath()
+  if (!pathInput.value.trim() && !analysis.value) return `${name}_合并.pdf`
+  return `${parent}${sep}${name}_合并.pdf`
+})
+
+const outputSettingsSummary = computed(() => {
+  if (isSubfolderMode.value) return t('每子文件夹一份')
+  return countBatchSize.value === 0 ? t('全部合并') : `${t('每份')} ${countBatchSize.value} ${t('张')}`
+})
 
 const maxMargin = computed(() => {
   // 上限 = 短边的 40%，避免任意方向下边距超过幅面；尺寸从共享常量派生。
@@ -619,7 +771,7 @@ const marginError = computed(() => {
 // 批量模式：把各子文件夹的分析结果汇总成一份，供统计/警告/跳过文件面板复用
 const aggregatedAnalysis = computed<FolderAnalysis | null>(() => {
   const items = batchItems.value
-  if (!batchMode.value || !items?.length) return null
+  if (!isSubfolderMode.value || !items?.length) return null
   const sum = (pick: (a: FolderAnalysis) => number) =>
     items.reduce((acc, it) => acc + (pick(it.analysis) || 0), 0)
   const buckets = new Map<string, { label: string; count: number; min_long_edge: number }>()
@@ -660,8 +812,8 @@ const displayAnalysis = computed<FolderAnalysis | null>(
 )
 
 const canGenerate = computed(() => {
-  const key = `${pathInput.value.trim()}\u0000${recursive.value}\u0000${batchMode.value}`
-  if (batchMode.value) {
+  const key = `${pathInput.value.trim()}\u0000${recursive.value}\u0000${outputMode.value}`
+  if (isSubfolderMode.value) {
     return !!batchItems.value?.length && analysisSourceKey.value === key && !marginError.value
   }
   return !!analysis.value?.images.length && analysisSourceKey.value === key && !marginError.value
@@ -800,7 +952,8 @@ const analysisCollapse = ref<string[]>(['analysis'])
 const pageSettingsSummary = computed(() => {
   const s = settings.value
   const mode = s.pageModeType === 'original' ? t('原图大小') : t('固定幅面')
-  const merge = s.mergeMode === 'lossless' ? t('无损') : t('便携')
+  const merge =
+    s.mergeMode === 'original' ? t('原样无损') : s.mergeMode === 'lossless' ? t('智能压缩') : t('便携')
   return `${mode} · ${merge}`
 })
 
@@ -909,6 +1062,7 @@ function buildPdfConfig(outputPath: string): PdfConfig {
 }
 
 function buildMergeMode(): MergeMode {
+  if (settings.value.mergeMode === 'original') return 'original'
   if (settings.value.mergeMode === 'lossless') {
     return { lossless: { max_size_ratio: settings.value.maxSizeRatio } }
   }
@@ -931,7 +1085,11 @@ function onRecursiveChange() {
   if (analysis.value) analyzeFolderAction()
 }
 
-function onBatchModeChange() {
+function onOutputModeChange() {
+  batchItems.value = null
+  batchResults.value = null
+  result.value = null
+  previewData.value = null
   if (pathInput.value.trim()) analyzeFolderAction()
 }
 
@@ -952,8 +1110,8 @@ async function analyzeFolderAction() {
   waterfallLimit.value = 60
 
   try {
-    if (batchMode.value) {
-      // 批量模式：一级子文件夹各一份 PDF
+    if (isSubfolderMode.value) {
+      // 子文件夹模式：一级子文件夹各一份 PDF
       const items = await analyzeSubfoldersForPdf(p)
       batchItems.value = items
       analysis.value = null
@@ -962,7 +1120,7 @@ async function analyzeFolderAction() {
         const first = items.find((it) => it.analysis.auto_switched_from_file)
         if (first) pathInput.value = first.analysis.effective_path
       }
-      analysisSourceKey.value = `${pathInput.value.trim()}\u0000${recursive.value}\u0000${batchMode.value}`
+      analysisSourceKey.value = `${pathInput.value.trim()}\u0000${recursive.value}\u0000${outputMode.value}`
     } else {
       // 单文件夹模式
       batchItems.value = null
@@ -975,7 +1133,7 @@ async function analyzeFolderAction() {
         settings.value.fixedOrientation = analysis.value.suggested_orientation as FixedOrientation
       }
       await updatePreview()
-      analysisSourceKey.value = `${pathInput.value.trim()}\u0000${recursive.value}\u0000${batchMode.value}`
+      analysisSourceKey.value = `${pathInput.value.trim()}\u0000${recursive.value}\u0000${outputMode.value}`
     }
   } catch (e: any) {
     ElMessage.error(t('分析失败') + ': ' + (e?.message || e))
@@ -1203,55 +1361,134 @@ watch(waterfallLimit, () => {
   if (previewMode.value === 'waterfall') schedulePreloadVisible()
 })
 
+// 分批数量变化后，旧的分批列表/结果已失效，等下次生成时重建
+watch(countBatchSize, () => {
+  if (!isCountBatch.value || generating.value) return
+  batchItems.value = null
+  batchResults.value = null
+})
+
 // ---- Generate ----
+
+/** 把整目录分析结果裁成某一批图片，保留批次面板需要的统计字段。 */
+function sliceAnalysis(full: FolderAnalysis, images: FolderAnalysis['images']): FolderAnalysis {
+  return {
+    ...full,
+    images,
+    total_size: images.reduce((sum, img) => sum + (img.file_size || 0), 0),
+    skipped: [],
+  }
+}
+
+/** 按当前「分批数量」把已分析的图片切成多个 BatchItemAnalysis。 */
+function buildCountBatchItems(): BatchItemAnalysis[] {
+  const a = analysis.value
+  if (!a) return []
+  const base = inputFolderName()
+  const chunks: FolderAnalysis['images'][] = []
+  if (countBatchSize.value === 0) {
+    chunks.push(a.images)
+  } else {
+    for (let i = 0; i < a.images.length; i += countBatchSize.value) {
+      chunks.push(a.images.slice(i, i + countBatchSize.value))
+    }
+  }
+  return chunks.map((images, i) => ({
+    name:
+      countBatchSize.value === 0
+        ? `${base}_合并`
+        : `${base}_batch${String(i + 1).padStart(3, '0')}`,
+    path: `${a.effective_path}#${i + 1}`,
+    analysis: sliceAnalysis(a, images),
+  }))
+}
+
+/** 批量输出目录：留空用默认目录；误填 .pdf 文件路径时取其父目录（兼容旧版行为）。 */
+function resolveOutputDir(): string {
+  const raw = outputDir.value.trim()
+  if (!raw) return defaultOutputDir.value
+  if (/\.pdf$/i.test(raw)) {
+    const idx = Math.max(raw.lastIndexOf('\\'), raw.lastIndexOf('/'))
+    return idx >= 0 ? raw.slice(0, idx) : '.'
+  }
+  return raw
+}
+
+async function selectOutputDir() {
+  const dir = await open({
+    directory: true,
+    multiple: false,
+    title: t('选择 PDF 输出目录'),
+    defaultPath: outputDir.value || defaultOutputDir.value || undefined,
+  })
+  if (dir && typeof dir === 'string') outputDir.value = dir
+}
+
+async function openNote() {
+  noteVisible.value = true
+  if (noteContent.value) return
+  noteLoading.value = true
+  try {
+    noteContent.value = await readImagePdfNote()
+  } catch (e: any) {
+    ElMessage.error(e?.toString() || t('读取说明失败'))
+  } finally {
+    noteLoading.value = false
+  }
+}
+
+async function runBatchGeneration(items: BatchItemAnalysis[], outputDirectory: string) {
+  batchResults.value = []
+  generating.value = true
+  progress.value = null
+  result.value = null
+  try {
+    const results = await apiGeneratePdfBatch(
+      items,
+      buildPdfConfig(''),
+      outputDirectory,
+      settings.value.overwriteBatch,
+    )
+    batchResults.value = results
+    const ok = results.filter((r) => r.success).length
+    const failed = results.length - ok
+    if (failed === 0) {
+      ElMessage.success(t('批量生成完成') + `: ${ok} ${t('份')}`)
+    } else {
+      ElMessage.warning(t('批量生成完成，部分失败') + `: ${ok} ${t('成功')} / ${failed} ${t('失败')}`)
+    }
+  } catch (e: any) {
+    ElMessage.error(t('批量生成失败') + ': ' + (e?.message || e))
+  } finally {
+    generating.value = false
+    progress.value = null
+  }
+}
 
 async function generatePdfAction() {
   if (!canGenerate.value) return
 
-  // 批量模式：选输出目录，每个子文件夹生成一份 PDF
-  if (batchMode.value) {
-    if (!batchItems.value?.length) return
-    const dir = await open({
-      directory: true,
-      multiple: false,
-      title: t('选择 PDF 输出目录'),
-    })
-    if (!dir || typeof dir !== 'string') return
-
-    generating.value = true
-    progress.value = null
-    result.value = null
-    // 先置空数组：列表立即显示「待生成」，随后由 pdf_batch_item 逐条点亮
-    batchResults.value = []
-    try {
-      const results = await apiGeneratePdfBatch(
-        batchItems.value,
-        buildPdfConfig(''),
-        dir,
-        settings.value.overwriteBatch,
-      )
-      batchResults.value = results
-      const ok = results.filter((r) => r.success).length
-      const failed = results.length - ok
-      if (failed === 0) {
-        ElMessage.success(t('批量生成完成') + `: ${ok} ${t('份')}`)
-      } else {
-        ElMessage.warning(t('批量生成完成，部分失败') + `: ${ok} ${t('成功')} / ${failed} ${t('失败')}`)
-      }
-    } catch (e: any) {
-      ElMessage.error(t('批量生成失败') + ': ' + (e?.message || e))
-    } finally {
-      generating.value = false
-      progress.value = null
-    }
+  // 按数量分批：把当前目录的图片切块，每块一份 PDF
+  if (isCountBatch.value) {
+    const items = buildCountBatchItems()
+    if (!items.length) return
+    batchItems.value = items
+    await runBatchGeneration(items, resolveOutputDir())
     return
   }
 
-  // 单文件夹模式：选保存路径
+  // 每子文件夹一份：直接使用分析阶段得到的子文件夹列表
+  if (isSubfolderMode.value) {
+    if (!batchItems.value?.length) return
+    await runBatchGeneration(batchItems.value, resolveOutputDir())
+    return
+  }
+
+  // 单份模式：选保存路径
   if (!analysis.value) return
   const savePath = await save({
     title: t('保存 PDF'),
-    defaultPath: 'output.pdf',
+    defaultPath: defaultSinglePath.value,
     filters: [{ name: 'PDF', extensions: ['pdf'] }],
   })
   if (!savePath) return
@@ -1380,8 +1617,8 @@ onBeforeUnmount(() => {
 /* ============================ Shared ============================ */
 
 .hint { font-size: 11px; color: var(--text-muted); margin: 4px 0 0; line-height: 1.5; }
-.hint.is-danger { color: var(--danger); }
-.hint.is-warn { color: var(--warning); }
+.hint.is-danger { color: var(--danger-text); }
+.hint.is-warn { color: var(--warning-text); }
 
 /* 折叠标题里的 tag 与摘要 */
 .collapse-tag { margin-left: 8px; }
@@ -1423,12 +1660,12 @@ onBeforeUnmount(() => {
 }
 .stat .label { color: var(--text-secondary); font-size: 11px; }
 .stat .value { font-weight: 600; color: var(--text-primary); font-size: 13px; }
-.stat .suggestion { color: var(--accent); }
+.stat .suggestion { color: var(--accent-text); }
 
 .meta-warnings { margin: 4px 0 8px; }
 .meta-warn {
   margin: 2px 0; padding: 4px 8px; font-size: 11px;
-  background: var(--warning-light); color: var(--warning);
+  background: var(--warning-light); color: var(--warning-text);
   border-radius: var(--radius-xs); line-height: 1.5;
 }
 
@@ -1486,7 +1723,7 @@ onBeforeUnmount(() => {
 .result-container.success { background: var(--success-light); }
 .result-container.error { background: var(--danger-light); }
 .result-container.warn {
-  background: var(--warning-light); border-color: var(--warning);
+  background: var(--warning-light); border-color: var(--warning-text);
 }
 .result-title { margin: 0 0 6px; font-weight: 600; color: var(--text-primary); font-size: 12px; }
 .result-stats {
@@ -1494,7 +1731,7 @@ onBeforeUnmount(() => {
   font-size: 11px; color: var(--text-secondary);
 }
 .mode-used { font-size: 10px; color: var(--text-muted); margin: 2px 0; }
-.warn-note { font-size: 10px; color: var(--warning); margin: 2px 0; }
+.warn-note { font-size: 10px; color: var(--warning-text); margin: 2px 0; }
 .result-warnings { margin-top: 6px; padding: 6px 8px; background: rgba(230, 162, 60, 0.08); border-radius: 4px; max-height: 120px; overflow-y: auto; }
 .warning-item { font-size: 11px; color: var(--text-secondary); line-height: 1.6; word-break: break-all; }
 .output-path { font-size: 10px; color: var(--text-muted); word-break: break-all; margin: 4px 0 0; }
@@ -1779,9 +2016,38 @@ onBeforeUnmount(() => {
 
 .batch-error {
   font-size: 11px;
-  color: var(--danger);
+  color: var(--danger-text);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* 输出方式 / 输出设置 */
+.output-mode-select {
+  width: 132px;
+  flex-shrink: 0;
+}
+.count-size-select {
+  width: 118px;
+  flex-shrink: 0;
+}
+.toolbar-note-link {
+  font-size: 12px;
+  flex-shrink: 0;
+}
+.output-dir-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.output-dir-row .el-input {
+  flex: 1;
+  min-width: 0;
+}
+.note-content {
+  white-space: pre-wrap;
+  font-family: var(--font-mono);
+  line-height: 1.5;
+  margin: 0;
 }
 </style>

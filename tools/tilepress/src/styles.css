@@ -43,7 +43,7 @@
 }
 
 .tilepress-root .stage-pill {
-  color: var(--brand);
+  color: var(--brand-text);
   background: var(--brand-soft);
   font-family: var(--mono);
 }
@@ -119,14 +119,14 @@
 }
 
 .tilepress-root .btn.primary {
-  background: var(--brand);
-  border-color: var(--brand);
+  background: var(--brand-solid);
+  border-color: var(--brand-solid);
   color: #fff;
   font-weight: 600;
 }
 
 .tilepress-root .btn.primary:hover:not(:disabled) {
-  background: var(--brand);
+  background: var(--brand-solid);
   filter: brightness(1.06);
 }
 
@@ -238,7 +238,7 @@
 }
 
 .tilepress-root .num:focus-within {
-  border-color: var(--brand);
+  border-color: var(--brand-solid);
 }
 
 .tilepress-root .num input {
@@ -289,7 +289,7 @@
 .tilepress-root .switch input {
   width: 15px;
   height: 15px;
-  accent-color: var(--brand);
+  accent-color: var(--brand-solid);
 }
 
 /* 分段选择 */
@@ -331,7 +331,7 @@
 }
 
 .tilepress-root .segmented label.active, .tilepress-root .quality-grid label.active {
-  border-color: var(--brand);
+  border-color: var(--brand-solid);
   background: var(--brand-soft);
 }
 
@@ -385,7 +385,7 @@
 }
 
 .tilepress-root .hist-peak {
-  color: var(--brand);
+  color: var(--brand-text);
   font-weight: 600;
 }
 
@@ -405,7 +405,7 @@
 }
 
 .tilepress-root .hist-bar.peak {
-  background: var(--brand);
+  background: var(--brand-solid);
 }
 
 .tilepress-root .hist-axis {
@@ -477,7 +477,7 @@
 .tilepress-root .params .num input { min-width: 0; width: 100%; font-size: 16px; font-variant-numeric: tabular-nums; }
 .tilepress-root .params .segmented label, .tilepress-root .overview .segmented label { padding: 9px 10px; gap: 4px; }
 .tilepress-root .segmented label.active::after, .tilepress-root .quality-grid label.active::after {
-  content: "✓"; position: absolute; right: 7px; top: 5px; color: var(--brand); font-size: 11px;
+  content: "✓"; position: absolute; right: 7px; top: 5px; color: var(--brand-text); font-size: 11px;
 }
 .tilepress-root .segmented label.active .seg-title { padding-right: 10px; }
 .tilepress-root .params .seg-sub, .tilepress-root .overview .seg-sub { white-space: normal; line-height: 1.45; }
@@ -485,7 +485,7 @@
 .tilepress-root .overview .quality-grid .seg-sub { white-space: normal; line-height: 1.45; }
 .tilepress-root .overview .quality-grid label { padding: 8px; gap: 4px; }
 .tilepress-root .quality-explanation { padding: 11px 12px; margin: 10px 0 16px; border-radius: var(--radius); background: var(--bg-alt); }
-.tilepress-root .quality-explanation b { font-size: 12px; color: var(--brand); }
+.tilepress-root .quality-explanation b { font-size: 12px; color: var(--brand-text); }
 .tilepress-root .quality-explanation p { margin: 5px 0 0; font-size: 11.5px; line-height: 1.6; color: var(--fg); opacity: .8; }
 .tilepress-root .advanced-settings, .tilepress-root .image-statistics { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
 .tilepress-root .advanced-settings summary, .tilepress-root .image-statistics summary { cursor: pointer; font-size: 12px; color: var(--fg); }
@@ -494,7 +494,7 @@
 .tilepress-root .image-statistics .stat-grid { margin-top: 12px; }
 .tilepress-root .footer-output { color: var(--fg); }
 .tilepress-root .export-summary { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
-.tilepress-root .export-summary b { color: var(--brand); font-size: 13px; }
+.tilepress-root .export-summary b { color: var(--brand-text); font-size: 13px; }
 .tilepress-root .export-summary span { font-size: 11px; color: var(--fg); opacity: .75; white-space: nowrap; }
 .tilepress-root .overview .big-stat { margin-top: 6px; }
 .tilepress-root .overview .preview-note { margin-top: 14px; }
@@ -701,12 +701,12 @@
   height: 100%;
   width: 0;
   border-radius: 999px;
-  background: var(--brand);
+  background: var(--brand-solid);
   transition: width 0.16s linear;
 }
 
 .tilepress-root .progress-bar.complete {
-  background: var(--green);
+  background: var(--success);
 }
 
 .tilepress-root .progress-line {
@@ -921,8 +921,8 @@
 }
 
 .tilepress-root .nav-btn:hover:not(:disabled) {
-  border-color: var(--brand);
-  color: var(--brand);
+  border-color: var(--brand-solid);
+  color: var(--brand-text);
 }
 
 .tilepress-root .nav-btn:disabled {
@@ -1004,7 +1004,7 @@
 }
 .tilepress-root .plan-in:focus {
   outline: none;
-  border-color: var(--brand);
+  border-color: var(--brand-solid);
 }
 .tilepress-root .plan-auto {
   min-width: 34px;
@@ -1053,7 +1053,7 @@
   border: 1px solid var(--line);
   border-radius: 4px;
 }
-.tilepress-root .lim-in:focus { outline: none; border-color: var(--brand); }
+.tilepress-root .lim-in:focus { outline: none; border-color: var(--brand-solid); }
 .tilepress-root .rec-opt {
   display: flex;
   align-items: center;
@@ -1067,11 +1067,11 @@
 }
 .tilepress-root .rec-opt:hover { background: var(--brand-soft); }
 .tilepress-root .rec-opt.active {
-  border-color: var(--brand);
+  border-color: var(--brand-solid);
   background: var(--brand-soft);
 }
 .tilepress-root .rec-opt input { display: none; }
-.tilepress-root .rec-name { color: var(--brand); min-width: 46px; }
+.tilepress-root .rec-name { color: var(--brand-text); min-width: 46px; }
 .tilepress-root .rec-nums { font-family: ui-monospace, monospace; }
 .tilepress-root .rec-meta { margin-left: auto; color: var(--comment); font-size: 11px; }
 
@@ -1128,7 +1128,7 @@
   cursor: pointer;
 }
 .tilepress-root .fmt-chip:hover { color: var(--fg); }
-.tilepress-root .fmt-chip.active { background: var(--brand); color: #fff; font-weight: 600; }
+.tilepress-root .fmt-chip.active { background: var(--brand-solid); color: #fff; font-weight: 600; }
 .tilepress-root .fmt-dpi {
   display: flex;
   align-items: center;

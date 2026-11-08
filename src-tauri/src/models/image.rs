@@ -44,25 +44,6 @@ pub struct RepairResult {
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
-pub struct ConvertRequest {
-    pub input_dir: PathBuf,
-    #[serde(default)]
-    pub output_dir: Option<PathBuf>,
-    #[serde(default)]
-    pub batch_size: Option<usize>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct ConvertResult {
-    pub batches: usize,
-    pub output_path: PathBuf,
-    pub log_path: PathBuf,
-    pub problems: Vec<ImageIssue>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(rename_all = "camelCase")]
 pub struct FileEntry {
     pub name: String,
     pub path: PathBuf,
@@ -70,37 +51,8 @@ pub struct FileEntry {
     pub size: u64,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct Convert3Request {
-    pub input_dir: PathBuf,
-    #[serde(default)]
-    pub output_dir: Option<PathBuf>,
-    #[serde(default)]
-    pub batch_size: Option<usize>,
-    #[serde(default = "default_lossless_merge")]
-    pub lossless_merge: bool,
-    #[serde(default = "default_recursive")]
-    pub recursive: bool,
-}
-
-fn default_lossless_merge() -> bool {
-    true
-}
-
 fn default_recursive() -> bool {
     true
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct Convert3Result {
-    pub batches: usize,
-    pub output_path: PathBuf,
-    pub original_bytes: u64,
-    pub output_bytes: u64,
-    pub problems: Vec<ImageIssue>,
-    pub log_path: PathBuf,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

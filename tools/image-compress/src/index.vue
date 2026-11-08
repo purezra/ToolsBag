@@ -519,7 +519,7 @@ onBeforeUnmount(() => {
 .drop-hint { font-size: 11px; color: var(--text-muted); margin-left: auto; white-space: nowrap; }
 .hint { font-size: 12px; color: var(--text-muted); line-height: 1.5; margin: 4px 0; }
 .hint.strong { color: var(--text-secondary); font-weight: 600; }
-.hint.is-warn { color: var(--warning); }
+.hint.is-warn { color: var(--warning-text); }
 .setting-group { margin-bottom: 12px; }
 .setting-group > label { display: block; margin-bottom: 6px; font-size: 12px; color: var(--text-secondary); font-weight: 600; }
 .preset-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }

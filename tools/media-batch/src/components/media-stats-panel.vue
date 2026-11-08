@@ -348,7 +348,7 @@ onBeforeUnmount(() => chartInstance?.dispose())
 }
 .fmt-count {
   font-weight: 700;
-  color: var(--accent);
+  color: var(--accent-text);
   font-size: 11px;
 }
 </style>

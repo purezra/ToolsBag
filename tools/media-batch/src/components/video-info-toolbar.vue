@@ -59,7 +59,7 @@ const { t } = useSettings()
   padding: 10px 14px;
   border-radius: 10px;
   border: 1px solid var(--border-secondary);
-  background: linear-gradient(145deg, rgba(243, 246, 255, 0.96), rgba(227, 235, 255, 0.9));
+  background: linear-gradient(145deg, var(--banner-from), var(--banner-to));
   flex-wrap: wrap;
   gap: 8px;
 }

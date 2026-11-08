@@ -54,7 +54,7 @@ const sortedTools = computed(() => {
           <h1 class="tool-home__title">ToolsBag</h1>
         </div>
         <p class="tool-home__subtitle">
-          {{ t('精致克制的桌面工具盒 · 媒体探针 · 图像套件 · 文件收割 · 密码册') }}
+          {{ t('精致克制的桌面工具盒 · 媒体探针 · 图像套件 · PDF 合并 · 文件收割 · 密码册') }}
         </p>
       </div>
       <div class="tool-home__hero-badge ink-frame ink-tilt">
@@ -345,7 +345,7 @@ html.dark .tool-home__brand-tile {
   gap: 4px;
   font-size: 12px;
   font-weight: 600;
-  color: var(--accent);
+  color: var(--accent-text);
   margin-top: auto;
   opacity: 0;
   transform: translateX(-4px);

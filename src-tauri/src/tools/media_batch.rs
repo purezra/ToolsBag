@@ -1,6 +1,6 @@
 use crate::error::{AppError, AppResult};
 use crate::models::{VideoInfoImportResponse, VideoInfoItem};
-use crate::tools::{detect_media_type_from_path, media_cache, mediainfo, MediaType};
+use crate::tools::{detect_media_type_from_path, media_cache, mediainfo, video_probe, MediaType};
 use crate::utils::emit_progress;
 use exif;
 use rayon::prelude::*;
@@ -61,30 +61,6 @@ pub fn record_media_performance(
     });
     writeln!(file, "{}", entry).map_err(|error| error.to_string())?;
     Ok(path.to_string_lossy().to_string())
-}
-
-/// 解析 MediaInfo 输出的码率字符串（如 "10.0 Mbps"、"320 kb/s"）为 Mbps 数值
-fn parse_bitrate_to_mbps(s: &str) -> Option<f64> {
-    let s = s.trim();
-    if s.is_empty() || s == "-" {
-        return None;
-    }
-    if let Some(rest) = s.strip_suffix("Mbps") {
-        return rest.trim().parse::<f64>().ok();
-    }
-    let (kb_suffix, kb_len) = if s.ends_with("kb/s") || s.ends_with("Kbps") {
-        (true, 4)
-    } else {
-        (false, 0)
-    };
-    if kb_suffix {
-        let rest = &s[..s.len() - kb_len];
-        return rest.trim().parse::<f64>().ok().map(|v| v / 1000.0);
-    }
-    if let Some(rest) = s.strip_suffix("bps") {
-        return rest.trim().parse::<f64>().ok().map(|v| v / 1_000_000.0);
-    }
-    None
 }
 
 type VideoProbeResult = (
@@ -627,95 +603,7 @@ fn import_detailed_video_info_inner(
         .par_iter()
         .enumerate()
         .map(|(idx, path)| {
-            let path_str = path.to_string_lossy().to_string();
-            let md = std::fs::metadata(path).ok();
-            let size = md.as_ref().map(|m| m.len()).unwrap_or(0);
-            let mtime_ms = md
-                .as_ref()
-                .and_then(|m| m.modified().ok())
-                .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
-                .map(|duration| duration.as_millis() as u64);
-            let cache_key = format!("detailed:{}", path_str);
-
-            let item = mtime_ms
-                .and_then(|mtime| media_cache::get_cached_item(&cache_key, mtime))
-                .and_then(|value| serde_json::from_value::<VideoInfoItem>(value).ok())
-                .map(|mut cached| {
-                    cached.id = idx as u64;
-                    cached
-                })
-                .unwrap_or_else(|| {
-                    let name = path
-                        .file_name()
-                        .map(|s| s.to_string_lossy().to_string())
-                        .unwrap_or_else(|| "unknown".into());
-                    let detail = mediainfo::get_detailed_video_meta(path)
-                        .or_else(|| mediainfo::get_detailed_video_meta(path));
-
-                    // 从 detail 派生扁平字段
-                    let (duration_sec, width, height, bitrate_mbps, codec, frame_rate) =
-                        if let Some(ref d) = detail {
-                            let dur = if d.general.duration_ms > 0 {
-                                Some(d.general.duration_ms as f64 / 1000.0)
-                            } else {
-                                d.video_streams.first().and_then(|s| {
-                                    if s.duration_ms > 0 {
-                                        Some(s.duration_ms as f64 / 1000.0)
-                                    } else {
-                                        None
-                                    }
-                                })
-                            };
-                            let vs = d.video_streams.first();
-                            let br = parse_bitrate_to_mbps(&d.general.overall_bit_rate)
-                                .or_else(|| vs.and_then(|s| parse_bitrate_to_mbps(&s.bit_rate)));
-                            let fr = vs.and_then(|s| {
-                                if s.frame_rate.is_empty() || s.frame_rate == "-" {
-                                    None
-                                } else {
-                                    Some(s.frame_rate.clone())
-                                }
-                            });
-                            (
-                                dur,
-                                vs.map(|s| s.width),
-                                vs.map(|s| s.height),
-                                br,
-                                vs.map(|s| s.codec.clone()),
-                                fr,
-                            )
-                        } else {
-                            (None, None, None, None, None, None)
-                        };
-
-                    let item = VideoInfoItem {
-                        id: idx as u64,
-                        name,
-                        path: path_str.clone(),
-                        size,
-                        status: if detail.is_some() { "success" } else { "error" }.to_string(),
-                        reason: if detail.is_none() {
-                            Some("无法解析视频元数据".to_string())
-                        } else {
-                            None
-                        },
-                        detail,
-                        duration_sec,
-                        width,
-                        height,
-                        bitrate_mbps,
-                        codec,
-                        frame_rate,
-                    };
-
-                    // 失败项不缓存，后续导入仍会重试解析。
-                    if item.status == "success" {
-                        if let (Some(mtime), Ok(value)) = (mtime_ms, serde_json::to_value(&item)) {
-                            media_cache::set_cached_item(&cache_key, mtime, &value);
-                        }
-                    }
-                    item
-                });
+            let item = video_probe::probe_video_item(idx as u64, path);
 
             let done = progress.fetch_add(1, Ordering::Relaxed) + 1;
             if done == total || done % 10 == 0 {

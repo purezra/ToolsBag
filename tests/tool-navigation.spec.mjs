@@ -34,6 +34,7 @@ test('all launcher cards open their tool page', async () => {
     const tools = [
       ['媒体探针', '.media-tool'],
       ['图像套件', '.image-tools-shell'],
+      ['PDF 合并', '.pdf-merge-tool'],
       ['文件收割', '.file-traverse'],
       ['密码册', '.codebook-tool'],
     ]

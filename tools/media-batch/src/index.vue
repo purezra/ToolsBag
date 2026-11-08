@@ -482,7 +482,7 @@ const handleInspect = async (path: string) => {
   padding: 3px 6px;
   border-radius: var(--radius-sm);
   background: var(--accent-light);
-  color: var(--accent);
+  color: var(--accent-text);
   font-weight: 700;
   font-size: 11px;
   white-space: nowrap;
@@ -508,7 +508,7 @@ const handleInspect = async (path: string) => {
 }
 .live-strip__count {
   font-weight: 700;
-  color: var(--accent);
+  color: var(--accent-text);
   font-size: 12px;
   white-space: nowrap;
 }
@@ -578,10 +578,10 @@ const handleInspect = async (path: string) => {
   align-items: center;
   gap: 8px;
   min-width: 150px;
-  color: var(--success);
+  color: var(--success-text);
 }
 .has-failures .import-summary__status {
-  color: var(--warning);
+  color: var(--warning-text);
 }
 .import-summary__status > div {
   display: flex;
@@ -626,10 +626,10 @@ const handleInspect = async (path: string) => {
   line-height: 1;
 }
 .import-summary__metric.is-success strong {
-  color: var(--success);
+  color: var(--success-text);
 }
 .import-summary__metric.is-failure strong {
-  color: var(--warning);
+  color: var(--warning-text);
 }
 .import-summary__formats {
   display: flex;

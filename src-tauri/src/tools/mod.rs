@@ -4,7 +4,10 @@ pub mod image_compress;
 pub mod image_to_pdf;
 pub mod media_batch;
 pub mod media_cache;
+pub mod pdf_merge;
 pub mod tilepress;
+pub mod video_probe;
+pub mod video_store;
 
 #[cfg(target_os = "windows")]
 pub mod mediainfo;

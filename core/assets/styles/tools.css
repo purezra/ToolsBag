@@ -48,7 +48,7 @@
   margin: 0;
 }
 .tool-page__title .el-icon {
-  color: var(--accent);
+  color: var(--accent-text);
   font-size: 18px;
 }
 .tool-page__desc {
@@ -198,7 +198,7 @@
 }
 .tb-soft-badge--accent {
   background: var(--accent-light);
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 /* ============ Capability list (header meta) ============ */

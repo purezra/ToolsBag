@@ -14,6 +14,7 @@ export type PageMode =
 
 // 合并模式（externally tagged）
 export type MergeMode =
+  | 'original'
   | { lossless: { max_size_ratio: number } }
   | { portable: { target_ratio: number } }
 
@@ -263,6 +264,11 @@ export async function prewarmThumbnails(
   maxSize: number = 384
 ): Promise<number> {
   return await invoke('prewarm_thumbnails', { paths, maxSize })
+}
+
+/** 读取「关于这个小工具的一些说明.md」（PDF 处理问题的排查说明）。 */
+export async function readImagePdfNote(): Promise<string> {
+  return await invoke('read_image_pdf_note')
 }
 
 /** 页面尺寸中文名称 */

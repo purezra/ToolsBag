@@ -62,7 +62,7 @@
   display: none;
 }
 .tb-section-title .el-icon {
-  color: var(--accent);
+  color: var(--accent-text);
   font-size: 16px;
 }
 /* Compact variant: tighter padding for nested/dense panels */
@@ -98,7 +98,7 @@
   font-weight: 600;
 }
 .tb-field-hint--warn {
-  color: var(--warning);
+  color: var(--warning-text);
 }
 .tb-inline {
   display: flex;
@@ -189,11 +189,11 @@
 }
 .tb-result--success .tb-result-icon {
   background: var(--success-light);
-  color: var(--success);
+  color: var(--success-text);
 }
 .tb-result--error .tb-result-icon {
   background: var(--danger-light);
-  color: var(--danger);
+  color: var(--danger-text);
 }
 .tb-result-body {
   flex: 1;
@@ -299,11 +299,11 @@
 }
 .tb-delta--up {
   background: var(--warning-light);
-  color: var(--warning);
+  color: var(--warning-text);
 }
 .tb-delta--down {
   background: var(--success-light);
-  color: var(--success);
+  color: var(--success-text);
 }
 
 /* ============ Paper tokens (for image preview frames etc.) ============

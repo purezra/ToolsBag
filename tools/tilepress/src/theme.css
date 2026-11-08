@@ -12,14 +12,17 @@
   --fg: var(--text-primary, #181c23);
   --comment: var(--text-muted, #717786);
 
-  --cyan: var(--brand);
-  --green: var(--success, #34c759);
-  --orange: var(--warning, #ff9500);
+  --cyan: var(--brand-text);
+  --green: var(--success-text, #0b7a33);
+  --orange: var(--warning-text, #8a5300);
   --pink: #ff2d55;
   --brand: var(--accent, #007aff);
+  /* 填充按钮/进度条用 solid（足够深），文字/图标用 text（深色主题下更亮） */
+  --brand-solid: var(--accent-solid, #0066d6);
+  --brand-text: var(--accent-text, var(--accent, #007aff));
   --brand-soft: var(--accent-light, rgba(0, 122, 255, 0.1));
-  --red: var(--danger, #ff3b30);
-  --yellow: var(--brand);
+  --red: var(--danger-text, #ff3b30);
+  --yellow: var(--brand-text);
 
   --radius: var(--radius-md, 12px);
   --mono: var(--font-mono, 'Cascadia Code', Consolas, 'Cascadia Mono', 'Courier New', monospace);

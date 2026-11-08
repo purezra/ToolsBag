@@ -1,24 +1,15 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-mod cmd;
-mod codebook;
-mod converter;
-mod crypto;
-mod detector;
-mod error;
-mod models;
-mod repairer;
-mod tools;
-mod update;
-mod utils;
-mod webdav;
-
-use crate::tools::image_compress;
-use crate::tools::image_to_pdf;
-use crate::tools::media_batch;
-use crate::tools::media_cache;
-use crate::tools::tilepress;
+use app::cmd;
+use app::tools;
+use app::tools::image_compress;
+use app::tools::image_to_pdf;
+use app::tools::media_batch;
+use app::tools::media_cache;
+use app::tools::pdf_merge;
+use app::tools::tilepress;
+use app::update;
 use std::{path::PathBuf, process::Command};
 use tauri::Manager;
 use tauri_plugin_sql::{Migration, MigrationKind};
@@ -85,7 +76,7 @@ fn open_parent_dir(path: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn read_image_batch_note() -> Result<String, String> {
+fn read_image_pdf_note() -> Result<String, String> {
     let mut candidates = vec![
         PathBuf::from("关于这个小工具的一些说明.md"),
         PathBuf::from("../关于这个小工具的一些说明.md"),
@@ -100,11 +91,14 @@ fn read_image_batch_note() -> Result<String, String> {
     }
     for path in candidates.iter() {
         if path.exists() {
-            let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
-            return Ok(String::from_utf8_lossy(&bytes).to_string());
+            if let Ok(bytes) = std::fs::read(path) {
+                return Ok(String::from_utf8_lossy(&bytes).to_string());
+            }
         }
     }
-    Err("未找到说明文件，请确认文件与应用同级".into())
+    // 便携版/安装版不一定把 md 放在 exe 旁边，编译期内嵌作为兜底，
+    // 保证「说明」入口在任何分发方式下都可用。
+    Ok(include_str!("关于这个小工具的一些说明.md").to_string())
 }
 
 fn main() {
@@ -150,15 +144,9 @@ fn main() {
 
     tauri::Builder::default()
         .setup(|app| {
-            // Windows 原生标题栏默认显示应用图标；换成全透明小图标，
-            // 只影响标题栏（ICON_SMALL），任务栏/Alt+Tab 仍沿用 exe 图标。
-            #[cfg(target_os = "windows")]
-            if let Some(win) = app.get_webview_window("main") {
-                let blank_icon = tauri::image::Image::new_owned(vec![0u8; 32 * 32 * 4], 32, 32);
-                if let Err(e) = win.set_icon(blank_icon) {
-                    log::warn!("清除标题栏图标失败: {e}");
-                }
-            }
+            // 标题栏/任务栏都使用打包进 exe 的图标（icons/icon.ico 的 16/32px 帧
+            // 已改为头部特写版）。之前这里替换成全透明图标，Windows 会把它画成
+            // 一条黑块，因此不再做该替换。
             if let Ok(res_dir) = app.path().resource_dir() {
                 tools::mediainfo::set_resource_dir(res_dir.clone());
                 image_compress::set_resource_dir(res_dir);
@@ -170,6 +158,13 @@ fn main() {
                 .unwrap_or_else(|_| std::env::temp_dir().join("toolsbag"))
                 .join("thumbnails");
             image_to_pdf::init_thumbnail_cache(thumb_dir);
+            // Word → PDF 转换缓存：按文件路径/大小/修改时间复用，避免重复启动 Office。
+            let merge_cache = app
+                .path()
+                .app_cache_dir()
+                .unwrap_or_else(|_| std::env::temp_dir().join("toolsbag"))
+                .join("pdf_merge");
+            pdf_merge::init_merge_cache(merge_cache);
             // 初始化媒体缓存数据库到 app_data_dir，fallback 到临时目录
             {
                 let db_path = match app.path().app_data_dir() {
@@ -212,12 +207,10 @@ fn main() {
             media_batch::get_video_xml_json,
             media_batch::get_video_xml_markdown,
             open_parent_dir,
-            read_image_batch_note,
+            read_image_pdf_note,
             cmd::analyze_folder,
             cmd::repair_images,
-            cmd::convert_to_pdf,
             cmd::list_images,
-            cmd::convert_image_batch,
             cmd::convert_to_epub,
             cmd::traverse_copy,
             cmd::preview_media,
@@ -284,6 +277,11 @@ fn main() {
             tilepress::reveal_pdf,
             tilepress::open_output_folder,
             tilepress::copy_image_files,
+            // Tool8: PDF Merge
+            pdf_merge::analyze_merge_inputs,
+            pdf_merge::merge_pdf_documents,
+            pdf_merge::get_office_converter_status,
+            pdf_merge::copy_pdf_file,
             // Portable self-update
             update::check_update,
             update::download_update,

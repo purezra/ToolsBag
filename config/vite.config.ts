@@ -17,6 +17,7 @@ export default defineConfig({
       '@image-to-pdf': path.resolve(__dirname, '../tools/image-to-pdf/src'),
       '@image-compress': path.resolve(__dirname, '../tools/image-compress/src'),
       '@image-tools': path.resolve(__dirname, '../tools/image-tools/src'),
+      '@pdf-merge': path.resolve(__dirname, '../tools/pdf-merge/src'),
       '@tilepress': path.resolve(__dirname, '../tools/tilepress/src')
     }
   },

@@ -100,7 +100,7 @@ const emit = defineEmits<{
   word-break: break-all;
 }
 .tb-section-title.is-warn {
-  color: var(--warning);
+  color: var(--warning-text);
 }
 .log-box {
   padding: 10px;

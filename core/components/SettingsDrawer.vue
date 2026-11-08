@@ -311,7 +311,7 @@ onBeforeUnmount(() => {
   border-bottom: none;
 }
 .settings-group__head .el-icon {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 /* ============ Row: title/desc left, control right ============ */
@@ -459,7 +459,7 @@ onBeforeUnmount(() => {
   margin: 0 16px 12px;
   font-size: 11px;
   line-height: 1.5;
-  color: var(--danger);
+  color: var(--danger-text);
   word-break: break-word;
 }
 
